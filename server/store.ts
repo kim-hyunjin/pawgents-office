@@ -12,8 +12,6 @@ import {
 import { isCatFamily } from '../shared/model.ts';
 import {
   DESK_MEMORY_MS,
-  LOG_SIZE,
-  MAX_FILES,
   ORPHAN_SESSION_MS,
   SEATS_PER_DESK,
   SESSION_TTL_MS,
@@ -24,6 +22,26 @@ import {
   SUBAGENT_STALE_MS,
   SUBAGENT_TTL_MS,
 } from './config.ts';
+import {
+  DEFAULT_OFFICE_ID,
+  DEFAULT_OFFICE_NAME,
+  defaultOffice,
+  newOffice,
+  newOfficeId,
+  officeOfRepo,
+  pickDesk,
+} from './domain/office.ts';
+import {
+  freeSeat,
+  markEnded,
+  markRevived,
+  newSession,
+  newSubagent,
+  type SessionInit,
+  type SubagentInit,
+  setState,
+} from './domain/session.ts';
+import * as files from './domain/worked-files.ts';
 import { repoOf } from './repo.ts';
 import { hasSkin, newSkinId, SKIN_ID } from './skins.ts';
 import type {
@@ -44,64 +62,21 @@ import type {
 } from './types.ts';
 import { debounce } from './util.ts';
 
-/** What a registry file / hook knows when a session is first seen. */
-export interface SessionInit {
-  pid?: number | null;
-  name?: string;
-  cwd?: string;
-  model?: string | null;
-  startedAt?: number;
-  transcriptPath?: string | null;
-  permissionMode?: string | null;
-  backend?: Backend | null;
-}
-export interface SubagentInit {
-  type?: string | null;
-  model?: string | null;
-  description?: string | null;
-  task?: string | null;
-  toolUseId?: string | null;
-  transcriptPath?: string | null;
-}
-type Listener = (type: string, data: unknown) => void;
+export type { SessionInit, SubagentInit };
+export { DEFAULT_OFFICE_ID };
 
-class RingBuffer implements Log {
-  n: number;
-  buf: LogEntry[];
-  constructor(n: number) {
-    this.n = n;
-    this.buf = [];
-  }
-  push(x: LogEntry) {
-    this.buf.push(x);
-    if (this.buf.length > this.n) this.buf.shift();
-  }
-  toArray() {
-    return this.buf.slice();
-  }
-  last(k: number) {
-    return this.buf.slice(-k);
-  }
-}
+type Listener = (type: string, data: unknown) => void;
 
 // a built-in breed (the list itself lives in web/sprites.js) or an uploaded skin, 'skin:<id>'
 export const BREED_KEY = /^([a-z]{2,24}|skin:[a-z0-9]{10})$/;
-export const DEFAULT_OFFICE_ID = 'default';
-const newOffice = (
-  id: string,
-  name: string,
-  repos: string[],
-  layout: Layout = cloneOffice(DEFAULT_OFFICE),
-): Office => ({ id, name, repos, layout });
-const defaultOffice = () => newOffice(DEFAULT_OFFICE_ID, '사무실', ['default']);
 
-/** Clock out a session or subagent (callers check `ended` first). */
-function markEnded(ent: Entity) {
-  ent.ended = true;
-  ent.endedAt = Date.now();
-  ent.state = 'offduty';
-  ent.stateSince = ent.endedAt;
-  ent.currentTool = null;
+/** A file's mtime, or null when it is gone. */
+function mtimeOf(file: string) {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return null;
+  }
 }
 
 export class Store {
@@ -196,7 +171,7 @@ export class Store {
       offices.push(
         newOffice(
           o.id,
-          String(o.name || '사무실'),
+          String(o.name || DEFAULT_OFFICE_NAME),
           o.repos.filter((r: unknown): r is string => typeof r === 'string'),
           layout,
         ),
@@ -304,13 +279,11 @@ export class Store {
   /** The office a working directory belongs to: its repo's, created (with the default layout) the first time. */
   officeFor(cwd?: string) {
     const repo = repoOf(cwd);
-    let o = this.offices.find((x) => x.repos.includes(repo.key));
+    let o = officeOfRepo(this.offices, repo);
     if (!o) {
-      o = newOffice(
-        `o${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-        repo.name || '사무실',
-        [repo.key],
-      );
+      o = newOffice(newOfficeId(), repo.name || DEFAULT_OFFICE_NAME, [
+        repo.key,
+      ]);
       this.offices.push(o);
       this.commitOffices();
     }
@@ -380,20 +353,13 @@ export class Store {
     for (const s of this.sessions.values())
       if (!s.ended && s.id !== sessionId && s.officeId === officeId)
         used.add(s.desk);
-    const n = deskCount(this.office(officeId)!.layout);
     const remembered = this.desks[sessionId];
-    let desk: number;
-    if (
-      remembered &&
-      (remembered.office ?? DEFAULT_OFFICE_ID) === officeId &&
-      remembered.desk < n &&
-      !used.has(remembered.desk)
-    )
-      desk = remembered.desk; // layouts can shrink
-    else {
-      desk = 0;
-      while (used.has(desk)) desk++;
-    } // past the last desk: standing in the lobby
+    const desk = pickDesk(
+      used,
+      deskCount(this.office(officeId)!.layout),
+      officeId,
+      remembered,
+    );
     this.desks[sessionId] = {
       ...remembered,
       desk,
@@ -423,14 +389,6 @@ export class Store {
     delete this.desks[sessionId];
     this.save();
   }
-  assignSeat(session: Session) {
-    const used = new Set<number>();
-    for (const a of session.subagents.values()) if (!a.ended) used.add(a.seat);
-    let seat = 0;
-    while (used.has(seat)) seat++;
-    return seat; // >= SEATS_PER_DESK overflows to the bullpen on the client
-  }
-
   // ---- sessions ------------------------------------------------------------
   getOrCreateSession(id: string, init: SessionInit = {}): Session {
     let s = this.sessions.get(id);
@@ -446,56 +404,13 @@ export class Store {
         s.permissionMode = init.permissionMode;
       return s;
     }
-    const now = Date.now();
-    s = {
-      id,
-      pid: init.pid ?? null,
-      name: init.name || (init.cwd ? path.basename(init.cwd) : id.slice(0, 8)),
-      nameSource: init.name ? 'registry' : null,
-      title: null,
-      cwd: init.cwd || '',
-      model: init.model || null,
-      state: 'idle',
-      stateSince: now,
-      currentTool: null,
-      lastText: null,
-      lastTextAt: 0,
-      replyText: null, // full markdown of lastText, for the reply dialog
-      lastPrompt: null,
-      lastThinking: null,
-      lastThinkingAt: 0,
-      turnStartedAt: 0,
-      turnTools: 0,
-      cost: null, // { usd, linesAdded, linesRemoved, apiMs } from transcript
-      pendingAgents: [], // Agent tool calls waiting for their SubagentStart
-      bgTasks: [], // background work the idle session waits on, as of its last Stop
-      awaitingShell: false, // registry status 'shell' (covers sessions without our hooks)
-      startedAt: init.startedAt || now,
-      lastEventAt: now,
-      hookEvents: 0,
-      ended: false,
-      endedAt: null,
-      officeId: null,
-      desk: null,
-      permissionMode: init.permissionMode ?? null,
-      backend: init.backend ?? null, // 'headless' when a runner owns it; null: Orca or a terminal we don't control
-      pendingPermissions: [], // headless permission requests parked for the browser (Step 5): [{ id, tool, target, detail, at }]
-      asking: null, // interactive sessions: the dialog their terminal shows (answered there): { tool, target, detail, label, at }
-      transcriptPath: init.transcriptPath || null,
-      orcaTerminal: this.desks[id]?.terminal || null, // Orca terminal handle (hook env or resolved) for sending prompts
-      log: new RingBuffer(LOG_SIZE),
-      files: new Map(), // normalized path -> { path, name, edited, touched, git, t }: files its tools touched (touched) and/or git status lists (git)
-      subagents: new Map(),
-    };
+    s = newSession(id, init, this.desks[id]?.terminal || null);
     this.sessions.set(id, s);
     this.placeSession(s);
     return s;
   }
   revive(s: Session) {
-    s.ended = false;
-    s.endedAt = null;
-    s.state = 'idle';
-    s.stateSince = Date.now();
+    markRevived(s);
     s.desk = this.assignDesk(s.id, s.officeId);
   }
   endSession(s: Session, reason = 'ended') {
@@ -517,31 +432,7 @@ export class Store {
       if (init.type && !a.type) a.type = init.type;
       return a;
     }
-    const now = Date.now();
-    a = {
-      agentId,
-      parentSessionId: s.id,
-      type: init.type || null,
-      model: init.model || null,
-      description: init.description || null,
-      task: init.task || null, // prompt the parent gave this agent (head)
-      toolUseId: init.toolUseId || null,
-      lastThinking: null,
-      lastThinkingAt: 0,
-      toolCount: 0,
-      state: 'thinking',
-      stateSince: now,
-      currentTool: null,
-      lastText: null,
-      lastTextAt: 0,
-      replyText: null, // full markdown of lastText, for the reply dialog
-      startedAt: now,
-      lastEventAt: now,
-      ended: false,
-      endedAt: null,
-      seat: this.assignSeat(s),
-      transcriptPath: init.transcriptPath || null,
-    };
+    a = newSubagent(s, agentId, init, freeSeat(s));
     s.subagents.set(agentId, a);
     return a;
   }
@@ -551,81 +442,20 @@ export class Store {
   }
 
   setState(ent: Entity, state: EntityState) {
-    if (ent.state === state) return;
-    ent.state = state;
-    ent.stateSince = Date.now();
+    setState(ent, state);
   }
 
   log(s: Session, entry: Omit<LogEntry, 't'>) {
     s.log.push({ t: Date.now(), ...entry });
   }
 
-  /** Note a file a tool call touched (relative paths resolve against the session's cwd). The newest MAX_FILES are kept. */
-  touchFile(
-    s: Session,
-    fp: string,
-    { edited = false }: { edited?: boolean } = {},
-  ) {
-    const f = this.fileEntry(s, fp);
-    f.edited ||= edited;
-    f.touched = true;
-    this.bumpFile(s, f, Date.now());
-    return f;
+  /** Note a file a tool call touched (see domain/worked-files.ts). */
+  touchFile(s: Session, fp: string, o: { edited?: boolean } = {}) {
+    return files.touchFile(s, fp, o);
   }
-  fileEntry(s: Session, fp: string): FileEntry {
-    const key = path.normalize(
-      path.isAbsolute(fp) ? fp : path.resolve(s.cwd || '', fp),
-    );
-    return (
-      s.files.get(key) || {
-        path: key,
-        name: path.basename(key),
-        edited: false,
-        touched: false,
-        git: null,
-        t: 0,
-      }
-    );
-  }
-  /** Move a file to the newest end (Map order is touch order) with time `t`, dropping the oldest past MAX_FILES. */
-  bumpFile(s: Session, f: FileEntry, t: number) {
-    f.t = Math.max(f.t, t);
-    s.files.delete(f.path);
-    s.files.set(f.path, f);
-    if (s.files.size > MAX_FILES) s.files.delete(s.files.keys().next().value!);
-  }
-  /**
-   * Fold `git status` of the session's worktree into its files: [{ path, status }] with one letter each
-   * (M, A, D, ?, …). Files git no longer lists lose their mark, or go entirely if no tool of this session touched
-   * them. A file git alone knows is ordered by its mtime. Returns true if anything changed.
-   */
+  /** Fold `git status` into the session's files (see domain/worked-files.ts). Returns true if anything changed. */
   setGitFiles(s: Session, list: { path: string; status: string }[]) {
-    let changed = false;
-    const seen = new Set<string>();
-    for (const { path: fp, status } of list) {
-      const f = this.fileEntry(s, fp);
-      seen.add(f.path);
-      if (f.git === status && s.files.has(f.path)) continue;
-      changed = true;
-      f.git = status;
-      f.edited = true;
-      let t = f.t;
-      if (!t) {
-        try {
-          t = fs.statSync(f.path).mtimeMs;
-        } catch {
-          t = Date.now();
-        }
-      } // deleted: now
-      this.bumpFile(s, f, t);
-    }
-    for (const f of [...s.files.values()]) {
-      if (!f.git || seen.has(f.path)) continue;
-      changed = true;
-      if (f.touched) f.git = null;
-      else s.files.delete(f.path);
-    }
-    return changed;
+    return files.setGitFiles(s, list, mtimeOf);
   }
 
   // ---- gc ------------------------------------------------------------------
