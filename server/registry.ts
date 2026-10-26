@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { safeJsonParse } from '../shared/json.ts';
+import { isRecord, safeJsonParse } from '../shared/json.ts';
 import { isBusyState } from '../shared/model.ts';
 import { isPidAlive } from '../shared/node/process.ts';
 import { SESSIONS_DIR, STALE_TOOL_MS } from './config.ts';
@@ -10,8 +10,40 @@ import type { Store } from './store.ts';
 import { traitsOf } from './traits.ts';
 import type { Session } from './types.ts';
 
-/** One ~/.claude/sessions/<pid>.json: dynamic JSON written by Claude Code. */
-type RegistryEntry = Record<string, any>;
+/** One ~/.claude/sessions/<pid>.json, written by Claude Code: the fields read here. */
+interface RegistryEntry {
+  sessionId: string;
+  pid: number;
+  cwd?: string;
+  name?: string;
+  startedAt?: number;
+  status?: unknown;
+  waitingFor?: unknown;
+  statusUpdatedAt?: unknown;
+}
+/** What syncWaiting reads of an entry. */
+export type RegistryStatus = Pick<
+  RegistryEntry,
+  'status' | 'waitingFor' | 'statusUpdatedAt'
+>;
+
+const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
+
+/** A parsed registry file as an entry, or null when it names no session or pid. */
+function toEntry(d: unknown): RegistryEntry | null {
+  if (!isRecord(d) || !d.sessionId || typeof d.pid !== 'number' || !d.pid)
+    return null;
+  return {
+    sessionId: String(d.sessionId),
+    pid: d.pid,
+    cwd: str(d.cwd),
+    name: str(d.name),
+    startedAt: typeof d.startedAt === 'number' ? d.startedAt : undefined,
+    status: d.status,
+    waitingFor: d.waitingFor,
+    statusUpdatedAt: d.statusUpdatedAt,
+  };
+}
 
 /**
  * Claude Code writes status 'waiting' (+ waitingFor) to its registry file while a dialog is up, 'busy' / 'idle' otherwise.
@@ -22,7 +54,7 @@ type RegistryEntry = Record<string, any>;
 export function syncWaiting(
   store: Store,
   s: Session,
-  d: RegistryEntry,
+  d: RegistryStatus,
   now = Date.now(),
 ) {
   if (!traitsOf(s).terminalDialogs || s.ended) return false;
@@ -63,10 +95,10 @@ function readLiveEntries(): Map<string, RegistryEntry> | null {
   const live = new Map<string, RegistryEntry>();
   for (const f of files) {
     if (!f.endsWith('.json')) continue;
-    const d = safeJsonParse(readSafe(path.join(SESSIONS_DIR, f)));
-    if (!d || !d.sessionId || !d.pid) continue;
+    const d = toEntry(safeJsonParse(readSafe(path.join(SESSIONS_DIR, f))));
+    if (!d) continue;
     if (!isPidAlive(d.pid)) continue;
-    live.set(String(d.sessionId), d);
+    live.set(d.sessionId, d);
   }
   return live;
 }

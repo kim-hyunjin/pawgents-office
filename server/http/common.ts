@@ -1,6 +1,6 @@
 // Request plumbing shared by the routes: bodies, JSON replies, the same-origin guard.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { safeJsonParse } from '../../shared/json.ts';
+import { isRecord, safeJsonParse } from '../../shared/json.ts';
 import { AppError, type Refusal } from '../app/errors.ts';
 import type { ParkedPermission } from '../app/ports.ts';
 import { MAX_BODY_BYTES, PERMISSION_HEARTBEAT_MS, PORT } from '../config.ts';
@@ -104,7 +104,7 @@ function isOwnPage(req: IncomingMessage) {
 export async function readJson(
   req: IncomingMessage,
   res: ServerResponse,
-): Promise<Record<string, any> | null> {
+): Promise<Record<string, unknown> | null> {
   // the body is dynamic JSON from our page
   if (!isOwnPage(req)) {
     json(res, 403, { error: 'forbidden' });
@@ -118,7 +118,7 @@ export async function readJson(
     return null;
   }
   const data = safeJsonParse(body);
-  if (!data || typeof data !== 'object') {
+  if (!isRecord(data)) {
     json(res, 400, { error: 'bad json' });
     return null;
   }

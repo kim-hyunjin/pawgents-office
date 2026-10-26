@@ -1,6 +1,7 @@
 // Wire formats for the headless backend, shared by the runner, the server and tests (pure: no I/O, no state).
 // Server <-> runner speak NDJSON over a local socket; runner <-> claude speak claude's stream-json.
 import path from 'node:path';
+import { isRecord } from '../../shared/json.ts';
 import { MODEL_RE, PERMISSION_MODES } from '../../shared/permission.ts';
 import { MAX_PROMPT_CHARS, RUN_DIR } from '../config.ts';
 import { isWindows } from '../infra/platform.ts';
@@ -56,6 +57,9 @@ export interface RunInfo {
   pipe: string;
   version: string | null;
 }
+/** A parsed run file that names session `sid` (our own runner wrote it, so the rest of its shape follows). */
+export const isRunInfoOf = (x: unknown, sid: string): x is RunInfo =>
+  isRecord(x) && x.sid === sid;
 export type HelloMsg = { type: 'hello' } & Omit<RunInfo, 'pipe' | 'version'> & {
     alive: boolean;
     exited: Exited | null;

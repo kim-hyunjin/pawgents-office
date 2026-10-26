@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { safeJsonParse } from '../shared/json.ts';
+import { field, isRecord, safeJsonParse } from '../shared/json.ts';
 import { cleanText, oneLine } from '../shared/text.ts';
 import { TRANSCRIPT_TAIL_BYTES } from './config.ts';
 import { replyText } from './domain/text.ts';
@@ -12,6 +12,9 @@ import type { Entity, Session, Subagent } from './types.ts';
  * title, model, last assistant text and subagent descriptions.
  * Never changes an entity's state — hooks own that.
  */
+/** A count from a transcript line: the number, or 0 when it is missing (or not a number). */
+const count = (v: unknown) => (typeof v === 'number' && v) || 0;
+
 export class Tailer {
   store: Store;
   files: Map<string, { offset: number; rem: string }>;
@@ -50,21 +53,22 @@ export class Tailer {
   }
 
   readMeta(file: string, a: Subagent) {
-    const meta = safeJsonParse(
+    const parsed = safeJsonParse(
       readSafe(file.replace(/\.jsonl$/, '.meta.json')),
     );
-    if (!meta) return false;
+    if (!parsed) return false;
     a.metaRead = true;
+    const meta = isRecord(parsed) ? parsed : {};
     let changed = false;
     if (meta.description && !a.description) {
       a.description = oneLine(meta.description);
       changed = true;
     }
-    if (meta.agentType && !a.type) {
+    if (typeof meta.agentType === 'string' && meta.agentType && !a.type) {
       a.type = meta.agentType;
       changed = true;
     }
-    if (meta.model && !a.model) {
+    if (typeof meta.model === 'string' && meta.model && !a.model) {
       a.model = meta.model;
       changed = true;
     }
@@ -114,17 +118,17 @@ export class Tailer {
   /** Session-wide lines of the main transcript (title, name, cost). null: not one of them. */
   applyMainMeta(line: string, s: Session): boolean | null {
     if (line.includes('"type":"ai-title"')) {
-      const o = safeJsonParse(line);
-      if (o?.aiTitle && s.title !== o.aiTitle) {
-        s.title = oneLine(o.aiTitle);
+      const aiTitle = field(safeJsonParse(line), 'aiTitle');
+      if (aiTitle && s.title !== aiTitle) {
+        s.title = oneLine(aiTitle);
         return true;
       }
       return false;
     }
     if (line.includes('"type":"agent-name"')) {
-      const o = safeJsonParse(line);
-      if (o?.agentName && s.name !== o.agentName) {
-        s.name = oneLine(o.agentName);
+      const agentName = field(safeJsonParse(line), 'agentName');
+      if (agentName && s.name !== agentName) {
+        s.name = oneLine(agentName);
         s.nameSource = 'transcript';
         return true;
       }
@@ -132,12 +136,12 @@ export class Tailer {
     }
     if (line.includes('"type":"cost-state"')) {
       const o = safeJsonParse(line);
-      if (!o) return false;
+      if (!isRecord(o)) return false;
       s.cost = {
         usd: Number(o.totalCostUSD) || 0,
-        linesAdded: o.totalLinesAdded || 0,
-        linesRemoved: o.totalLinesRemoved || 0,
-        apiMs: o.totalAPIDuration || 0,
+        linesAdded: count(o.totalLinesAdded),
+        linesRemoved: count(o.totalLinesRemoved),
+        apiMs: count(o.totalAPIDuration),
       };
       return true;
     }
@@ -148,22 +152,24 @@ export class Tailer {
   applyAssistant(line: string, ent: Entity, isMain: boolean) {
     if (!line.includes('"type":"assistant"')) return false;
     const o = safeJsonParse(line);
-    if (!o || o.type !== 'assistant') return false;
+    if (!isRecord(o) || o.type !== 'assistant') return false;
     if (isMain && o.isSidechain) return false;
-    const m = o.message;
+    const m = isRecord(o.message) ? o.message : null;
     let changed = false;
-    if (m?.model && ent.model !== m.model) {
+    if (typeof m?.model === 'string' && m.model && ent.model !== m.model) {
       ent.model = m.model;
       changed = true;
     }
-    const blocks = Array.isArray(m?.content) ? m.content : [];
+    const blocks: unknown[] = Array.isArray(m?.content) ? m.content : [];
+    const stamp = String(o.timestamp);
     for (const b of blocks) {
+      if (!isRecord(b)) continue;
       if (
-        b?.type === 'thinking' &&
+        b.type === 'thinking' &&
         typeof b.thinking === 'string' &&
         b.thinking.trim()
       ) {
-        const at = Date.parse(o.timestamp) || Date.now();
+        const at = Date.parse(stamp) || Date.now();
         if (at >= ent.lastThinkingAt) {
           ent.lastThinking = cleanText(b.thinking, 300);
           ent.lastThinkingAt = at;
@@ -171,10 +177,11 @@ export class Tailer {
         }
         continue;
       }
-      if (b?.type !== 'text' || !b.text || !b.text.trim()) continue;
+      if (b.type !== 'text' || typeof b.text !== 'string' || !b.text.trim())
+        continue;
       const text = cleanText(b.text, 280);
       if (!text) continue;
-      const at = Date.parse(o.timestamp) || Date.now();
+      const at = Date.parse(stamp) || Date.now();
       if (at >= ent.lastTextAt) {
         ent.lastText = text;
         ent.lastTextAt = at;

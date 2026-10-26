@@ -12,7 +12,7 @@ import {
 } from '../shared/decision.ts';
 import { errMessage } from '../shared/errors.ts';
 import type { DecisionReply, HookEvent } from '../shared/hook.ts';
-import { safeJsonParse } from '../shared/json.ts';
+import { field, safeJsonParse } from '../shared/json.ts';
 import { MAX_REPLY_CHARS } from '../shared/limits.ts';
 import { autostartEnabled, ensureServer } from '../shared/node/ensure.ts';
 import { DATA_DIR } from '../shared/node/env.ts';
@@ -115,16 +115,18 @@ async function awaitDecision(ev: HookEvent) {
     const r = await postHook(ev, {
       timeoutMs: DECISION_TIMEOUT_S * 1000 - 10_000, // give up before claude kills us
     });
-    const d: DecisionReply | null = safeJsonParse((await r.text()).trim()); // the body is padded with heartbeat spaces
-    if (d?.decision === 'allow' || d?.decision === 'deny') {
+    const d = safeJsonParse((await r.text()).trim()); // the body is padded with heartbeat spaces (a DecisionReply)
+    const decision = field(d, 'decision'),
+      message = field(d, 'message');
+    if (decision === 'allow' || decision === 'deny') {
       const out = JSON.stringify(
         decisionOutput(
-          d.decision === 'allow',
-          typeof d.message === 'string' && d.message ? d.message : undefined,
+          decision === 'allow',
+          typeof message === 'string' && message ? message : undefined,
         ),
       );
       await new Promise((resolve) => process.stdout.write(out, resolve)); // flushed before process.exit (pipes are async on macOS)
-      log(`decide: ${d.decision} ${ev.tool_name || ''}`);
+      log(`decide: ${decision} ${ev.tool_name || ''}`);
     } else log(`decide: none ${ev.tool_name || ''}`);
   } catch (e) {
     log(`decide: none (${errMessage(e)})`);

@@ -1,5 +1,5 @@
 /** JSON.parse that answers null for text that isn't JSON. */
-export function safeJsonParse(text: string): any {
+export function safeJsonParse(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {

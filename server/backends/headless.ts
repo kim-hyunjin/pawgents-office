@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { DECIDE_FLAG, headlessSettings } from '../../shared/decision.ts';
 import { codedError, errCode, errMessage } from '../../shared/errors.ts';
 import type { DecisionReply } from '../../shared/hook.ts';
-import { safeJsonParse } from '../../shared/json.ts';
+import { field, safeJsonParse } from '../../shared/json.ts';
 import { SEND_SCRIPT } from '../../shared/node/paths.ts';
 import { isPidAlive } from '../../shared/node/process.ts';
 import { oneLine, truncate } from '../../shared/text.ts';
@@ -54,6 +54,7 @@ import type {
 import {
   encode,
   feed,
+  isRunInfoOf,
   newFeed,
   parseRunnerArgv,
   pipePath,
@@ -239,7 +240,7 @@ export function defaultModel(
     path.join(claudeDir, 'settings.json'),
   ];
   for (const f of files) {
-    const m = safeJsonParse(readSafe(f))?.model;
+    const m = field(safeJsonParse(readSafe(f)), 'model');
     if (typeof m === 'string' && m.trim()) return m.trim();
   }
   return null;
@@ -352,8 +353,8 @@ function endReason(r: Runner, m: ExitMsg) {
 async function waitRunFile(sid: string): Promise<RunInfo | null> {
   const end = Date.now() + HEADLESS_LAUNCH_WAIT_MS;
   while (Date.now() < end) {
-    const info: RunInfo | null = safeJsonParse(readSafe(runFile(sid))); // ENOENT / partial read -> null, keep polling
-    if (info?.sid === sid) return info;
+    const info = safeJsonParse(readSafe(runFile(sid))); // ENOENT / partial read -> null, keep polling
+    if (isRunInfoOf(info, sid)) return info;
     await sleep(RUN_FILE_POLL_MS);
   }
   return null;
@@ -713,8 +714,8 @@ export function createHeadlessBackend({
     const results = await Promise.all(
       files.map(async (f): Promise<number> => {
         const sid = f.slice(0, -5),
-          info: RunInfo | null = safeJsonParse(readSafe(path.join(RUN_DIR, f)));
-        if (!info || info.sid !== sid || !Number.isInteger(info.pid)) return 0; // half-written or foreign: leave it
+          info = safeJsonParse(readSafe(path.join(RUN_DIR, f)));
+        if (!isRunInfoOf(info, sid) || !Number.isInteger(info.pid)) return 0; // half-written or foreign: leave it
         if (!isPidAlive(info.pid)) {
           forgetRunFile(sid);
           return 0;
