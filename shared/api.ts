@@ -171,9 +171,12 @@ export type ServerEventType = keyof ServerEvents;
 
 // ---- JSON replies ----------------------------------------------------------
 
+/** One backend's probe: why not when unavailable; headless also names the claude it found. */
 export interface ProbeInfo {
   available: boolean;
   reason?: string;
+  version?: string;
+  bin?: string;
 }
 /** GET /backends */
 export interface BackendsReply {

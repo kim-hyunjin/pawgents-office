@@ -10,7 +10,7 @@ import type { Session } from '../types.ts';
 
 export type { BackendId };
 
-/** Can this backend run sessions here? A reason when not; headless also names the claude it found. */
+/** Can this backend run sessions here? Sent as is in GET /backends (shared/api.ts ProbeInfo). */
 export type ProbeResult =
   | { available: true; version?: string; bin?: string }
   | { available: false; reason: string };

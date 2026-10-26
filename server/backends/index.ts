@@ -1,6 +1,6 @@
 // Picks how sessions are run: Orca CLI (claude in an Orca terminal) or headless `claude -p` behind a per-session runner.
 
-import type { BackendsReply } from '../../shared/api.ts';
+import type { BackendsReply, ProbeInfo } from '../../shared/api.ts';
 import { errMessage } from '../../shared/errors.ts';
 import type { Backend, BackendId } from '../app/ports.ts';
 import { BACKEND, type BackendChoice } from '../config.ts';
@@ -56,11 +56,14 @@ export function createBackendRegistry(
       // a forced backend wins only while it works; otherwise fall back like auto
       const def =
         forced && ok(forced) ? forced : (all.find((b) => ok(b.id))?.id ?? null);
+      const byProbe = Object.fromEntries(
+        all.map((b, i) => [b.id, probes[i]]),
+      ) as Record<BackendId, ProbeInfo>;
       return {
-        ...Object.fromEntries(all.map((b, i) => [b.id, probes[i]])),
+        ...byProbe,
         default: def,
         forced: forced !== null,
-      } as BackendsReply;
+      } satisfies BackendsReply;
     },
     async restore() {
       let n = 0;
