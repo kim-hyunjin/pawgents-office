@@ -6,7 +6,7 @@ import type {
   Reception,
   Rect,
 } from '../shared/layout.ts';
-import { TILE, WALL_RISE } from '../shared/layout.ts';
+import { ITEM_KINDS, TILE, WALL_RISE } from '../shared/layout.ts';
 import {
   animFor,
   backAnim,
@@ -550,7 +550,11 @@ function drawSign(ctx: CanvasRenderingContext2D, S: number, geo: Geo) {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#2a2d45';
   for (const s of geo.signs)
-    ctx.fillText('PAWGENTS OFFICE', (s.x * TILE + (5 * TILE) / 2) * S, -3 * S);
+    ctx.fillText(
+      'PAWGENTS OFFICE',
+      (s.x * TILE + (ITEM_KINDS.sign.w * TILE) / 2) * S,
+      -3 * S,
+    );
   ctx.textAlign = 'left';
 }
 

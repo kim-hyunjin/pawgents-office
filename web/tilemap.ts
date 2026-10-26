@@ -2,7 +2,7 @@
 // the receptionist, yarn, wheel) are drawn every frame by render.ts; the drawing helpers it needs are exported.
 
 import type { Door, Geo, Pt, Rect, Wall } from '../shared/layout.ts';
-import { TILE, WALL_RISE } from '../shared/layout.ts';
+import { ITEM_KINDS, itemRect, TILE, WALL_RISE } from '../shared/layout.ts';
 
 /** A canvas context: the cached background is an OffscreenCanvas, props are drawn on the visible one. */
 export type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -109,7 +109,7 @@ function buildBackground(geo: Geo) {
       for (let x = z.x; x < z.x + z.w; x++) tile(x, y, a, b);
   };
   for (const r of geo.rooms) if (FLOOR[r.type]) fill(r, ...FLOOR[r.type]);
-  for (const r of geo.rugs) fill({ x: r.x, y: r.y, w: 5, h: 5 }, C.rug, C.rug2);
+  for (const r of geo.rugs) fill(itemRect(r), C.rug, C.rug2);
   // walls, Stardew-style 3/4 view: the top wall shows its face (cap, wallpaper, wainscot, baseboard) and casts
   // a shadow onto the floor; side and bottom walls face away, so only their dark caps are visible.
   const top = -WALL_RISE;
@@ -137,7 +137,7 @@ function buildBackground(geo: Geo) {
   g.fillRect(TILE, H - TILE, W - 2 * TILE, 1);
   // windows (2-tile panes) and the sign board on the top wall
   for (const wn of geo.windows)
-    for (let x = wn.x; x < wn.x + 6; x += 2) {
+    for (let x = wn.x; x < wn.x + ITEM_KINDS.window.w; x += 2) {
       g.fillStyle = C.glassFrame;
       g.fillRect(x * TILE + 1, -10, 30, 14);
       g.fillStyle = '#9ad1f5';
@@ -153,11 +153,12 @@ function buildBackground(geo: Geo) {
       g.fillStyle = C.trim;
       g.fillRect(x * TILE, 4, 32, 1);
     }
+  const signW = ITEM_KINDS.sign.w * TILE;
   for (const s of geo.signs) {
     g.fillStyle = C.boardFrame;
-    g.fillRect(s.x * TILE, -9, 5 * TILE, 12);
+    g.fillRect(s.x * TILE, -9, signW, 12);
     g.fillStyle = C.board;
-    g.fillRect(s.x * TILE + 1, -8, 5 * TILE - 2, 10);
+    g.fillRect(s.x * TILE + 1, -8, signW - 2, 10);
   }
   // partitions: north–south tiles first, so east–west faces cover the junctions
   for (const t of geo.wallTiles) if (t.v) drawWallV(g, t, geo.doorAt(t.x, t.y));

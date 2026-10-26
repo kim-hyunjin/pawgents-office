@@ -1,6 +1,7 @@
 // validate(): what would break an office, checked in the editor as you go and by the server before saving.
 import { MAX_NAME_CHARS } from '../limits.ts';
 import { compile } from './compile.ts';
+import { bfs } from './grid.ts';
 import type { Layout, Pt, Rect, WallError } from './schema.ts';
 import {
   DOOR_SIDES,
@@ -210,41 +211,17 @@ export function validate(office: Layout | null | undefined): WallError[] {
   if (errs.length) return errs;
 
   // everyone must be able to walk from the front door to every seat and spot
-  const seen = new Uint8Array(w * h);
-  const q = [[geo.spawn.x, geo.spawn.y]];
-  seen[geo.spawn.y * w + geo.spawn.x] = 1;
-  while (q.length) {
-    const [x, y] = q.pop()!;
-    for (const [dx, dy] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ]) {
-      const nx = x + dx,
-        ny = y + dy;
-      if (
-        nx < 0 ||
-        ny < 0 ||
-        nx >= w ||
-        ny >= h ||
-        seen[ny * w + nx] ||
-        geo.isBlocked(nx, ny)
-      )
-        continue;
-      seen[ny * w + nx] = 1;
-      q.push([nx, ny]);
-    }
-  }
+  const prev = bfs(w, h, geo.spawn, (x, y) => !geo.isBlocked(x, y));
+  const seen = (i: number) => prev[i] !== undefined && prev[i] !== -1; // off the grid: never
   const reach = (p: Pt) =>
     !geo.isBlocked(p.x, p.y)
-      ? seen[p.y * w + p.x]
+      ? seen(p.y * w + p.x)
       : [
           [1, 0],
           [-1, 0],
           [0, 1],
           [0, -1],
-        ].some(([dx, dy]) => seen[(p.y + dy) * w + p.x + dx]);
+        ].some(([dx, dy]) => seen((p.y + dy) * w + p.x + dx));
   const cut = (label: string, spots: Pt[]) => {
     const bad = spots.filter((p) => !reach(p));
     if (bad.length) err(`정문에서 갈 수 없는 ${label}이(가) 있습니다.`, bad);

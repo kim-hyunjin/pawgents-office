@@ -1,13 +1,17 @@
-// compile(): a layout → the geometry the office runs on: walls, doors, walkability, desks, meeting rooms and every spot
-// a cat can go.
+// compile(): a layout → the geometry the office runs on, in passes: walls and doors, walkability, desks, meeting
+// tables, reception counters, the rest of the furniture, then every spot a cat can go.
+import type { Grid } from './grid.ts';
+import { bfs, makeGrid } from './grid.ts';
 import type {
   Desk,
   Door,
+  Item,
   Layout,
   Meeting,
   Placed,
   Pt,
   Reception,
+  Room,
   Spot,
   Wall,
 } from './schema.ts';
@@ -17,37 +21,26 @@ import {
   ITEM_KINDS,
   inRect,
   isGlass,
+  itemRect,
   ringRect,
   TILE,
   WALL_RISE,
 } from './schema.ts';
 
-/** Office data → runtime geometry. Assumes a validated office, but tolerates junk (clips to the map, drops unknown kinds). */
-export function compile(office: Layout) {
-  const MAP_W = office.w,
-    MAP_H = office.h;
-  const W = MAP_W * TILE,
-    H = MAP_H * TILE;
-  const { door, spawn } = doorTiles({
-    ...office,
-    door: { x: 3, ...office.door },
-  });
-  const rooms = office.rooms || [];
-  const items = (office.items || []).filter((it) => ITEM_KINDS[it.kind]);
-  const byKind = (k: string) => items.filter((it) => it.kind === k);
-  const inMap = (x: number, y: number) =>
-    x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
+type ByKind = (kind: string) => Item[];
+
+/**
+ * Walls: every non-border ring tile of a walled room that isn't inside a room. 'v' tiles sit on a ring's side columns
+ * (only their top shows), 'h' tiles on its top/bottom rows (they show a face); corners are both.
+ */
+function wallPass(rooms: Room[], grid: Grid) {
+  const { w: MAP_W, h: MAP_H, inMap } = grid;
   const border = (x: number, y: number) =>
     x === 0 || y === 0 || x === MAP_W - 1 || y === MAP_H - 1;
-
-  // walls: every non-border ring tile of a walled room that isn't inside a room. 'v' tiles sit on a ring's side
-  // columns (only their top shows), 'h' tiles on its top/bottom rows (they show a face); corners are both.
   const doors: Required<Door>[] = [];
   for (const r of rooms)
     for (const d of r.doors || [])
       doors.push({ x: d.x, y: d.y, open: !!d.open });
-  const doorAt = (x: number, y: number) =>
-    doors.find((d) => d.x === x && d.y === y);
   const walls = new Map<number, Wall>();
   for (const r of rooms) {
     if (!hasWalls(r)) continue;
@@ -67,60 +60,69 @@ export function compile(office: Layout) {
   for (const [k, t] of walls)
     if (rooms.some((r) => inRect(r, t.x, t.y))) walls.delete(k);
   const wallTiles = [...walls.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+  return { doors, wallTiles };
+}
 
-  // walkability
-  const blocked = new Uint8Array(MAP_W * MAP_H);
-  const block = (x: number, y: number, w = 1, h = 1) => {
-    for (let j = y; j < y + h; j++)
-      for (let i = x; i < x + w; i++)
-        if (inMap(i, j)) blocked[j * MAP_W + i] = 1;
-  };
-  block(0, 0, MAP_W, 1);
-  block(0, MAP_H - 1, MAP_W, 1);
-  block(0, 0, 1, MAP_H);
-  block(MAP_W - 1, 0, 1, MAP_H);
-  for (const t of wallTiles) block(t.x, t.y);
-  for (const d of doors) if (inMap(d.x, d.y)) blocked[d.y * MAP_W + d.x] = 0;
+/** Walkability: the outer wall and the partitions block, doorways don't. Furniture passes block their own tiles. */
+function walkPass(grid: Grid, wallTiles: Wall[], doors: Door[]) {
+  const { w, h } = grid;
+  grid.block(0, 0, w, 1);
+  grid.block(0, h - 1, w, 1);
+  grid.block(0, 0, 1, h);
+  grid.block(w - 1, 0, 1, h);
+  for (const t of wallTiles) grid.block(t.x, t.y);
+  for (const d of doors) grid.unblock(d.x, d.y);
+}
 
-  // desks: each pod is [chair][desk][desk][chair], the two cats facing each other in profile; the aisle beside a chair
-  // holds the assistants when every meeting room is taken.
+/**
+ * Desks: each pod is [chair][desk][desk][chair], the two cats facing each other in profile; the aisle beside a chair
+ * holds the assistants when every meeting room is taken.
+ */
+function deskPass(pods: Item[], grid: Grid) {
+  const { w, h } = ITEM_KINDS.deskPod;
   const desks: Desk[] = [];
-  for (const p of byKind('deskPod')) {
+  for (const p of pods) {
     desks.push({
       item: p.id,
       y: p.y,
-      desk: { x: p.x + 1, y: p.y, w: 1, h: 2 },
+      desk: { x: p.x + 1, y: p.y, w: 1, h },
       chair: { x: p.x, y: p.y, face: 'right' },
       aisle: p.x - 1,
     });
     desks.push({
       item: p.id,
       y: p.y,
-      desk: { x: p.x + 2, y: p.y, w: 1, h: 2 },
-      chair: { x: p.x + 3, y: p.y, face: 'left' },
-      aisle: p.x + 4,
+      desk: { x: p.x + w - 2, y: p.y, w: 1, h },
+      chair: { x: p.x + w - 1, y: p.y, face: 'left' },
+      aisle: p.x + w,
       right: true,
     });
-    block(p.x + 1, p.y, 2, 2);
+    grid.block(p.x + 1, p.y, w - 2, h);
   }
+  return desks;
+}
 
-  // meeting tables: a 4×2 table inside a 6×4 footprint, four seats above, four below (backs to the viewer), two on
-  // the right, head + one on the left. Named after the room they stand in.
-  const meetings: Meeting[] = byKind('meetingTable').map((t) => {
-    const tx = t.x + 1,
-      ty = t.y + 1;
+/**
+ * Meeting tables: the table fills the footprint less a one-tile ring of seats — four above, four below (backs to the
+ * viewer), two on the right, head + one on the left. Named after the room they stand in.
+ */
+function meetingPass(tables: Item[], rooms: Room[], grid: Grid): Meeting[] {
+  return tables.map((t) => {
+    const area0 = itemRect(t),
+      table = { x: t.x + 1, y: t.y + 1, w: area0.w - 2, h: area0.h - 2 };
+    const { x: tx, y: ty } = table;
     const room = rooms.find((r) => inRect(r, tx, ty));
     const seats: Meeting['seats'] = [];
-    for (let i = 0; i < 4; i++) seats.push({ x: tx + i, y: ty - 1 });
-    for (let i = 0; i < 4; i++)
-      seats.push({ x: tx + i, y: ty + 2, back: true });
+    for (let i = 0; i < table.w; i++) seats.push({ x: tx + i, y: ty - 1 });
+    for (let i = 0; i < table.w; i++)
+      seats.push({ x: tx + i, y: ty + table.h, back: true });
     seats.push(
-      { x: tx + 4, y: ty },
-      { x: tx + 4, y: ty + 1 },
+      { x: tx + table.w, y: ty },
+      { x: tx + table.w, y: ty + 1 },
       { x: tx - 1, y: ty + 1 },
     );
-    block(tx, ty, 4, 2);
-    const area = room || { x: t.x, y: t.y, w: 6, h: 4 };
+    grid.block(tx, ty, table.w, table.h);
+    const area = room || area0;
     return {
       item: t.id,
       name: room?.name || '회의 테이블',
@@ -128,49 +130,68 @@ export function compile(office: Layout) {
       y: area.y,
       w: area.w,
       h: area.h,
-      table: { x: tx, y: ty, w: 4, h: 2 },
+      table,
       head: { x: tx - 1, y: ty },
       seats,
     };
   });
+}
 
-  const receptions: Reception[] = byKind('reception').map((r) => ({
+/** Reception: a counter along the footprint's bottom row, the receptionist's tile in the middle above it. */
+function receptionPass(items: Item[], grid: Grid) {
+  const receptions: Reception[] = items.map((r) => ({
     item: r.id,
-    counter: { x: r.x, y: r.y + 1, w: 3 },
+    counter: { x: r.x, y: r.y + 1, w: ITEM_KINDS.reception.w },
     cat: { x: r.x + 1, y: r.y },
   }));
   for (const r of receptions) {
-    block(r.counter.x, r.counter.y, r.counter.w, 1);
-    block(r.cat.x, r.cat.y);
+    grid.block(r.counter.x, r.counter.y, r.counter.w, 1);
+    grid.block(r.cat.x, r.cat.y);
   }
-  const sofas: Placed[] = byKind('sofa').map((s) => ({
-    item: s.id,
-    x: s.x,
-    y: s.y,
-    w: 3,
-  }));
-  const coffees = byKind('coffee');
-  const whiteboards: Placed[] = byKind('whiteboard').map((b) => ({
-    item: b.id,
-    x: b.x,
-    y: b.y,
-    w: 3,
-  }));
-  const bookshelves: Placed[] = byKind('bookshelf').map((b) => ({
-    item: b.id,
-    x: b.x,
-    y: b.y,
-    w: 6,
-  }));
-  for (const c of coffees) block(c.x, c.y);
-  for (const b of [...whiteboards, ...bookshelves]) block(b.x, b.y, b.w, 1);
-  for (const k of ['catTree', 'scratchPost', 'box', 'plant'])
-    for (const it of byKind(k)) block(it.x, it.y);
-  for (const it of byKind('wheel')) block(it.x, it.y, 2, 1);
+  return receptions;
+}
 
-  const isBlocked = (x: number, y: number) =>
-    !inMap(x, y) || blocked[y * MAP_W + x] === 1;
-  // spots on walkable floor only (`on`: the cat sits on the item itself, which blocks walking through)
+// furniture that blocks its whole footprint (sofas don't: cats sit on them)
+const SOLID = [
+  'coffee',
+  'whiteboard',
+  'bookshelf',
+  'catTree',
+  'scratchPost',
+  'box',
+  'plant',
+  'wheel',
+];
+/** The rest of the furniture: placed pieces the background and the spots need, each blocking its footprint. */
+function furniturePass(byKind: ByKind, grid: Grid) {
+  const placed = (k: string): Placed[] =>
+    byKind(k).map((it) => ({
+      item: it.id,
+      x: it.x,
+      y: it.y,
+      w: itemRect(it).w,
+    }));
+  const sofas = placed('sofa');
+  const whiteboards = placed('whiteboard');
+  const bookshelves = placed('bookshelf');
+  for (const k of SOLID)
+    for (const it of byKind(k)) {
+      const r = itemRect(it);
+      grid.block(r.x, r.y, r.w, r.h);
+    }
+  return { sofas, coffees: byKind('coffee'), whiteboards, bookshelves };
+}
+
+/** Where cats go besides desks and meeting rooms, on walkable floor only (`on`: the cat sits on the item itself). */
+function spotPass(
+  rooms: Room[],
+  byKind: ByKind,
+  grid: Grid,
+  f: ReturnType<typeof furniturePass>,
+  receptions: Reception[],
+  spawn: Pt,
+) {
+  const { inMap, isBlocked } = grid;
   const keep = (spots: Spot[]) =>
     spots.filter((p) => inMap(p.x, p.y) && (p.on || !isBlocked(p.x, p.y)));
 
@@ -202,17 +223,17 @@ export function compile(office: Layout) {
       });
   }
   const lounge: Spot[] = [];
-  for (const s of sofas)
+  for (const s of f.sofas)
     for (let i = 0; i < s.w; i++)
       lounge.push({ x: s.x + i, y: s.y, sofa: true });
-  for (const c of coffees)
+  for (const c of f.coffees)
     lounge.push({ x: c.x - 1, y: c.y }, { x: c.x - 1, y: c.y + 1 });
   const plan: Spot[] = [];
-  for (const b of whiteboards)
+  for (const b of f.whiteboards)
     for (let x = b.x - 1; x <= b.x + b.w; x++)
       plan.push({ x, y: b.y + 1, of: b.item }); // in front of the board
   const library: Spot[] = [];
-  for (const b of bookshelves)
+  for (const b of f.bookshelves)
     for (let x = b.x; x < b.x + b.w - 1; x++) library.push({ x, y: b.y - 1 }); // in front of the shelf
 
   // overflow standing room: the lobby's open floor below the reception counter, above its bottom row
@@ -226,6 +247,41 @@ export function compile(office: Layout) {
         if (!isBlocked(x, y)) bullpen.push({ x, y });
   }
   if (!bullpen.length) bullpen.push({ ...spawn });
+  return {
+    lobby: lobbies[0] || null,
+    playSpots: keep(play),
+    loungeSpots: keep(lounge),
+    planSpots: keep(plan),
+    librarySpots: keep(library),
+    bullpenSpots: bullpen,
+  };
+}
+
+/** Office data → runtime geometry. Assumes a validated office, but tolerates junk (clips to the map, drops unknown kinds). */
+export function compile(office: Layout) {
+  const MAP_W = office.w,
+    MAP_H = office.h;
+  const W = MAP_W * TILE,
+    H = MAP_H * TILE;
+  const { door, spawn } = doorTiles({
+    ...office,
+    door: { x: 3, ...office.door },
+  });
+  const rooms = office.rooms || [];
+  const items = (office.items || []).filter((it) => ITEM_KINDS[it.kind]);
+  const byKind = (k: string) => items.filter((it) => it.kind === k);
+  const grid = makeGrid(MAP_W, MAP_H);
+
+  const { doors, wallTiles } = wallPass(rooms, grid);
+  const doorAt = (x: number, y: number) =>
+    doors.find((d) => d.x === x && d.y === y);
+  walkPass(grid, wallTiles, doors);
+  const desks = deskPass(byKind('deskPod'), grid);
+  const meetings = meetingPass(byKind('meetingTable'), rooms, grid);
+  const receptions = receptionPass(byKind('reception'), grid);
+  const furniture = furniturePass(byKind, grid);
+  const spots = spotPass(rooms, byKind, grid, furniture, receptions, spawn);
+  const { isBlocked } = grid;
 
   const geo = {
     office,
@@ -245,10 +301,10 @@ export function compile(office: Layout) {
     desks,
     meetings,
     receptions,
-    sofas,
-    coffees,
-    whiteboards,
-    bookshelves,
+    sofas: furniture.sofas,
+    coffees: furniture.coffees,
+    whiteboards: furniture.whiteboards,
+    bookshelves: furniture.bookshelves,
     rugs: byKind('rug'),
     plants: byKind('plant'),
     windows: byKind('window'),
@@ -259,12 +315,12 @@ export function compile(office: Layout) {
     catTrees: byKind('catTree'),
     scratchPosts: byKind('scratchPost'),
     cushions: byKind('cushion'),
-    lobby: lobbies[0] || null,
-    playSpots: keep(play),
-    loungeSpots: keep(lounge),
-    planSpots: keep(plan),
-    librarySpots: keep(library),
-    bullpenSpots: bullpen,
+    lobby: spots.lobby,
+    playSpots: spots.playSpots,
+    loungeSpots: spots.loungeSpots,
+    planSpots: spots.planSpots,
+    librarySpots: spots.librarySpots,
+    bullpenSpots: spots.bullpenSpots,
     isBlocked,
     isDoor: (x: number, y: number) => !!doorAt(x, y),
     doorAt,
@@ -280,41 +336,17 @@ export function compile(office: Layout) {
     /** BFS shortest path on the tile grid. Returns tiles after `from` ending at `to`, [] if equal, null if unreachable. */
     findPath(from: Pt, to: Pt): Pt[] | null {
       if (from.x === to.x && from.y === to.y) return [];
+      // the destination may be a blocked tile (a seat on furniture): step onto it, never through one
+      const prev = bfs(
+        MAP_W,
+        MAP_H,
+        from,
+        (x, y) => !isBlocked(x, y) || (x === to.x && y === to.y),
+        to,
+      );
       const key = (x: number, y: number) => y * MAP_W + x;
-      const prev = new Int32Array(MAP_W * MAP_H).fill(-1);
-      const q = [key(from.x, from.y)];
-      prev[q[0]] = q[0];
       const target = key(to.x, to.y);
-      let head = 0,
-        found = false;
-      while (head < q.length) {
-        const k = q[head++];
-        if (k === target) {
-          found = true;
-          break;
-        }
-        const x = k % MAP_W,
-          y = (k / MAP_W) | 0;
-        for (const [dx, dy] of [
-          [1, 0],
-          [-1, 0],
-          [0, 1],
-          [0, -1],
-        ]) {
-          const nx = x + dx,
-            ny = y + dy;
-          if (
-            !inMap(nx, ny) ||
-            (isBlocked(nx, ny) && !(nx === to.x && ny === to.y))
-          )
-            continue;
-          const nk = key(nx, ny);
-          if (prev[nk] !== -1) continue;
-          prev[nk] = k;
-          q.push(nk);
-        }
-      }
-      if (!found) return null;
+      if (!(prev[target] >= 0)) return null;
       const path: Pt[] = [];
       for (let k = target; k !== key(from.x, from.y); k = prev[k])
         path.push({ x: k % MAP_W, y: (k / MAP_W) | 0 });
