@@ -11,6 +11,7 @@ import { drawEditorOverlay } from './editor-draw.ts';
 import { feedFrom, renderFeed } from './feed.ts';
 import { openLauncher } from './launcher.ts';
 import { openLegend, refreshLegend } from './legend.ts';
+import { connectEvents } from './net/events.ts';
 import { Panel } from './panel.ts';
 import { HUD_BTN, render } from './render.ts';
 import { Roster } from './roster.ts';
@@ -300,33 +301,31 @@ setInterval(() => {
 }, 1000);
 
 // ---- SSE -----------------------------------------------------------------------
-let everConnected = false;
-function connect() {
-  const es = new EventSource('/events');
-  es.addEventListener('snapshot', (ev) => {
-    world.connected = true;
-    applySnapshot(JSON.parse(ev.data));
-  });
-  es.addEventListener('session', (ev) => upsertSession(JSON.parse(ev.data)));
-  es.addEventListener('remove', (ev) => removeSession(JSON.parse(ev.data).id));
-  es.addEventListener('settings', (ev) => applyCatChoices(JSON.parse(ev.data)));
-  es.addEventListener('offices', (ev) => {
-    const d = JSON.parse(ev.data);
-    setOffices(d.offices, d.together);
-  });
-  es.onopen = () => {
-    world.connected = true;
-    if (everConnected)
-      getState()
-        .then(applySnapshot)
-        .catch(() => {});
-    everConnected = true;
-  };
-  es.onerror = () => {
-    world.connected = false;
-  };
-}
-connect();
+connectEvents(
+  {
+    snapshot: (snap) => {
+      world.connected = true;
+      applySnapshot(snap);
+    },
+    session: (s) => upsertSession(s),
+    remove: ({ id }) => removeSession(id),
+    settings: (d) => applyCatChoices(d),
+    offices: (d) => setOffices(d.offices, d.together),
+  },
+  {
+    onOpen: (reconnected) => {
+      world.connected = true;
+      // events may have been missed while away: start over from a fresh snapshot
+      if (reconnected)
+        getState()
+          .then(applySnapshot)
+          .catch(() => {});
+    },
+    onError: () => {
+      world.connected = false;
+    },
+  },
+);
 
 // ---- roster (opened from the HUD) ----------------------------------------------------
 const roster = new Roster($('roster'), {
