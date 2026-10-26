@@ -230,8 +230,11 @@ export class Store {
       this.sessions.values(),
     );
   }
-  /** Link a session to its Orca terminal; remembered with the desk so a server restart keeps it. */
-  setTerminal(s: Session, handle?: string | null) {
+  /**
+   * Link a session to the terminal its backend types into (an Orca terminal handle, today); remembered with the desk
+   * so a server restart keeps it. Held in `orcaTerminal`, the field's name on the wire.
+   */
+  bindTerminal(s: Session, handle?: string | null) {
     if (!handle || s.orcaTerminal === handle) return;
     s.orcaTerminal = handle;
     this.officeRepo.rememberTerminal(s.id, handle);

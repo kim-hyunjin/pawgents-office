@@ -4,6 +4,8 @@ import { MAX_SKIN_BYTES, skinGridError } from '../shared/limits.ts';
 import type { Skin } from './types.ts';
 
 export const SKIN_ID = /^[a-z0-9]{10}$/;
+/** The name of a saved skin that has none. */
+export const DEFAULT_SKIN_NAME = '스킨';
 export const hasSkin = (skins: Pick<Skin, 'id'>[], id: string) =>
   skins.some((k) => k.id === id);
 

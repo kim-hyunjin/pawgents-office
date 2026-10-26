@@ -230,7 +230,7 @@ async function resolveTerminal(store: Store, s: Session): Promise<Terminal> {
 /** resolveTerminal, remembered on the session (so later calls and a server restart find it directly). */
 async function boundTerminal(store: Store, s: Session) {
   const t = await resolveTerminal(store, s);
-  store.setTerminal(s, t.handle);
+  store.bindTerminal(s, t.handle);
   return t;
 }
 
@@ -242,7 +242,7 @@ async function sendPrompt(store: Store, s: Session, text: string) {
       'not_claude',
     );
   }
-  store.setTerminal(s, t.handle);
+  store.bindTerminal(s, t.handle);
   return sendText(t.handle, text, { enter: true });
 }
 

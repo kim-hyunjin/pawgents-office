@@ -355,7 +355,7 @@ function reduce(
     ev.orca_terminal &&
     traitsOf(s).bindsTerminal
   )
-    store.setTerminal(s, ev.orca_terminal);
+    store.bindTerminal(s, ev.orca_terminal);
 
   const agentId = ev.agent_id ? String(ev.agent_id) : null;
   const agent = agentId

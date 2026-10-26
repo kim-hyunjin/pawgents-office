@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isCatFamily } from '../../shared/model.ts';
-import { hasSkin, newSkinId, SKIN_ID } from '../skins.ts';
+import { DEFAULT_SKIN_NAME, hasSkin, newSkinId, SKIN_ID } from '../skins.ts';
 import type { Skin } from '../types.ts';
 import type { EventBus } from './events.ts';
 import { isRecord } from './persistence.ts';
@@ -47,7 +47,7 @@ export class SettingsRepo {
       ) {
         this.skins.push({
           id,
-          name: String(k.name || '스킨'),
+          name: String(k.name || DEFAULT_SKIN_NAME),
           cellW: k.cellW as number,
           cellH: k.cellH as number,
         });
