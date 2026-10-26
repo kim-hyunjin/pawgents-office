@@ -31,6 +31,7 @@ import {
 import { isCatFamily } from '../shared/model.ts';
 import { MODEL_RE, PERMISSION_MODES } from '../shared/permission.ts';
 import type { Backend } from './app/ports.ts';
+import { receiveHook } from './app/sessions.ts';
 import { addWorktree, samePath, worktreesAt } from './backends/git.ts';
 import type { HeadlessBackend } from './backends/headless.ts';
 import type { BackendRegistry } from './backends/index.ts';
@@ -49,7 +50,6 @@ import {
   sendError,
   tooLarge,
 } from './http.ts';
-import { applyHook } from './reducer.ts';
 import { hasSkin, skinError } from './skins.ts';
 import type { Sse } from './sse.ts';
 import { sendFile } from './static.ts';
@@ -358,7 +358,7 @@ export function makeRoutes({
           return;
         }
         const ev = safeJsonParse(body);
-        const s = ev ? applyHook(store, ev) : null;
+        const s = ev ? receiveHook(store, ev) : null;
         if (s && ev) logHook(s, ev);
         // a --decide hook: hold the request open until the browser answers, if the session's backend parks requests
         const parked =
