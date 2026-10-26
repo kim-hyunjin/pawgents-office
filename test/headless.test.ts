@@ -158,6 +158,7 @@ test('parkPermission: allow, deny, stale, and two requests at once', async () =>
   assert.equal(a.writableEnded, false);
   assert.equal(s.pendingPermissions.length, 2);
   const [pa, pb] = s.pendingPermissions;
+  assert.ok(pa && pb);
   assert.deepEqual(
     { tool: pa.tool, target: pa.target },
     { tool: 'Write', target: 'a.txt' },

@@ -159,6 +159,7 @@ test('a --decide hook is held open until the browser answers', async () => {
   for (let i = 0; !s.pendingPermissions.length && i < 100; i++)
     await new Promise((r) => setTimeout(r, 20));
   const [p] = s.pendingPermissions;
+  assert.ok(p, 'a parked request');
   assert.equal(p.tool, 'Bash');
   const ans = await request('POST', `/sessions/${sid}/permission`, {
     id: p.id,

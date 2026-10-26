@@ -164,7 +164,7 @@ test('store.setGitFiles merges git status with touched files', async () => {
   assert.equal(store.setGitFiles(s, []), true);
   assert.deepEqual(names(), ['edit.js:-*', 'read.js:-']);
   const sent = store.serializeSession(s).files;
-  assert.deepEqual(Object.keys(sent[0]).sort(), [
+  assert.deepEqual(Object.keys(sent[0] ?? {}).sort(), [
     'edited',
     'git',
     'name',

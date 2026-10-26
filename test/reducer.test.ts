@@ -55,8 +55,8 @@ test('reducer: an event name we have no handler for (even an Object key) is only
     );
     assert.deepEqual(
       [
-        store.sessions.get('r1')!.log.last(1)[0].ev,
-        store.sessions.get('r1')!.log.last(1)[0].text,
+        store.sessions.get('r1')!.log.last(1)[0]?.ev,
+        store.sessions.get('r1')!.log.last(1)[0]?.text,
       ],
       [name, 'auto'],
     );

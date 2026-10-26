@@ -32,7 +32,9 @@ function target(from: string, spec: string) {
     .relative(root, path.resolve(root, path.dirname(from), spec))
     .split(path.sep)
     .join('/');
-  return rel.startsWith('shared/node/') ? 'shared/node' : rel.split('/')[0];
+  if (rel.startsWith('shared/node/')) return 'shared/node';
+  const [top = rel] = rel.split('/'); // split always gives one part
+  return top;
 }
 
 const ALLOWED: Record<string, string[]> = {
@@ -52,10 +54,10 @@ test('imports follow the dependency rule', () => {
       const layer = file.startsWith('shared/node/') ? 'shared/node' : top;
       const src = fs.readFileSync(path.join(root, file), 'utf8');
       for (const m of src.matchAll(IMPORT)) {
-        const spec = m[1] ?? m[2];
+        const spec = m[1] ?? m[2] ?? ''; // one of the two alternatives matched
         const to = target(file, spec);
         seen++;
-        if (to !== 'package' && !ALLOWED[layer].includes(to))
+        if (to !== 'package' && !ALLOWED[layer]?.includes(to))
           bad.push(`${file} → ${spec}`);
       }
     }

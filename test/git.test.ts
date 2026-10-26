@@ -52,7 +52,7 @@ test('parseWorktrees reads branches, detached heads and the main worktree; skips
         w.name === '',
     ),
   );
-  assert.equal(ws[1].path, 'C:/Users/x/repo-feature');
+  assert.equal(ws[1]?.path, 'C:/Users/x/repo-feature');
 });
 
 test('repoRoots keeps only existing directories and drops the default bucket', () => {

@@ -48,6 +48,7 @@ test('state: session actions say what changed', () => {
   off();
   assert.equal(heard.length, 4);
   const [first, second, gone, seed] = heard;
+  assert.ok(first && second && gone && seed);
   assert.ok(first.type === 'session' && first.prev === undefined);
   assert.ok(first.type === 'session' && first.seated);
   assert.ok(second.type === 'session' && second.prev === a && !second.seated);

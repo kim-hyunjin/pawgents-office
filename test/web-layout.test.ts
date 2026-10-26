@@ -37,16 +37,23 @@ function fingerprint(o: Layout) {
   return JSON.stringify({ data, grid, near, paths });
 }
 
+/** The default office's second room (the open office), which the variants below change. */
+function openOffice(l: Layout) {
+  const r = l.rooms[1];
+  assert.ok(r, 'the default office has a second room');
+  return r;
+}
+
 function variants(): Layout[] {
   const base = cloneOffice(DEFAULT_OFFICE);
   const noDoor = cloneOffice(DEFAULT_OFFICE);
-  noDoor.rooms[1].doors = []; // the open office walled shut
+  openOffice(noDoor).doors = []; // the open office walled shut
   const blocked = cloneOffice(DEFAULT_OFFICE);
   blocked.items.push({ id: 'x1', kind: 'plant', x: 3, y: 17 }); // on the front door's sill
   const onWall = cloneOffice(DEFAULT_OFFICE);
   onWall.items.push({ id: 'x2', kind: 'coffee', x: 7, y: 4 }); // in a wall
   const sealed = cloneOffice(DEFAULT_OFFICE);
-  sealed.rooms[1].doors = [{ x: 13, y: 8, open: true }];
+  openOffice(sealed).doors = [{ x: 13, y: 8, open: true }];
   sealed.items.push({ id: 'x3', kind: 'bookshelf', x: 10, y: 9 }); // cuts the corridor
   const side = cloneOffice(DEFAULT_OFFICE);
   side.door = { side: 'left', y: 9 };

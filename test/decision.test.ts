@@ -30,7 +30,8 @@ test('decision hook: output shapes, headless settings are synchronous, the plugi
     'x',
   );
   const h = headlessSettings('node send.ts --decide').hooks.PermissionRequest[0]
-    .hooks[0];
+    ?.hooks[0];
+  assert.ok(h, 'one PermissionRequest hook');
   assert.deepEqual(h, {
     type: 'command',
     command: 'node send.ts --decide',
