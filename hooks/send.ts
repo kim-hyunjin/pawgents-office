@@ -15,7 +15,8 @@ import type { HookEvent } from '../shared/hook.ts';
 import { safeJsonParse } from '../shared/json.ts';
 import { MAX_REPLY_CHARS } from '../shared/limits.ts';
 import { autostartEnabled, ensureServer } from '../shared/node/ensure.ts';
-import { BASE_URL, DATA_DIR } from '../shared/node/env.ts';
+import { DATA_DIR } from '../shared/node/env.ts';
+import { postHook } from '../shared/node/hook-client.ts';
 
 const DEBUG = process.env.PAWGENTS_OFFICE_DEBUG === '1';
 
@@ -100,22 +101,15 @@ export async function readEvent(): Promise<HookEvent | null> {
   return ev && typeof ev === 'object' ? ev : null;
 }
 
-function postHook(ev: HookEvent, timeoutMs: number) {
-  return fetch(`${BASE_URL}/hook`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(ev),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-}
-
 /** Long-poll the server for the browser's allow/deny; prints the decision, or nothing (error, timeout, no answer). */
 async function awaitDecision(ev: HookEvent) {
   // a dead office server would mean an instant deny; revive it first (it reconnects to this session's runner on boot)
   if (autostartEnabled()) await ensureServer();
   ev.await_decision = true;
   try {
-    const r = await postHook(ev, DECISION_TIMEOUT_S * 1000 - 10_000); // give up before claude kills us
+    const r = await postHook(ev, {
+      timeoutMs: DECISION_TIMEOUT_S * 1000 - 10_000, // give up before claude kills us
+    });
     const d = safeJsonParse((await r.text()).trim()); // the body is padded with heartbeat spaces
     if (d?.decision === 'allow' || d?.decision === 'deny') {
       const out = JSON.stringify(
@@ -143,7 +137,7 @@ export async function forward(
   if (decide && ev.hook_event_name === 'PermissionRequest')
     return awaitDecision(ev);
   try {
-    await postHook(ev, 1000);
+    await postHook(ev, { timeoutMs: 1000 });
     log(`sent ${ev.hook_event_name} ${ev.tool_name || ''}`);
   } catch (e) {
     log(`send failed: ${errMessage(e)}`);
