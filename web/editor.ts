@@ -40,7 +40,7 @@ import {
 } from './layout-edit.ts';
 import { app } from './state.ts';
 import { FLOOR } from './tilemap.ts';
-import { $, downloadBlob, esc, setMsg } from './ui.ts';
+import { $, armConfirm, downloadBlob, esc, setMsg } from './ui.ts';
 import type { World } from './world.ts';
 import { showDraft, startEditing, stopEditing } from './world.ts';
 
@@ -93,7 +93,7 @@ export class Editor {
   drag: Drag | null = null;
   hover: Tile | null = null; // tile under the pointer
   errs: ReturnType<typeof validate> = [];
-  armedDelete = false;
+  deleteArm = armConfirm<true>(4000, () => this.showDelete()); // 사무실 닫기 asks twice
   shown = false;
   saving = false;
   /** onResize(): the canvas size or the space beside it changed. */
@@ -129,7 +129,8 @@ export class Editor {
     this.sel = null;
     this.tool = 'select';
     this.drag = null;
-    this.armedDelete = false;
+    this.deleteArm.disarm();
+    this.showDelete();
     this.shown = false;
     this.el.hidden = false;
     startEditing();
@@ -793,6 +794,12 @@ export class Editor {
         ? '놓을 곳을 누르세요. 여러 개 놓을 수 있어요. (Esc·우클릭: 그만 놓기)'
         : '가구·방을 끌어서 옮기고, Delete로 지우고, 방향키로 한 칸씩 움직여요. Ctrl+Z: 되돌리기';
   }
+  showDelete() {
+    const b = $('ed-delete'),
+      on = this.deleteArm.is(true);
+    b.textContent = on ? '정말 닫기?' : '사무실 닫기';
+    b.classList.toggle('armed', on);
+  }
   msg(text: string, cls = '') {
     setMsg($('ed-msg'), text, cls);
   }
@@ -817,18 +824,7 @@ export class Editor {
   }
   /** Two clicks: close this office; its repos and staff move to the default office. */
   async closeOffice() {
-    const b = $('ed-delete');
-    if (!this.armedDelete) {
-      this.armedDelete = true;
-      b.textContent = '정말 닫기?';
-      b.classList.add('armed');
-      setTimeout(() => {
-        this.armedDelete = false;
-        b.textContent = '사무실 닫기';
-        b.classList.remove('armed');
-      }, 4000);
-      return;
-    }
+    if (!this.deleteArm.click(true)) return; // stays armed: a failed close can be retried at once
     try {
       await closeOffice(this.office!.id);
       this.close();

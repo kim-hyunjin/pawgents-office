@@ -7,6 +7,7 @@ import { closeSession } from './api.ts';
 import type { Palette } from './sprites.ts';
 import { FAMILIES, familyOf, sprite } from './sprites.ts';
 import {
+  armConfirm,
   esc,
   pic,
   quitTitle,
@@ -37,8 +38,7 @@ export class Roster {
   placeOf: (id: string) => string;
   palOf: (id: string) => Palette | undefined;
   rows = new Map<string, Row>(); // id -> row elements
-  armed: string | null = null; // id whose 퇴근 button is waiting for the confirming click
-  armTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+  arm = armConfirm<string>(4000, (id) => this.refreshRow(id)); // id whose 퇴근 button waits for the confirming click
   pending = new Set<string>(); // ids with a close request in flight or sent
   failed = new Map<string, string>(); // id -> error message, shown in the row for a few seconds
   lastSessions: Sessions | undefined = undefined;
@@ -184,7 +184,7 @@ export class Roster {
       r.quit.textContent = '퇴근 중…';
       r.quit.disabled = true;
       r.quit.className = 'quit';
-    } else if (this.armed === s.id) {
+    } else if (this.arm.is(s.id)) {
       r.quit.textContent = busy ? '강제 종료?' : '정말 퇴근?';
       r.quit.disabled = false;
       r.quit.className = 'quit armed';
@@ -201,16 +201,7 @@ export class Roster {
   /** First click arms (4s), second sends: idle → a clean end, otherwise a forced close (same rule as the panel). */
   async quit(s: SessionSnapshot | undefined) {
     if (!s || this.pending.has(s.id)) return;
-    if (this.armed !== s.id) {
-      this.disarm();
-      this.armed = s.id;
-      this.armTimer = setTimeout(() => {
-        this.disarm();
-        this.refreshRow(s.id);
-      }, 4000);
-      this.refreshRow(s.id);
-      return;
-    }
+    if (!this.arm.click(s.id)) return;
     this.disarm();
     this.pending.add(s.id);
     this.refreshRow(s.id);
@@ -232,8 +223,7 @@ export class Roster {
     this.refreshRow(s.id);
   }
   disarm() {
-    clearTimeout(this.armTimer);
-    this.armed = null;
+    this.arm.disarm();
   }
   refreshRow(id: string) {
     const r = this.rows.get(id);

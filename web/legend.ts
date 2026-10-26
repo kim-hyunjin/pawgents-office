@@ -30,7 +30,7 @@ import {
   sliceSheet,
   sprite,
 } from './sprites.ts';
-import { bindDialogClose, downloadBlob, esc, pic } from './ui.ts';
+import { armConfirm, bindDialogClose, downloadBlob, esc, pic } from './ui.ts';
 
 let dlg: HTMLDialogElement, body: HTMLElement;
 type Sessions = Map<string, SessionSnapshot>;
@@ -168,8 +168,7 @@ interface Draft {
   error: string | null;
 }
 let draft: Draft | null = null; // sheet picked for upload
-let armed: string | null = null; // skin id whose 삭제 button waits for the confirming click
-let armTimer: ReturnType<typeof setTimeout> | undefined;
+const delArm = armConfirm<string>(3000, () => refreshLegend()); // skin id whose 삭제 button waits for the confirming click
 
 function skinSection() {
   const sec = document.createElement('section');
@@ -214,25 +213,14 @@ function skinRow(s: ReturnType<typeof skinList>[number]) {
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'del';
-  del.textContent = armed === s.id ? '정말 삭제' : '삭제';
-  del.classList.toggle('armed', armed === s.id);
+  del.textContent = delArm.is(s.id) ? '정말 삭제' : '삭제';
+  del.classList.toggle('armed', delArm.is(s.id));
   del.title = users.length
     ? '삭제하면 이 스킨을 쓰던 모델은 기본 품종으로 돌아가요.'
     : '';
   del.addEventListener('click', async () => {
-    if (armed !== s.id) {
-      // first click arms, second confirms
-      armed = s.id;
-      clearTimeout(armTimer);
-      armTimer = setTimeout(() => {
-        armed = null;
-        refreshLegend();
-      }, 3000);
-      refreshLegend();
-      return;
-    }
-    armed = null;
-    clearTimeout(armTimer);
+    if (!delArm.click(s.id)) return; // first click arms, second confirms
+    delArm.disarm();
     del.disabled = true;
     try {
       await deleteSkin(s.id);

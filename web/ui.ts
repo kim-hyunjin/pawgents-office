@@ -83,6 +83,35 @@ export function bindCopy(btn: HTMLElement, text: () => string | undefined) {
   });
 }
 
+/**
+ * Two-click confirm for destructive buttons: the first click on a key arms it for `ms`, a second click on the same key
+ * while it is armed confirms. One key at a time (arming another disarms the first). `onChange(key)` redraws that key's
+ * button: called when it gets armed and when its time runs out (not on disarm()).
+ */
+export function armConfirm<K>(ms: number, onChange: (key: K) => void) {
+  let armed: K | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    is: (key: K) => armed === key,
+    /** True: this click confirms (it stays armed; disarm() if it shouldn't). False: it armed `key`. */
+    click(key: K) {
+      if (armed === key) return true;
+      clearTimeout(timer);
+      armed = key;
+      timer = setTimeout(() => {
+        armed = null;
+        onChange(key);
+      }, ms);
+      onChange(key);
+      return false;
+    },
+    disarm() {
+      clearTimeout(timer);
+      armed = null;
+    },
+  };
+}
+
 // localStorage that never throws (blocked storage, private mode). Keys stay as they are: renaming one resets a setting.
 export const storage = {
   get(k: string) {

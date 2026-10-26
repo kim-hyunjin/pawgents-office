@@ -11,6 +11,7 @@ import { openDiff, refreshDiff } from './diff.ts';
 import { openReply, refreshReply } from './reply.ts';
 import { FAMILIES, familyOf } from './sprites.ts';
 import {
+  armConfirm,
   awaitingBg,
   bgSummary,
   esc,
@@ -57,9 +58,8 @@ export class Panel {
   sending = false;
   modeBusy = false;
   permKey = '';
-  quitArmed = false;
   quitting = false;
-  quitTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+  quitArm = armConfirm<true>(4000, () => this.showQuit()); // 퇴근 asks twice
 
   constructor(
     el: HTMLElement,
@@ -328,16 +328,7 @@ export class Panel {
     const s = this.session;
     if (!s || s.ended || this.quitting) return;
     const force = s.state !== 'idle';
-    if (!this.quitArmed) {
-      this.quitArmed = true;
-      this.quitBtn.classList.add('armed');
-      this.quitBtn.textContent = force
-        ? `${isBusyState(s.state) ? '작업 중' : '응답 대기'} — 강제 종료?`
-        : '정말 퇴근?';
-      this.quitBtn.title = quitTitle(s, force);
-      this.quitTimer = setTimeout(() => this.resetQuit(), 4000);
-      return;
-    }
+    if (!this.quitArm.click(true)) return;
     this.resetQuit();
     this.quitting = true;
     this.quitBtn.disabled = true;
@@ -370,9 +361,22 @@ export class Panel {
   }
 
   resetQuit() {
-    clearTimeout(this.quitTimer);
-    this.quitArmed = false;
+    this.quitArm.disarm();
+    this.showQuit();
+  }
+  /** The 퇴근 button's label: armed, it says what the second click will do to the session. */
+  showQuit() {
     if (!this.quitBtn) return;
+    const s = this.session;
+    if (s && this.quitArm.is(true)) {
+      const force = s.state !== 'idle';
+      this.quitBtn.classList.add('armed');
+      this.quitBtn.textContent = force
+        ? `${isBusyState(s.state) ? '작업 중' : '응답 대기'} — 강제 종료?`
+        : '정말 퇴근?';
+      this.quitBtn.title = quitTitle(s, force);
+      return;
+    }
     this.quitBtn.classList.remove('armed');
     this.quitBtn.textContent = '퇴근';
     this.quitBtn.title = '이 세션 종료';
