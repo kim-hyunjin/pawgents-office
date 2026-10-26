@@ -21,6 +21,7 @@ import {
   slashPath,
 } from '../server/infra/path.ts';
 import { isWindows } from '../server/infra/platform.ts';
+import { repoOf } from '../server/repo.ts';
 
 // ---- paths ----------------------------------------------------------------------------------------------------------
 
@@ -171,4 +172,28 @@ test('gitSync: stdout on exit 0, null otherwise', { skip }, () =>
     assert.equal(gitSync(plain, ['rev-parse', '--is-inside-work-tree']), null);
     assert.equal(gitSync(path.join(plain, 'missing'), ['status']), null);
   }),
+);
+
+test(
+  'repoOf (on gitSync): a worktree lands in its main repo, a plain dir in the default office',
+  { skip },
+  () =>
+    withRepo(async (repo, plain) => {
+      const wt = path.join(path.dirname(repo), 'repo-wt');
+      execFileSync(
+        'git',
+        ['-C', repo, 'worktree', 'add', '-q', '-b', 'wt', wt],
+        {
+          stdio: 'ignore',
+        },
+      );
+      const main = repoOf(repo);
+      assert.deepEqual(main, {
+        key: foldCase(path.resolve(fs.realpathSync.native(repo))),
+        name: 'repo',
+      });
+      assert.deepEqual(repoOf(wt), main);
+      assert.deepEqual(repoOf(plain), { key: 'default', name: '' });
+      assert.deepEqual(repoOf(undefined), { key: 'default', name: '' });
+    }),
 );

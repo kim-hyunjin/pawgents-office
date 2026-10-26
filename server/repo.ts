@@ -1,6 +1,8 @@
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { gitSync } from './infra/git.ts';
 import { foldCase } from './infra/path.ts';
+
+const REPO_TIMEOUT_MS = 3000; // blocks the caller, so shorter than GIT_TIMEOUT_MS
 
 interface Repo {
   key: string;
@@ -17,27 +19,19 @@ export function repoOf(cwd?: string | null) {
   let r = cache.get(cwd);
   if (r) return r;
   r = { key: 'default', name: '' };
-  try {
-    const out = spawnSync(
-      'git',
-      ['-C', cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-      {
-        encoding: 'utf8',
-        timeout: 3000,
-        windowsHide: true,
-      },
-    );
-    const dir = out.status === 0 && out.stdout.trim();
-    if (dir) {
-      const root = path.basename(dir) === '.git' ? path.dirname(dir) : dir; // bare repos have no .git
-      const norm = path.resolve(root);
-      r = {
-        key: foldCase(norm),
-        name: path.basename(norm).replace(/\.git$/, ''),
-      };
-    }
-  } catch {
-    /* git missing: default office */
+  // sync: callers place the session right away. null (not a repo, git missing) → default office
+  const dir = gitSync(
+    cwd,
+    ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+    { timeoutMs: REPO_TIMEOUT_MS },
+  )?.trim();
+  if (dir) {
+    const root = path.basename(dir) === '.git' ? path.dirname(dir) : dir; // bare repos have no .git
+    const norm = path.resolve(root);
+    r = {
+      key: foldCase(norm),
+      name: path.basename(norm).replace(/\.git$/, ''),
+    };
   }
   cache.set(cwd, r);
   return r;
