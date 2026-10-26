@@ -1,5 +1,5 @@
 import { WALL_RISE } from '../shared/layout.ts';
-import { clamp } from './anim.ts';
+import { clamp } from '../shared/math.ts';
 import { $, storage } from './ui.ts';
 import { world } from './world.ts';
 

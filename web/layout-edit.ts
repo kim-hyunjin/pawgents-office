@@ -11,7 +11,7 @@ import {
   ROOM_TYPES,
   ringRect,
 } from '../shared/layout.ts';
-import { clamp } from './anim.ts';
+import { clamp } from '../shared/math.ts';
 
 export interface Contained {
   it: Item;

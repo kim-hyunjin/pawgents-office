@@ -23,7 +23,7 @@ import {
   validate,
 } from '../shared/layout.ts';
 import { MAX_NAME_CHARS } from '../shared/limits.ts';
-import { clamp } from './anim.ts';
+import { clamp } from '../shared/math.ts';
 import { api, post } from './api.ts';
 import type { Contained } from './layout-edit.ts';
 import {

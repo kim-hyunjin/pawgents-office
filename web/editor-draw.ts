@@ -11,7 +11,7 @@ import {
   TILE,
   WALL_RISE,
 } from '../shared/layout.ts';
-import { clamp } from './anim.ts';
+import { clamp } from '../shared/math.ts';
 import type { Editor } from './editor.ts';
 import { itemAt, onOuterWall, wallRoomsAt } from './layout-edit.ts';
 import { FLOOR } from './tilemap.ts';
