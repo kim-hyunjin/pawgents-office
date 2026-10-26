@@ -478,9 +478,8 @@ export function makeRoutes({
           return;
         }
         try {
-          const r = await b.sendPrompt(s, text);
+          const r = await store.updateSession(s, () => b.sendPrompt(s, text));
           console.log(`[web] prompt → ${label(s)}: ${preview(text)}`);
-          store.emitSession(s);
           json(res, 200, { ok: true, accepted: r?.accepted ?? true });
         } catch (e) {
           sendError(res, e);
@@ -538,9 +537,10 @@ export function makeRoutes({
         const b = backendOrDetached(backends, res, s);
         if (!b) return;
         try {
-          await b.setMode(s, mode);
+          await store.updateSession(s, async () => {
+            await b.setMode(s, mode);
+          });
           console.log(`[web] mode ${mode} → ${label(s)}`);
-          store.emitSession(s);
           json(res, 200, { ok: true, mode: s.permissionMode });
         } catch (e) {
           sendError(res, e);

@@ -141,11 +141,17 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
   if (!sid || !name) return null;
   delete ev.tool_response;
 
-  const now = Date.now();
   const s = store.getOrCreateSession(sid, {
     cwd: ev.cwd,
     transcriptPath: ev.transcript_path,
   });
+  store.updateSession(s, () => reduce(store, s, ev, name));
+  return s;
+}
+
+/** Fold hook `ev` (named `name`) into session `s`. */
+function reduce(store: Store, s: Session, ev: HookEvent, name: string) {
+  const now = Date.now();
   s.hookEvents++;
   s.lastEventAt = now;
   if (ev.permission_mode) s.permissionMode = ev.permission_mode;
@@ -330,6 +336,4 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
   }
   // a dialog stays up while parallel tool calls start and finish: their events must not hide it
   if (s.asking && !s.ended) store.setState(s, 'waiting');
-  store.emitSession(s);
-  return s;
 }

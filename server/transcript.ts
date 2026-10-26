@@ -29,18 +29,23 @@ export class Tailer {
   tick() {
     for (const s of this.store.sessions.values()) {
       if (s.ended) continue;
-      let changed = false;
-      if (s.transcriptPath)
-        changed = this.pump(s.transcriptPath, s, s, true) || changed;
-      for (const a of s.subagents.values()) {
-        if (a.ended) continue;
-        const file = a.transcriptPath || this.guessAgentPath(s, a);
-        if (!file) continue;
-        if (!a.metaRead) changed = this.readMeta(file, a) || changed;
-        changed = this.pump(file, s, a, false) || changed;
-      }
-      if (changed) this.store.emitSession(s);
+      this.store.updateSession(s, () => this.pumpSession(s));
     }
+  }
+
+  /** Read what was appended to `s`'s transcripts (its own and its live subagents'). Returns true if `s` changed. */
+  pumpSession(s: Session) {
+    let changed = false;
+    if (s.transcriptPath)
+      changed = this.pump(s.transcriptPath, s, s, true) || changed;
+    for (const a of s.subagents.values()) {
+      if (a.ended) continue;
+      const file = a.transcriptPath || this.guessAgentPath(s, a);
+      if (!file) continue;
+      if (!a.metaRead) changed = this.readMeta(file, a) || changed;
+      changed = this.pump(file, s, a, false) || changed;
+    }
+    return changed;
   }
 
   guessAgentPath(s: Session, a: Subagent) {

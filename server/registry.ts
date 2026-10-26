@@ -84,7 +84,19 @@ function syncEntry(store: Store, id: string, d: RegistryEntry, now: number) {
     startedAt: d.startedAt,
     pid: d.pid,
   });
-  let changed = !existed || !!wasEnded;
+  return store.updateSession(s, () =>
+    foldEntry(store, s, d, now, !existed || !!wasEnded),
+  );
+}
+
+function foldEntry(
+  store: Store,
+  s: Session,
+  d: RegistryEntry,
+  now: number,
+  isNew: boolean,
+) {
+  let changed = isNew;
   if (s.pid !== d.pid) {
     s.pid = d.pid;
     changed = true;
@@ -103,7 +115,7 @@ function syncEntry(store: Store, id: string, d: RegistryEntry, now: number) {
     s.transcriptPath = path.join(
       PROJECTS_DIR,
       projectDirName(d.cwd),
-      `${id}.jsonl`,
+      `${s.id}.jsonl`,
     );
   }
   // 'shell': the turn ended but a background shell will wake it. Works without our hooks too.
@@ -129,7 +141,6 @@ function syncEntry(store: Store, id: string, d: RegistryEntry, now: number) {
     s.currentTool = null;
     changed = true;
   }
-  if (changed) store.emitSession(s);
   return changed;
 }
 
@@ -147,8 +158,7 @@ export function pollRegistry(store: Store) {
   for (const s of store.sessions.values()) {
     if (s.ended || !s.pid) continue;
     if (!live.has(s.id) && !isPidAlive(s.pid)) {
-      store.endSession(s, 'process exited');
-      store.emitSession(s);
+      store.updateSession(s, () => store.endSession(s, 'process exited'));
     }
   }
 }

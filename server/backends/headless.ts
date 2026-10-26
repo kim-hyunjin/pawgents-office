@@ -253,15 +253,16 @@ function attach(store: Store, h: HelloMsg): Session {
     backend: 'headless',
     permissionMode: h.permissionMode,
   });
-  s.model ||= h.model || defaultModel(h.cwd); // provisional: claude's init line replaces it with the exact model id
-  store.setBackend(s, 'headless'); // registry or a hook may have created it first
-  if (h.claudePid && !s.pid) s.pid = h.claudePid;
-  s.transcriptPath ||= path.join(
-    PROJECTS_DIR,
-    projectDirName(h.cwd),
-    `${h.sid}.jsonl`,
-  );
-  store.emitSession(s);
+  store.updateSession(s, () => {
+    s.model ||= h.model || defaultModel(h.cwd); // provisional: claude's init line replaces it with the exact model id
+    store.setBackend(s, 'headless'); // registry or a hook may have created it first
+    if (h.claudePid && !s.pid) s.pid = h.claudePid;
+    s.transcriptPath ||= path.join(
+      PROJECTS_DIR,
+      projectDirName(h.cwd),
+      `${h.sid}.jsonl`,
+    );
+  });
   return s;
 }
 
@@ -278,8 +279,7 @@ function forgetRunFile(sid: string) {
 function endIfLive(store: Store, sid: string, reason: string) {
   const s = store.sessions.get(sid);
   if (s && !s.ended) {
-    store.endSession(s, reason);
-    store.emitSession(s);
+    store.updateSession(s, () => store.endSession(s, reason));
   }
 }
 
@@ -388,9 +388,11 @@ const RESULT_TEXT: Record<string, string> = { allow: '→ 허용', deny: '→ �
 
 /**
  * The permission requests parked per session, waiting for the browser. Kept apart from the runner entries so a
- * dropped-and-reconnected socket keeps them.
+ * dropped-and-reconnected socket keeps them. Needs only these three of the store, so a stub can stand in for it.
  */
-export function createPermissionDesk(store: Store) {
+export function createPermissionDesk(
+  store: Pick<Store, 'log' | 'setState' | 'emitSession'>,
+) {
   const parked = new Map<string, Map<string, Parked>>();
   const parkedOf = (sid: string): Map<string, Parked> =>
     parked.get(sid) ?? parked.set(sid, new Map()).get(sid)!;
@@ -530,8 +532,8 @@ export function createHeadlessBackend({
             r.lastStderr = typeof m.line === 'string' ? m.line : r.lastStderr;
             return;
           }
-          if (s && !s.ended && applyRunnerEvent(store, s, m))
-            store.emitSession(s);
+          if (s && !s.ended)
+            store.updateSession(s, () => applyRunnerEvent(store, s, m));
         } else if (m.type === 'exit') {
           gotExit = true;
           if (runners.get(sid) === r) runners.delete(sid);

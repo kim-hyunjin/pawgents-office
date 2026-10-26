@@ -47,8 +47,8 @@ export async function syncFiles(store: Store, s: Session) {
   p.running = true;
   try {
     const list = await changedFiles(s.cwd);
-    if (list && store.sessions.get(s.id) === s && store.setGitFiles(s, list))
-      store.emitSession(s);
+    if (list && store.sessions.get(s.id) === s)
+      store.updateSession(s, () => store.setGitFiles(s, list));
   } catch (err) {
     const e = err as SysError;
     if (e.code !== 'ENOENT') console.error('[files]', s.name, e.message); // no git at all: stay quiet

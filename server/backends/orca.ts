@@ -569,8 +569,9 @@ export function createOrcaBackend({ store }: { store: Store }): OrcaBackend {
     setMode: (s, mode) => setMode(store, s, mode),
     /** Press the dialog's Yes / No in the session's terminal; `id` is the `asking.at` of the card clicked. */
     async answerPermission(s, id, allow) {
-      await answerPermission(store, s, allow, id);
-      store.emitSession(s);
+      await store.updateSession(s, async () => {
+        await answerPermission(store, s, allow, id);
+      });
       return `${s.asking?.tool || '?'} (terminal)`;
     },
     parkPermission: () => null, // terminal dialogs are answered on screen (answerPermission), never held
