@@ -3,30 +3,12 @@
 // then forwards the event (the server may not have been up for send.ts to reach it).
 // Prints NOTHING as a hook. `--open` (used by /pawgents-office:open) also prints the URL and opens a browser.
 //   PAWGENTS_OFFICE_AUTOSTART=0 disables starting the server from the hook.
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { errMessage } from '../shared/errors.ts';
+import { openBrowser } from '../shared/node/browser.ts';
 import { autostartEnabled, ensureServer } from '../shared/node/ensure.ts';
 import { BASE_URL, DATA_DIR, PORT } from '../shared/node/env.ts';
 import { forward, log, readEvent } from './send.ts';
-
-function openBrowser(url: string) {
-  const [cmd, args]: [string, string[]] =
-    process.platform === 'win32'
-      ? ['cmd', ['/c', 'start', '', url]]
-      : process.platform === 'darwin'
-        ? ['open', [url]]
-        : ['xdg-open', [url]];
-  try {
-    spawn(cmd, args, {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    }).unref();
-  } catch {
-    /* ignore */
-  }
-}
 
 if (process.argv.includes('--open')) {
   if (await ensureServer()) {
