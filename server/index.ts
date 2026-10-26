@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import { headless } from './backends/index.ts';
+import { type BackendRegistry, createBackends } from './backends/index.ts';
 import {
   DATA_DIR,
   FILES_SYNC_MS,
@@ -23,8 +23,16 @@ import { Tailer } from './transcript.ts';
 import { decode } from './util.ts';
 
 /** The HTTP server over `store`: routes first, then static files. No polling, no listening: see main(). */
-export function createApp({ store, sse }: { store: Store; sse: Sse }) {
-  const routes = makeRoutes({ store, sse });
+export function createApp({
+  store,
+  sse,
+  backends = createBackends(store),
+}: {
+  store: Store;
+  sse: Sse;
+  backends?: BackendRegistry;
+}) {
+  const routes = makeRoutes({ store, sse, backends });
   return http.createServer(async (req, res) => {
     const url = new URL(req.url!, `http://${HOST}`);
     const p = url.pathname;
@@ -60,19 +68,17 @@ async function main() {
   const sse = new Sse();
   store.on((type, data) => sse.send(type, data));
   const tailer = new Tailer(store);
+  const backends = createBackends(store);
 
   // Headless runners outlive the server: reattach before the registry poll, so their sessions come back as headless.
-  const restored = await headless.restore(store).catch((e: Error) => {
-    console.error('[headless] restore failed:', e.message);
-    return 0;
-  });
+  const restored = await backends.restore();
 
   // Boot: rebuild from the live session registry + transcripts before accepting clients; worked files come from git status.
   pollRegistry(store);
   tailer.tick();
   syncAllFiles(store);
 
-  const server = createApp({ store, sse });
+  const server = createApp({ store, sse, backends });
 
   server.on('error', (e: NodeJS.ErrnoException) => {
     if (e.code === 'EADDRINUSE') {
@@ -108,7 +114,7 @@ async function main() {
 
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, () => {
-      headless.shutdown();
+      backends.shutdown();
       store.saveNow();
       process.exit(0);
     }); // runners keep their claude running

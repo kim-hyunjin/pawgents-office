@@ -9,6 +9,7 @@ import type {
   LaunchReply,
   LogReply,
   ReplyReply,
+  WorktreesReply,
 } from '../shared/api.ts';
 import { errMessage } from '../shared/errors.ts';
 import { safeJsonParse } from '../shared/json.ts';
@@ -29,25 +30,18 @@ import {
 } from '../shared/limits.ts';
 import { isCatFamily } from '../shared/model.ts';
 import { MODEL_RE, PERMISSION_MODES } from '../shared/permission.ts';
-import {
-  addWorktree,
-  listGitWorktrees,
-  repoRoots,
-  samePath,
-  worktreesAt,
-} from './backends/git.ts';
-import { backends, forSession, headless, orca } from './backends/index.ts';
-import {
-  createWorktreeWithClaude,
-  launchClaude,
-  listWorktrees,
-} from './backends/orca.ts';
+import type { Backend } from './app/ports.ts';
+import { addWorktree, samePath, worktreesAt } from './backends/git.ts';
+import type { HeadlessBackend } from './backends/headless.ts';
+import type { BackendRegistry } from './backends/index.ts';
+import type { OrcaBackend } from './backends/orca.ts';
 import { MAX_BODY_BYTES, MAX_PROMPT_CHARS } from './config.ts';
 import { fileDiff } from './diff.ts';
 import { scheduleFileSync } from './files.ts';
 import {
   backendError,
   findSession,
+  holdForDecision,
   isOwnHost,
   json,
   notFound,
@@ -80,6 +74,8 @@ const BAD_REQUEST = '잘못된 요청입니다.';
 const SESSION_GONE = '세션이 없거나 종료되었습니다.';
 const UNKNOWN_MODE = '알 수 없는 권한 모드입니다.';
 const UNKNOWN_BRANCH = '기준 워크트리의 브랜치를 알 수 없습니다.';
+const PROMPT_WAITING =
+  '권한 승인·질문 응답을 기다리는 중입니다. 터미널에서 먼저 답해주세요.';
 
 /** `name (abcd1234)`: how the server log names a session. */
 const label = (s: Session) => `${s.name} (${s.id.slice(0, 8)})`;
@@ -90,10 +86,17 @@ const hireName = (name: string, count: number, i: number) =>
   count > 1 ? `${name}-${i}` : name;
 
 /** The backend driving `s`, or null after answering 409 (a headless session whose runner isn't connected). */
-function backendOrDetached(res: ServerResponse, s: Session) {
-  const b = forSession(s);
-  if (!b) json(res, 409, { error: headless.DETACHED_MSG, code: 'detached' });
-  return b;
+function backendOrDetached(
+  backends: BackendRegistry,
+  res: ServerResponse,
+  s: Session,
+): Backend | null {
+  try {
+    return backends.driverOf(s);
+  } catch (e) {
+    backendError(res, e);
+    return null;
+  }
 }
 
 /** `[hook] Event Tool · target  session (id) [agent id] → state` */
@@ -112,6 +115,7 @@ function logHook(s: Session, ev: HookEvent) {
 
 /** Orca: one hire at a time (Orca creates checkouts / tabs sequentially anyway), a failure doesn't hide the rest. */
 async function launchOrca(
+  orca: OrcaBackend,
   res: ServerResponse,
   {
     worktreeId,
@@ -131,9 +135,7 @@ async function launchOrca(
     json(res, 400, { error: BAD_REQUEST });
     return;
   }
-  const base = (await listWorktrees()).find(
-    (w: { id: string }) => w.id === worktreeId,
-  );
+  const base = (await orca.listWorktrees()).find((w) => w.id === worktreeId);
   if (!base) {
     json(res, 400, { error: '알 수 없는 워크트리입니다.' });
     return;
@@ -148,8 +150,13 @@ async function launchOrca(
     const wtName = name === null ? null : hireName(name, count, i);
     try {
       if (wtName)
-        await createWorktreeWithClaude({ base, name: wtName, prompt, model });
-      else await launchClaude({ worktreeId, prompt, model });
+        await orca.createWorktreeWithClaude({
+          base,
+          name: wtName,
+          prompt,
+          model,
+        });
+      else await orca.launchClaude({ worktreeId, prompt, model });
       started.push(wtName || base.path);
       console.log(
         `[web] launch claude in ${wtName ? `new worktree ${wtName} (from ${base.branch || base.head})` : base.path}${prompt ? ': ' + preview(prompt) : ''}`,
@@ -172,7 +179,7 @@ async function launchOrca(
 
 /** Headless: worktrees (if any) are made one by one (git locks the repo), then every claude starts in parallel. */
 async function launchHeadless(
-  store: Store,
+  headless: HeadlessBackend,
   res: ServerResponse,
   {
     cwd,
@@ -238,7 +245,7 @@ async function launchHeadless(
   }
   const results = await Promise.allSettled(
     dirs.map((dir) =>
-      headless.launch(store, { cwd: dir, prompt, model, permissionMode }),
+      headless.launch({ cwd: dir, prompt, model, permissionMode }),
     ),
   );
   const sessions: (string | undefined)[] = []; // undefined: gone again by the time launch returned
@@ -268,9 +275,11 @@ async function launchHeadless(
 export function makeRoutes({
   store,
   sse,
+  backends,
 }: {
   store: Store;
   sse: Sse;
+  backends: BackendRegistry;
 }): Route[] {
   // The office routes read the body first, so 403 / 413 / 400 win over a 404 for an unknown office.
   const officeCtx = async ({ req, res, params: [id] }: RouteCtx) => {
@@ -307,7 +316,7 @@ export function makeRoutes({
     }
     try {
       if (backend === 'orca')
-        await launchOrca(res, {
+        await launchOrca(backends.byId.orca, res, {
           worktreeId: String(data.worktreeId || ''),
           prompt,
           model,
@@ -315,7 +324,7 @@ export function makeRoutes({
           name,
         });
       else
-        await launchHeadless(store, res, {
+        await launchHeadless(backends.byId.headless, res, {
           cwd: data.cwd,
           prompt,
           model,
@@ -351,15 +360,16 @@ export function makeRoutes({
         const ev = safeJsonParse(body);
         const s = ev ? applyHook(store, ev) : null;
         if (s && ev) logHook(s, ev);
-        // the --decide hook of a headless session: hold the request open until the browser answers (see parkPermission)
-        if (
+        // a --decide hook: hold the request open until the browser answers, if the session's backend parks requests
+        const parked =
           s &&
           ev.await_decision === true &&
           ev.hook_event_name === 'PermissionRequest' &&
-          !ev.agent_id &&
-          headless.has(s.id)
-        ) {
-          headless.parkPermission(store, s, ev, res);
+          !ev.agent_id
+            ? backends.ownerOf(s).parkPermission(s, ev)
+            : null;
+        if (parked) {
+          void holdForDecision(res, parked);
           return;
         }
         res.writeHead(204);
@@ -377,7 +387,7 @@ export function makeRoutes({
       'GET',
       '/backends',
       async ({ res }) =>
-        json(res, 200, (await backends()) satisfies BackendsReply),
+        json(res, 200, (await backends.status()) satisfies BackendsReply),
     ],
     [
       'GET',
@@ -466,19 +476,14 @@ export function makeRoutes({
           });
           return;
         }
-        const b = backendOrDetached(res, s);
+        const b = backendOrDetached(backends, res, s);
         if (!b) return;
-        // Orca: a permission/question dialog would take our Enter as its default answer. Headless just queues the turn.
-        if (b === orca && s.state === 'waiting') {
-          json(res, 409, {
-            error:
-              '권한 승인·질문 응답을 기다리는 중입니다. 터미널에서 먼저 답해주세요.',
-            code: 'waiting',
-          });
+        if (!b.canPromptWhile(s.state)) {
+          json(res, 409, { error: PROMPT_WAITING, code: 'waiting' });
           return;
         }
         try {
-          const r = await b.sendPrompt(store, s, text);
+          const r = await b.sendPrompt(s, text);
           console.log(`[web] prompt → ${label(s)}: ${preview(text)}`);
           store.emitSession(s);
           json(res, 200, { ok: true, accepted: r?.accepted ?? true });
@@ -499,7 +504,7 @@ export function makeRoutes({
         });
         if (!s) return;
         const force = data.force === true,
-          b = backendOrDetached(res, s);
+          b = backendOrDetached(backends, res, s);
         if (!b) return;
         // `/exit` is only safe at an idle prompt; the client re-asks with force otherwise.
         if (!force && s.state !== 'idle') {
@@ -511,7 +516,7 @@ export function makeRoutes({
           return;
         }
         try {
-          await b.closeSession(store, s, { force });
+          await b.close(s, { force });
           console.log(`[web] close${force ? ' (force)' : ''} → ${label(s)}`);
           json(res, 200, { ok: true });
         } catch (e) {
@@ -535,10 +540,10 @@ export function makeRoutes({
           msg: SESSION_GONE,
         });
         if (!s) return;
-        const b = backendOrDetached(res, s);
+        const b = backendOrDetached(backends, res, s);
         if (!b) return;
         try {
-          await b.setMode(store, s, mode);
+          await b.setMode(s, mode);
           console.log(`[web] mode ${mode} → ${label(s)}`);
           store.emitSession(s);
           json(res, 200, { ok: true, mode: s.permissionMode });
@@ -562,28 +567,18 @@ export function makeRoutes({
           msg: SESSION_GONE,
         });
         if (!s) return;
-        if (s.backend !== 'headless') {
-          // an Orca / terminal session: press the dialog's Yes / No in its terminal
-          try {
-            await orca.answerPermission(store, s, data.allow, data.id);
-          } catch (e) {
-            backendError(res, e);
-            return;
-          }
-          console.log(
-            `[web] permission ${data.allow ? 'allow' : 'deny'} ${s.asking?.tool || '?'} (terminal) → ${label(s)}`,
-          );
-          store.emitSession(s);
-          json(res, 200, { ok: true });
-          return;
-        }
-        const p = s.pendingPermissions.find((x) => x.id === data.id);
-        if (!headless.decidePermission(store, s, data.id, data.allow)) {
-          json(res, 409, { error: '이미 처리된 요청입니다.', code: 'stale' });
+        // not driverOf: a headless request outlives its runner's connection (and answers 'stale' once it's gone)
+        let what: string;
+        try {
+          what = await backends
+            .ownerOf(s)
+            .answerPermission(s, data.id, data.allow);
+        } catch (e) {
+          backendError(res, e);
           return;
         }
         console.log(
-          `[web] permission ${data.allow ? 'allow' : 'deny'} ${p?.tool || '?'} → ${label(s)}`,
+          `[web] permission ${data.allow ? 'allow' : 'deny'} ${what} → ${label(s)}`,
         );
         json(res, 200, { ok: true });
       },
@@ -592,15 +587,14 @@ export function makeRoutes({
       'GET',
       '/worktrees',
       async ({ res, url }) => {
-        const backend =
-          url.searchParams.get('backend') || (await backends()).default;
+        const id =
+          url.searchParams.get('backend') || (await backends.status()).default;
+        const b = id ? backends.find(id) : null;
         try {
-          if (backend === 'orca')
-            json(res, 200, { worktrees: await listWorktrees() });
-          else if (backend === 'headless')
+          if (b)
             json(res, 200, {
-              worktrees: await listGitWorktrees(repoRoots(store)),
-            });
+              worktrees: await b.listWorktrees(),
+            } satisfies WorktreesReply);
           else json(res, 400, { error: '알 수 없는 백엔드입니다.' });
         } catch (e) {
           backendError(res, e);

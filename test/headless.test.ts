@@ -10,6 +10,10 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { parseWorktrees, repoRoots } from '../server/backends/git.ts';
+import {
+  createHeadlessBackend,
+  createPermissionDesk,
+} from '../server/backends/headless.ts';
 import type { RunnerSpec } from '../server/backends/protocol.ts';
 import {
   buildClaudeArgs,
@@ -28,6 +32,7 @@ import {
   versionAtLeast,
 } from '../server/backends/protocol.ts';
 import { MAX_PROMPT_CHARS, RUN_DIR } from '../server/config.ts';
+import { holdForDecision } from '../server/http.ts';
 import type { Store } from '../server/store.ts';
 import type { HookEvent, LogEntry, Session } from '../server/types.ts';
 
@@ -736,15 +741,21 @@ const writeEv = (file: string): HookEvent => ({
   tool_input: { file_path: `/tmp/${file}`, content: 'ok' },
 });
 
+/** Park a request and hold a (fake) hook response open for it, the way the /hook route does. */
+const parkOver = (
+  desk: ReturnType<typeof createPermissionDesk>,
+  s: Session,
+  ev: HookEvent,
+  res: FakeRes,
+) => holdForDecision(res as unknown as ServerResponse, desk.park(s, ev));
+
 test('parkPermission: allow, deny, stale, and two requests at once', async () => {
-  const { parkPermission, decidePermission } = await import(
-    '../server/backends/headless.ts'
-  );
   const { logs, s, store } = permFixture();
+  const desk = createPermissionDesk(store);
   const a = new FakeRes(),
     b = new FakeRes();
-  parkPermission(store, s, writeEv('a.txt'), a as unknown as ServerResponse);
-  parkPermission(store, s, writeEv('b.txt'), b as unknown as ServerResponse);
+  const da = parkOver(desk, s, writeEv('a.txt'), a);
+  const db = parkOver(desk, s, writeEv('b.txt'), b);
   assert.equal(a.status, 200);
   assert.ok(a.flushed);
   assert.equal(a.writableEnded, false);
@@ -757,11 +768,13 @@ test('parkPermission: allow, deny, stale, and two requests at once', async () =>
   assert.match(pa.detail!, /a\.txt/);
   assert.equal(typeof pa.at, 'number');
   assert.equal(pa.id.length, 8);
-  assert.equal(decidePermission(store, s, pa.id, true), true);
+  assert.equal(desk.answer(s, pa.id, true), 'Write');
+  await da;
   assert.deepEqual(JSON.parse(a.body.trim()), { decision: 'allow' });
   assert.equal(s.state, 'waiting'); // b is still asking
-  assert.equal(decidePermission(store, s, pa.id, false), false); // stale
-  assert.equal(decidePermission(store, s, pb.id, false), true);
+  assert.throws(() => desk.answer(s, pa.id, false), { code: 'stale' });
+  desk.answer(s, pb.id, false);
+  await db;
   assert.deepEqual(JSON.parse(b.body.trim()), { decision: 'deny' });
   assert.equal(s.state, 'thinking');
   assert.deepEqual(s.pendingPermissions, []);
@@ -773,16 +786,17 @@ test('parkPermission: allow, deny, stale, and two requests at once', async () =>
 
 test('parkPermission: heartbeat, no answer in time -> {} (claude denies), hook gone -> silent', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
-  const { parkPermission } = await import('../server/backends/headless.ts');
   const { PERMISSION_WAIT_MS, PERMISSION_HEARTBEAT_MS } = await import(
     '../server/config.ts'
   );
   const { logs, s, store } = permFixture();
+  const desk = createPermissionDesk(store);
   const res = new FakeRes();
-  parkPermission(store, s, writeEv('c.txt'), res as unknown as ServerResponse);
+  const done = parkOver(desk, s, writeEv('c.txt'), res);
   t.mock.timers.tick(PERMISSION_HEARTBEAT_MS);
   assert.equal(res.body, ' ');
   t.mock.timers.tick(PERMISSION_WAIT_MS);
+  await done;
   assert.equal(res.body.trim(), '{}');
   assert.deepEqual(
     logs.map((l) => l.text),
@@ -791,10 +805,20 @@ test('parkPermission: heartbeat, no answer in time -> {} (claude denies), hook g
   assert.equal(s.state, 'thinking');
   const gone = new FakeRes();
   s.state = 'waiting';
-  parkPermission(store, s, writeEv('d.txt'), gone as unknown as ServerResponse);
+  const left = parkOver(desk, s, writeEv('d.txt'), gone);
   gone.emit('close'); // the hook was killed / the server is going away
+  await left;
   assert.deepEqual(s.pendingPermissions, []);
   assert.equal(logs.length, 1);
+});
+
+test('a headless backend parks only the requests of sessions it runs', async () => {
+  const { s, store } = permFixture();
+  const h = createHeadlessBackend({ store });
+  assert.equal(h.parkPermission(s, writeEv('e.txt')), null); // no runner attached
+  assert.deepEqual(s.pendingPermissions, []);
+  assert.throws(() => h.ensureAttached(s), { code: 'detached' });
+  await assert.rejects(h.answerPermission(s, 'nope', true), { code: 'stale' });
 });
 
 test('send.ts --decide: prints the office decision, nothing when there is none', async () => {

@@ -3,9 +3,16 @@ import path from 'node:path';
 import { codedError, errMessage } from '../../shared/errors.ts';
 import { isPidAlive } from '../../shared/node/process.ts';
 import { sleep } from '../../shared/time.ts';
+import type { Backend, ProbeResult } from '../app/ports.ts';
 import { BACKEND_PROBE_TTL_MS, ORCA_BIN } from '../config.ts';
 import type { Store } from '../store.ts';
 import type { Session } from '../types.ts';
+
+/** Per-instance state the functions below share: the store, and the tabs this server run opened. */
+interface Ctx {
+  store: Store;
+  launched: Set<string>; // terminal handles opened by a launch (this server run)
+}
 
 /** `orca ... --json` output: `result` on success (its shape depends on the subcommand), `error` otherwise. */
 interface OrcaReply {
@@ -98,26 +105,14 @@ function runOrca<T = unknown>(
   });
 }
 
-let probed: {
-  at: number;
-  result: { available: boolean; reason?: string };
-} | null = null; // { at, result }: `orca worktree list` per hit would stall every /backends call
-/** Is the Orca CLI installed and its app reachable? Cached for BACKEND_PROBE_TTL_MS. */
-export async function probe(): Promise<{
-  available: boolean;
-  reason?: string;
-}> {
-  if (probed && Date.now() - probed.at < BACKEND_PROBE_TTL_MS)
-    return probed.result;
-  let result: { available: boolean; reason?: string };
+/** Is the Orca CLI installed and its app reachable? */
+async function probeOrca(): Promise<ProbeResult> {
   try {
     await runOrca(['worktree', 'list'], { timeoutMs: 5000 });
-    result = { available: true };
+    return { available: true };
   } catch (e) {
-    result = { available: false, reason: errMessage(e) };
+    return { available: false, reason: errMessage(e) };
   }
-  probed = { at: Date.now(), result };
-  return result;
 }
 
 const norm = (p: unknown) =>
@@ -239,7 +234,7 @@ async function boundTerminal(store: Store, s: Session) {
   return t;
 }
 
-export async function sendPrompt(store: Store, s: Session, text: string) {
+async function sendPrompt(store: Store, s: Session, text: string) {
   const t = await resolveTerminal(store, s);
   if (t.agentIdentity && t.agentIdentity !== 'claude') {
     throw codedError(
@@ -255,8 +250,8 @@ export async function sendPrompt(store: Store, s: Session, text: string) {
  * End session `s`. Default types `/exit` (clean SessionEnd; the tab stays). `force` closes the
  * Orca terminal, killing whatever runs there — the only safe option when the TUI isn't at its prompt.
  */
-export async function closeSession(
-  store: Store,
+async function closeSession(
+  { store, launched }: Ctx,
   s: Session,
   { force = false }: { force?: boolean } = {},
 ) {
@@ -267,7 +262,7 @@ export async function closeSession(
   }
   const r = await sendText(t.handle, '/exit', { enter: true });
   // A tab we opened has nothing left once claude exits; a user's own tab keeps its shell.
-  if (launched.has(t.handle)) closeAfterExit(s, t.handle);
+  if (launched.has(t.handle)) closeAfterExit(launched, s, t.handle);
   return r;
 }
 
@@ -301,7 +296,7 @@ export function footerMode(lines: string[]): string | null {
 const screenMode = async (handle: string) =>
   footerMode(await readScreen(handle));
 
-export async function setMode(store: Store, s: Session, mode: string) {
+async function setMode(store: Store, s: Session, mode: string) {
   // dontAsk is never in the Shift+Tab cycle: refuse before pressing anything (cycling would leave some other mode on)
   if (mode === 'dontAsk' && s.permissionMode !== mode)
     throw codedError(
@@ -402,7 +397,7 @@ const screenDialog = async (handle: string) =>
  * Allow or deny the permission dialog that session `s`'s terminal shows. `ref` is the `asking.at` of the card the user
  * clicked: an answer for a request that has since changed is refused rather than applied to the next one.
  */
-export async function answerPermission(
+async function answerPermission(
   store: Store,
   s: Session,
   allow: boolean,
@@ -443,9 +438,7 @@ export async function answerPermission(
   );
 }
 
-const launched = new Set<string>(); // terminal handles opened by launchClaude (this server run)
-
-function closeAfterExit(s: Session, handle: string) {
+function closeAfterExit(launched: Set<string>, s: Session, handle: string) {
   const deadline = Date.now() + 30_000;
   const tick = () => {
     if (s.pid && isPidAlive(s.pid) && Date.now() < deadline) {
@@ -480,22 +473,26 @@ const promptAndModelArgs = (prompt?: string | null, model?: string | null) => [
 ];
 
 /** Run an Orca launch and remember the tab it opened, so closing that session can close the tab too. */
-async function launchTracked(args: string[], timeoutMs: number) {
+async function launchTracked(
+  launched: Set<string>,
+  args: string[],
+  timeoutMs: number,
+) {
   const r = await runOrca(args, { timeoutMs });
   const h = launchedHandle(r);
   if (h) launched.add(h);
   return r;
 }
 
-export async function launchClaude({
-  worktreeId,
-  prompt,
-  model,
-}: {
+export interface LaunchClaude {
   worktreeId: string;
   prompt?: string | null;
   model?: string | null;
-}) {
+}
+function launchClaude(
+  launched: Set<string>,
+  { worktreeId, prompt, model }: LaunchClaude,
+) {
   const args = [
     'agent',
     'launch',
@@ -505,24 +502,23 @@ export async function launchClaude({
     `id:${worktreeId}`,
     ...promptAndModelArgs(prompt, model),
   ];
-  return launchTracked(args, 60_000);
+  return launchTracked(launched, args, 60_000);
 }
 
-/**
- * New worktree branched from `base` (its branch, or its commit when detached), recorded as its child,
- * with claude started in the first terminal. Repo setup hooks follow the repo's own policy.
- */
-export async function createWorktreeWithClaude({
-  base,
-  name,
-  prompt,
-  model,
-}: {
+export interface CreateWorktree {
   base: WorktreeBase;
   name: string;
   prompt?: string | null;
   model?: string | null;
-}) {
+}
+/**
+ * New worktree branched from `base` (its branch, or its commit when detached), recorded as its child,
+ * with claude started in the first terminal. Repo setup hooks follow the repo's own policy.
+ */
+function createWorktreeWithClaude(
+  launched: Set<string>,
+  { base, name, prompt, model }: CreateWorktree,
+) {
   const args = [
     'worktree',
     'create',
@@ -538,5 +534,48 @@ export async function createWorktreeWithClaude({
     'claude',
     ...promptAndModelArgs(prompt, model),
   ];
-  return launchTracked(args, 180_000);
+  return launchTracked(launched, args, 180_000);
+}
+
+// ---- the backend ---------------------------------------------------------------------------------------------------
+export interface OrcaBackend extends Backend {
+  readonly id: 'orca';
+  listWorktrees(): Promise<OrcaWorktreeRow[]>;
+  /** Start claude in an existing worktree's new tab. */
+  launchClaude(o: LaunchClaude): Promise<unknown>;
+  createWorktreeWithClaude(o: CreateWorktree): Promise<unknown>;
+}
+
+export function createOrcaBackend({ store }: { store: Store }): OrcaBackend {
+  const ctx: Ctx = { store, launched: new Set() };
+  let probed: { at: number; result: ProbeResult } | null = null; // `orca worktree list` per hit would stall every /backends call
+
+  return {
+    id: 'orca',
+    /** Cached for BACKEND_PROBE_TTL_MS. */
+    async probe() {
+      if (probed && Date.now() - probed.at < BACKEND_PROBE_TTL_MS)
+        return probed.result;
+      const result = await probeOrca();
+      probed = { at: Date.now(), result };
+      return result;
+    },
+    owns: (s) => s.backend == null || s.backend === 'orca', // a terminal session we don't launch is driven through Orca too
+    ensureAttached: () => {}, // found per call (resolveTerminal), nothing to attach
+    // a permission/question dialog would take our Enter as its default answer
+    canPromptWhile: (state) => state !== 'waiting',
+    sendPrompt: async (s, text) => (await sendPrompt(store, s, text)) ?? {},
+    close: (s, { force }) => closeSession(ctx, s, { force }),
+    setMode: (s, mode) => setMode(store, s, mode),
+    /** Press the dialog's Yes / No in the session's terminal; `id` is the `asking.at` of the card clicked. */
+    async answerPermission(s, id, allow) {
+      await answerPermission(store, s, allow, id);
+      store.emitSession(s);
+      return `${s.asking?.tool || '?'} (terminal)`;
+    },
+    parkPermission: () => null, // terminal dialogs are answered on screen (answerPermission), never held
+    listWorktrees,
+    launchClaude: (o) => launchClaude(ctx.launched, o),
+    createWorktreeWithClaude: (o) => createWorktreeWithClaude(ctx.launched, o),
+  };
 }

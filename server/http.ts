@@ -1,7 +1,8 @@
 // Request plumbing shared by the routes: bodies, JSON replies, the same-origin guard.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { safeJsonParse } from '../shared/json.ts';
-import { MAX_BODY_BYTES, PORT } from './config.ts';
+import type { ParkedPermission } from './app/ports.ts';
+import { MAX_BODY_BYTES, PERMISSION_HEARTBEAT_MS, PORT } from './config.ts';
 import type { Store } from './store.ts';
 import type { Session } from './types.ts';
 
@@ -48,6 +49,24 @@ export function json(res: ServerResponse, status: number, data: unknown) {
   const body = JSON.stringify(data);
   res.writeHead(status, JSON_HEADERS);
   res.end(body);
+}
+
+/**
+ * Keep a `--decide` hook's request open until its parked permission settles, then answer with the decision JSON.
+ * Headers go out at once and a space every PERMISSION_HEARTBEAT_MS, because undici (the hook's fetch) gives up on a
+ * silent response after 300 s; the hook trims them off. A hook that goes away cancels the request.
+ */
+export function holdForDecision(res: ServerResponse, p: ParkedPermission) {
+  res.writeHead(200, JSON_HEADERS);
+  res.flushHeaders();
+  const hb = setInterval(() => {
+    if (!res.writableEnded) res.write(' ');
+  }, PERMISSION_HEARTBEAT_MS);
+  res.on('close', p.cancel);
+  return p.reply.then((reply) => {
+    clearInterval(hb);
+    if (!res.writableEnded) res.end(JSON.stringify(reply));
+  });
 }
 
 /** Plain-text 404 for paths (and files) we don't serve. */
