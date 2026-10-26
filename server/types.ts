@@ -44,7 +44,7 @@ export interface Subagent extends SubagentInfo {
   metaRead?: boolean; // the .meta.json next to its transcript was read (transcript.ts)
 }
 
-/** Bounded activity log (see RingBuffer in store.ts). */
+/** Bounded activity log (see RingBuffer in domain/session.ts). */
 export interface Log {
   push(x: LogEntry): void;
   toArray(): LogEntry[];
