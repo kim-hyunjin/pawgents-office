@@ -3,6 +3,13 @@
 import fs from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
+import type {
+  BackendsReply,
+  DiffReply,
+  LaunchReply,
+  LogReply,
+  ReplyReply,
+} from '../shared/api.ts';
 import { errMessage } from '../shared/errors.ts';
 import { safeJsonParse } from '../shared/json.ts';
 import {
@@ -154,7 +161,12 @@ async function launchOrca(
     json(res, 502, { error: errors.join('\n') });
     return;
   }
-  json(res, 200, { ok: true, started: started.length, errors, sessions: [] });
+  json(res, 200, {
+    ok: true,
+    started: started.length,
+    errors,
+    sessions: [],
+  } satisfies LaunchReply);
 }
 
 /** Headless: worktrees (if any) are made one by one (git locks the repo), then every claude starts in parallel. */
@@ -244,7 +256,12 @@ async function launchHeadless(
     json(res, 502, { error: errors.join('\n') || '시작하지 못했습니다.' });
     return;
   }
-  json(res, 200, { ok: true, started: sessions.length, errors, sessions });
+  json(res, 200, {
+    ok: true,
+    started: sessions.length,
+    errors,
+    sessions,
+  } satisfies LaunchReply);
 }
 
 export function makeRoutes({
@@ -355,7 +372,12 @@ export function makeRoutes({
         sse.add(req, res, { type: 'snapshot', data: store.snapshot() }),
     ],
     ['GET', '/state', ({ res }) => json(res, 200, store.snapshot())],
-    ['GET', '/backends', async ({ res }) => json(res, 200, await backends())],
+    [
+      'GET',
+      '/backends',
+      async ({ res }) =>
+        json(res, 200, (await backends()) satisfies BackendsReply),
+    ],
     [
       'GET',
       '/healthz',
@@ -371,7 +393,7 @@ export function makeRoutes({
         const s = findSession(store, res, id);
         if (!s) return;
         if (!s.ended) scheduleFileSync(store, s); // the panel just opened: freshen its worked files
-        json(res, 200, { id: s.id, log: s.log.toArray() });
+        json(res, 200, { id: s.id, log: s.log.toArray() } satisfies LogReply);
       },
     ],
     [
@@ -391,7 +413,7 @@ export function makeRoutes({
           agentId,
           text: ent.replyText || ent.lastText || '',
           at: ent.lastTextAt,
-        });
+        } satisfies ReplyReply);
       },
     ],
     [
@@ -414,7 +436,7 @@ export function makeRoutes({
           const d = await fileDiff(s.cwd, f.path, {
             since: s.startedAt - 60_000,
           });
-          json(res, 200, { file: f.path, ...d });
+          json(res, 200, { file: f.path, ...d } satisfies DiffReply);
         } catch (e) {
           const { code, message } = e as SysError;
           json(

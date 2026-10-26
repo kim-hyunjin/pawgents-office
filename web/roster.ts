@@ -1,6 +1,6 @@
 // Staff roster: a compact list of every working cat under the HUD — state at a glance, click a row for the
 // detail panel, or send one home (two clicks, like the panel's 퇴근 button). Toggled from the HUD's "목록" button.
-import type { SessionSnapshot } from '../server/types.ts';
+import type { SessionSnapshot } from '../shared/api.ts';
 import { closeSession } from './api.ts';
 import { FAMILIES, familyOf, sprite } from './sprites.ts';
 import {

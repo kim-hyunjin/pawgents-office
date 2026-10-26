@@ -1,6 +1,6 @@
 // Full agent reply in a large dialog, markdown rendered. Opened from the panel's last-reply card.
 // The full text is fetched on demand (/sessions/:id/reply) — SSE only carries the short preview.
-import type { SessionSnapshot } from '../server/types.ts';
+import type { ReplyReply, SessionSnapshot } from '../shared/api.ts';
 import { api } from './api.ts';
 import { renderMarkdown } from './markdown.ts';
 import { $, bindDialogClose, fmtTime } from './ui.ts';
@@ -53,7 +53,7 @@ export function refreshReply(s: SessionSnapshot) {
 
 async function load(s: SessionSnapshot) {
   const id = s.id;
-  let d: { text?: string; at: number } | null = null;
+  let d: ReplyReply | null = null;
   try {
     d = await api(`/sessions/${encodeURIComponent(id)}/reply`);
   } catch {

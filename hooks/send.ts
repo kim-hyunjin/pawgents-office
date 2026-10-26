@@ -5,13 +5,13 @@
 // and prints the decision JSON; no answer prints nothing, which claude treats as "no decision" (denied).
 import fs from 'node:fs';
 import path from 'node:path';
-import type { HookEvent } from '../server/types.ts';
 import {
   DECIDE_FLAG,
   DECISION_TIMEOUT_S,
   decisionOutput,
 } from '../shared/decision.ts';
 import { errMessage } from '../shared/errors.ts';
+import type { HookEvent } from '../shared/hook.ts';
 import { safeJsonParse } from '../shared/json.ts';
 import { MAX_REPLY_CHARS } from '../shared/limits.ts';
 import { BASE_URL, DATA_DIR } from '../shared/node/env.ts';

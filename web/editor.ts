@@ -3,7 +3,7 @@
 // their inside, resized by their corners; clicking a wall tile cycles door → open passage → wall. Clicking an outer
 // wall moves the front door there (or drag the door along the walls). Furniture is placed from the palette and dragged around. Every change is validated (layout.js) and problem tiles turn red;
 // saving sends the draft to the server, which pushes it to every open office. The canvas overlay is editor-draw.js.
-import type { Office } from '../server/types.ts';
+import type { Office } from '../shared/api.ts';
 import type { Item, Layout, Room } from '../shared/layout.ts';
 import {
   cloneOffice,

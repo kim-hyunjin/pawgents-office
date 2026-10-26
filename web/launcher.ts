@@ -1,6 +1,12 @@
 // "새 직원" dialog: start claude sessions through the server's POST /launch, either in an Orca terminal (Orca CLI)
 // or headless (`claude -p` behind a per-session runner). Opened from the #t-new toolbar button.
-import type { Backend } from '../server/types.ts';
+import type {
+  Backend,
+  BackendsReply,
+  LaunchReply,
+  WorktreeInfo as Worktree,
+  WorktreesReply,
+} from '../shared/api.ts';
 import { MAX_HIRES, WORKTREE_NAME_RE } from '../shared/limits.ts';
 import { api, post } from './api.ts';
 import { $, bindDialogClose, esc, setMsg as setMsgOn, storage } from './ui.ts';
@@ -40,15 +46,6 @@ const HINT: Record<Backend, string> = {
   headless: '사무실 서버가 claude -p 를 직접 띄웁니다. Orca가 없어도 돼요.',
 };
 let backend: Backend | null = null; // null while /backends is loading or nothing is available
-interface Worktree {
-  id: string;
-  repo: string;
-  branch?: string;
-  name?: string;
-  path: string;
-  isMain?: boolean;
-  head?: string;
-}
 const lists: Record<Backend, Worktree[]> = { orca: [], headless: [] };
 let loadSeq = 0; // a slower list for a backend the user already switched away from must not overwrite the current one
 const setMsg = (text: string, kind = '') => setMsgOn(msg, text, kind);
@@ -62,8 +59,7 @@ async function loadWorktrees(b: Backend) {
   box.innerHTML = '<option value="">불러오는 중…</option>';
   try {
     const list =
-      (await api<{ worktrees?: Worktree[] }>(`/worktrees?backend=${b}`))
-        .worktrees || [];
+      (await api<WorktreesReply>(`/worktrees?backend=${b}`)).worktrees || [];
     if (seq !== loadSeq) return;
     lists[b] = list;
     if (b === 'orca') {
@@ -173,12 +169,6 @@ for (const r of radios)
     loadWorktrees(backend);
   });
 
-interface BackendsReply {
-  forced?: boolean;
-  default?: Backend;
-  orca?: { available: boolean };
-  headless?: { available: boolean };
-}
 export async function openLauncher() {
   if (dlg.open) return;
   // every open starts from the defaults (the lists still preselect the last worktree / folder used)
@@ -265,7 +255,7 @@ form.addEventListener('submit', async (e) => {
         : `Orca에서 ${count}명 시작하는 중…`,
   );
   try {
-    const d = await post<{ started: number; errors?: string[] }>('/launch', {
+    const d = await post<LaunchReply>('/launch', {
       backend,
       ...(hl ? { cwd, permissionMode: perm.value } : { worktreeId: sel.value }),
       newWorktree: newWt.checked ? { name } : null,

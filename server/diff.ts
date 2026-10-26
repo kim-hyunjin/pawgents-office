@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import type { DiffReply } from '../shared/api.ts';
 import { GIT_TIMEOUT_MS, MAX_DIFF_BYTES, MAX_DIFF_CHARS } from './config.ts';
 import type { SysError } from './types.ts';
 
@@ -68,14 +69,13 @@ function patchOf({ out, truncated }: { out: string; truncated: boolean }) {
 }
 
 /**
- * @returns {Promise<{ rel: string, status: 'changed'|'untracked'|'committed'|'clean'|'missing', patch: string, truncated: boolean, commit?: { hash: string, subject: string } }>}
  * @throws {DiffError} code 'not_repo' (cwd is not in a git worktree) or 'outside' (file is not under it); git failures pass through.
  */
 export async function fileDiff(
   cwd: string | undefined,
   file: string,
   { since = 0 }: { since?: number } = {},
-) {
+): Promise<Omit<DiffReply, 'file'>> {
   const root = cwd ? await worktreeRoot(cwd) : null;
   if (!root) throw new DiffError('not_repo', 'git 저장소가 아닙니다.');
   const rel = path.relative(root, path.resolve(file));

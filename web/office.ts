@@ -3,7 +3,7 @@ import type {
   SessionSnapshot,
   Snapshot,
   SubagentSnapshot,
-} from '../server/types.ts';
+} from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
 import { post } from './api.ts';
 import { Editor } from './editor.ts';

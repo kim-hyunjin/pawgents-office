@@ -2,7 +2,7 @@
 // breed picker; the choice is saved on the server and pushed to every open office (office.js applies it). Also shows
 // the kittens (subagents) and the receptionist, and manages uploaded skins: PNG sprite sheets that can stand in for a breed (format in sprites.js SKIN_ROWS / README).
 
-import type { SessionSnapshot } from '../server/types.ts';
+import type { SessionSnapshot } from '../shared/api.ts';
 import {
   isCell,
   MAX_CELL,

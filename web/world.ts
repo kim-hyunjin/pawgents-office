@@ -2,7 +2,7 @@ import type {
   Office,
   SessionSnapshot,
   SubagentSnapshot,
-} from '../server/types.ts';
+} from '../shared/api.ts';
 import type { Geo, Layout, Pt, Spot } from '../shared/layout.ts';
 import { compile, TILE } from '../shared/layout.ts';
 import { step } from './anim.ts';

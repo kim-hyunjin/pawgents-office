@@ -97,7 +97,7 @@ test('fileDiff: changed / untracked / committed / clean / missing, outside and n
     git(repo, 'commit', '-q', '-m', 'second change');
     d = await fileDiff(repo, a, { since: Date.now() - 60_000 });
     assert.equal(d.status, 'committed');
-    assert.equal('commit' in d && d.commit.subject, 'second change');
+    assert.equal(d.commit?.subject, 'second change');
     assert.match(d.patch, /^\+three$/m);
     d = await fileDiff(repo, a, { since: Date.now() + 3600_000 });
     assert.equal(d.status, 'clean');

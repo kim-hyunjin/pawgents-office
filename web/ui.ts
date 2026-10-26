@@ -1,7 +1,7 @@
 // Small DOM and formatting helpers shared by the office, its panels and dialogs, and the words, colors and icons
 // every view uses for a session (state, permission mode, tools, background work).
 
-import type { Backend, CurrentTool, SessionSnapshot } from '../server/types.ts';
+import type { Backend, CurrentTool, SessionSnapshot } from '../shared/api.ts';
 import type { Sprite } from './sprites.ts';
 import { spriteSize } from './sprites.ts';
 

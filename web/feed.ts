@@ -1,4 +1,4 @@
-import type { LogEntry, SessionSnapshot } from '../server/types.ts';
+import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
 import { EV_ICON, esc, fmtTime, ICON } from './ui.ts';
 import { world } from './world.ts';
 

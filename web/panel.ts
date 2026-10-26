@@ -1,4 +1,4 @@
-import type { LogEntry, SessionSnapshot } from '../server/types.ts';
+import type { LogEntry, LogReply, SessionSnapshot } from '../shared/api.ts';
 import { api, closeSession, decidePermission, post, setMode } from './api.ts';
 import { openDiff, refreshDiff } from './diff.ts';
 import { openReply, refreshReply } from './reply.ts';
@@ -137,7 +137,7 @@ export class Panel {
     this.renderMeta(session);
     this.addEntries(session.log || []);
     try {
-      const d = await api<{ log?: LogEntry[] }>(
+      const d = await api<LogReply>(
         `/sessions/${encodeURIComponent(session.id)}/log`,
       );
       if (this.id === session.id) this.addEntries(d.log || []);

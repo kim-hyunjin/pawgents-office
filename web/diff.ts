@@ -1,7 +1,7 @@
 // One file's git diff in a large dialog, colored by line. Opened from the panel's worked-file chips;
 // the patch comes from /sessions/:id/diff (working tree vs HEAD, or the session's last commit of it).
 
-import type { SessionSnapshot } from '../server/types.ts';
+import type { DiffReply, SessionSnapshot } from '../shared/api.ts';
 import { api } from './api.ts';
 import { $, bindDialogClose, esc } from './ui.ts';
 
@@ -31,13 +31,6 @@ copyBtn.addEventListener('click', async () => {
   }, 1500);
 });
 
-interface DiffReply {
-  patch?: string;
-  status: string;
-  rel?: string;
-  truncated?: boolean;
-  commit?: { subject?: string; hash?: string };
-}
 const STATUS: Record<string, string> = {
   changed: 'HEAD 기준 작업 트리 변경',
   untracked: '새 파일 (아직 git에 추가되지 않음)',
