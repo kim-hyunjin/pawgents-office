@@ -13,11 +13,8 @@ import { isCatFamily } from '../shared/model.ts';
 import {
   DESK_MEMORY_MS,
   ORPHAN_SESSION_MS,
-  SEATS_PER_DESK,
   SESSION_TTL_MS,
   SKINS_DIR,
-  SNAPSHOT_FILES,
-  SNAPSHOT_LOG,
   STATE_FILE,
   SUBAGENT_STALE_MS,
   SUBAGENT_TTL_MS,
@@ -42,6 +39,7 @@ import {
   setState,
 } from './domain/session.ts';
 import * as files from './domain/worked-files.ts';
+import * as dto from './http/dto.ts';
 import { repoOf } from './repo.ts';
 import { hasSkin, newSkinId, SKIN_ID } from './skins.ts';
 import type {
@@ -487,90 +485,20 @@ export class Store {
     }
   }
 
-  // ---- serialization -------------------------------------------------------
+  // ---- serialization (http/dto.ts) ---------------------------------------
   serializeSubagent(a: Subagent): SubagentSnapshot {
-    return {
-      agentId: a.agentId,
-      parentSessionId: a.parentSessionId,
-      type: a.type,
-      model: a.model,
-      description: a.description,
-      task: a.task,
-      lastThinking: a.lastThinking,
-      lastThinkingAt: a.lastThinkingAt,
-      toolCount: a.toolCount,
-      state: a.state,
-      stateSince: a.stateSince,
-      currentTool: a.currentTool,
-      lastText: a.lastText,
-      lastTextAt: a.lastTextAt,
-      startedAt: a.startedAt,
-      lastEventAt: a.lastEventAt,
-      ended: a.ended,
-      endedAt: a.endedAt,
-      seat: a.seat,
-    };
+    return dto.serializeSubagent(a);
   }
-  serializeSession(s: Session, logCount = SNAPSHOT_LOG): SessionSnapshot {
-    return {
-      id: s.id,
-      pid: s.pid,
-      name: s.name,
-      title: s.title,
-      cwd: s.cwd,
-      model: s.model,
-      state: s.state,
-      stateSince: s.stateSince,
-      currentTool: s.currentTool,
-      lastText: s.lastText,
-      lastTextAt: s.lastTextAt,
-      lastPrompt: s.lastPrompt,
-      lastThinking: s.lastThinking,
-      lastThinkingAt: s.lastThinkingAt,
-      turnStartedAt: s.turnStartedAt,
-      turnTools: s.turnTools,
-      cost: s.cost,
-      startedAt: s.startedAt,
-      lastEventAt: s.lastEventAt,
-      ended: s.ended,
-      endedAt: s.endedAt,
-      officeId: s.officeId,
-      desk: s.desk,
-      permissionMode: s.permissionMode,
-      hookEvents: s.hookEvents,
-      orcaTerminal: s.orcaTerminal,
-      backend: s.backend,
-      pendingPermissions: s.pendingPermissions,
-      asking: s.asking,
-      bgTasks: s.bgTasks,
-      awaitingShell: s.awaitingShell,
-      subagents: [...s.subagents.values()].map((a) =>
-        this.serializeSubagent(a),
-      ),
-      files: [...s.files.values()]
-        .reverse()
-        .slice(0, SNAPSHOT_FILES)
-        .map(({ path: p, name, edited, git, t }) => ({
-          path: p,
-          name,
-          edited,
-          git,
-          t,
-        })), // newest first (see bumpFile)
-      log: s.log.last(logCount),
-    };
+  serializeSession(s: Session, logCount?: number): SessionSnapshot {
+    return dto.serializeSession(s, logCount);
   }
   snapshot(): Snapshot {
-    return {
-      now: Date.now(),
+    return dto.snapshot({
       offices: this.offices,
       together: this.together,
-      seatsPerDesk: SEATS_PER_DESK,
       cats: this.cats,
       skins: this.skins,
-      sessions: [...this.sessions.values()].map((s) =>
-        this.serializeSession(s),
-      ),
-    };
+      sessions: this.sessions.values(),
+    });
   }
 }
