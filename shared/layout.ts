@@ -105,7 +105,7 @@ export const MIN_W = 20,
   MAX_W = 64,
   MAX_H = 40;
 
-/** Room types: floor colors live in tilemap.js. A room's walls are glass when `glass` (default: meeting rooms). */
+/** Room types: floor colors live in tilemap.ts. A room's walls are glass when `glass` (default: meeting rooms). */
 export const ROOM_TYPES: Record<string, RoomTypeDef> = {
   meeting: { label: '회의실', glass: true },
   lobby: { label: '로비' },

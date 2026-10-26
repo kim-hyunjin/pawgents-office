@@ -1,5 +1,5 @@
 // Cat string art: the adult (employee) and kitten (assistant) sheets, assembled from parts so every pose shares the
-// same head and body. Letters are palette keys (see sprites.js `coat`): O outline, F fur, S markings, A ears,
+// same head and body. Letters are palette keys (see sprites.ts `coat`): O outline, F fur, S markings, A ears,
 // T tail, C chest, U muzzle, P paws, N nose, E eyes, W white (eye shine, paper), L lines, D dark (handset, marker),
 // R long-hair ruff. '.' is empty. Seated poses face the viewer; walk / sit / side* / scratch are in profile, facing
 // right (the renderer mirrors them). Adults are about 16×18, kittens 12×12, drawn one art pixel per world pixel.

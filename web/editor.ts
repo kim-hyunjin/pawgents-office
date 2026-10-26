@@ -1,8 +1,8 @@
 // Layout editor ("배치 편집"): edits a draft of the current office's layout on the canvas, with a side panel for
 // the palette, the selection and the office's size. Rooms are dragged out as rectangles (walls follow), moved by
 // their inside, resized by their corners; clicking a wall tile cycles door → open passage → wall. Clicking an outer
-// wall moves the front door there (or drag the door along the walls). Furniture is placed from the palette and dragged around. Every change is validated (layout.js) and problem tiles turn red;
-// saving sends the draft to the server, which pushes it to every open office. The canvas overlay is editor-draw.js.
+// wall moves the front door there (or drag the door along the walls). Furniture is placed from the palette and dragged around. Every change is validated (layout.ts) and problem tiles turn red;
+// saving sends the draft to the server, which pushes it to every open office. The canvas overlay is editor-draw.ts.
 import type { Office } from '../shared/api.ts';
 import type { Item, Layout, Room } from '../shared/layout.ts';
 import {

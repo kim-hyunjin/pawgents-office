@@ -6,7 +6,7 @@ export const isName = (s: unknown) =>
 export const MAX_HIRES = 5; // employees per "새 직원" request
 export const WORKTREE_NAME_RE = /^[A-Za-z0-9][\w.-]{0,59}$/;
 
-// Sprite sheet rules (see README "스킨"): equal cells, one row per animation (sprites.js SKIN_ROWS), up to MAX_SKIN_ROWS rows.
+// Sprite sheet rules (see README "스킨"): equal cells, one row per animation (sprites.ts SKIN_ROWS), up to MAX_SKIN_ROWS rows.
 export const MAX_SKIN_BYTES = 512 * 1024; // decoded PNG; its base64 still fits in the server's MAX_BODY_BYTES
 export const MAX_SKIN_ROWS = 12,
   MAX_SKIN_COLS = 16,

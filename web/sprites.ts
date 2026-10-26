@@ -670,7 +670,7 @@ export const FAMILIES: Record<string, Family> = {
   },
 };
 
-let chosen: Record<string, string> = {}; // family -> breed key, set by the user (server-persisted, see office.js)
+let chosen: Record<string, string> = {}; // family -> breed key, set by the user (server-persisted, see office.ts)
 export function setBreedChoices(map?: Record<string, string> | null) {
   chosen = { ...(map || {}) };
 }
@@ -731,7 +731,7 @@ export function breedPalette(
   };
 }
 
-// The cat sheets themselves (string art per pose) live in cats.js.
+// The cat sheets themselves (string art per pose) live in cats.ts.
 const { employee: E } = SHEETS;
 
 const cache = new Map<string, Sprite>();
@@ -1038,7 +1038,7 @@ export function skinTemplate() {
   return c.convertToBlob({ type: 'image/png' });
 }
 
-/** The lobby's resident receptionist: a little robot (its own sheet in cats.js), not a cat any model could be. */
+/** The lobby's resident receptionist: a little robot (its own sheet in cats.ts), not a cat any model could be. */
 export const RECEPTIONIST_PAL: Palette = {
   fam: 'reception',
   variant: 0,

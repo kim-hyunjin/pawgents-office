@@ -3,7 +3,7 @@ import { clamp } from './anim.ts';
 import { $, storage } from './ui.ts';
 import { world } from './world.ts';
 
-export let S = 3; // whole-number scale the office is drawn at; a live binding office.js reads every frame
+export let S = 3; // whole-number scale the office is drawn at; a live binding office.ts reads every frame
 
 let canvas: HTMLCanvasElement,
   barEl: HTMLElement,

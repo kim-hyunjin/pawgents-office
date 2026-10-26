@@ -150,7 +150,7 @@ export const EV_ICON: Record<string, string> = {
   PostModelSwitch: '🔁',
 };
 
-/** "Edit · office.js": a tool call as one line of plain text (callers escape it for HTML). */
+/** "Edit · office.ts": a tool call as one line of plain text (callers escape it for HTML). */
 export const toolText = (
   t: Pick<CurrentTool, 'name'> & { target?: string | null },
 ) => `${t.name}${t.target ? ' · ' + t.target : ''}`;

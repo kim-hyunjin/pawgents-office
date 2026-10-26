@@ -387,7 +387,7 @@ function describe(e: Ent) {
   );
 }
 
-/** The HUD on the top wall is the one canvas-drawn button (its rect is written by render.js each frame). */
+/** The HUD on the top wall is the one canvas-drawn button (its rect is written by render.ts each frame). */
 const buttonAt = ([x, y]: [number, number]) =>
   world.hudBtn && inRect(world.hudBtn, x, y) ? HUD_BTN : null;
 

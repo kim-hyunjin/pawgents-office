@@ -1,5 +1,5 @@
-// Draws an office from its compiled layout (layout.js): floors, walls, built-in furniture. Live props (monitors,
-// the receptionist, yarn, wheel) are drawn every frame by render.js; the drawing helpers it needs are exported.
+// Draws an office from its compiled layout (layout.ts): floors, walls, built-in furniture. Live props (monitors,
+// the receptionist, yarn, wheel) are drawn every frame by render.ts; the drawing helpers it needs are exported.
 
 import type { Door, Geo, Pt, Rect, Wall } from '../shared/layout.ts';
 import { TILE, WALL_RISE } from '../shared/layout.ts';

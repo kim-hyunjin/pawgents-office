@@ -144,7 +144,7 @@ export interface World {
   rosterOpen: boolean;
 }
 
-// Also written elsewhere: hudBtn (render.js, each frame), rosterOpen (office.js), selectedKey (office.js / panel close).
+// Also written elsewhere: hudBtn (render.ts, each frame), rosterOpen (office.ts), selectedKey (office.ts / panel close).
 // geo, bg, view and the slot allocators are set by applyLayout before anything reads them.
 const unset = null as never;
 export const world: World = {
@@ -152,7 +152,7 @@ export const world: World = {
   officeId: null, // the office on screen; only its sessions get cats
   together: null, // office everyone works in regardless of repo (server setting), or null
   layoutJson: '', // its layout as last applied, to spot changes
-  geo: unset, // compiled layout (layout.js) of the office on screen
+  geo: unset, // compiled layout (layout.ts) of the office on screen
   bg: unset,
   view: unset, // what is drawn: { geo, bg } of the live office, or of the editor's draft
   editing: false,

@@ -5,8 +5,8 @@
   --text: #e8eaf2;
   --dim: #9aa0b8;
   --accent: #ffd166;
-  --panel-w: 380px; /* #panel / #editor width; viewport.js reads it to size the office beside them */
-  --panel-ms: 220ms; /* panel slide + office refit; viewport.js re-rasterizes after it */
+  --panel-w: 380px; /* #panel / #editor width; viewport.ts reads it to size the office beside them */
+  --panel-ms: 220ms; /* panel slide + office refit; viewport.ts re-rasterizes after it */
   --font: "Galmuri11", "DotumChe", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }

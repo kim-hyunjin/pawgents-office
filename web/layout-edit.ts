@@ -1,6 +1,6 @@
-// Pure edits on a layout draft for the editor (editor.js): door upkeep, moving rooms and furniture, hit testing and
+// Pure edits on a layout draft for the editor (editor.ts): door upkeep, moving rooms and furniture, hit testing and
 // room names. Every function takes the draft and touches nothing else, so plain Node imports this file too (tests).
-// Editor-only: the server imports layout.js, not this.
+// Editor-only: the server imports layout.ts, not this.
 
 import type { Item, Layout, Pt, Room } from '../shared/layout.ts';
 import {
