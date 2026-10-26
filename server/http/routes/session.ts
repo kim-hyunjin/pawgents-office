@@ -4,8 +4,8 @@ import { PERMISSION_MODES } from '../../../shared/permission.ts';
 import { BAD_REQUEST, UNKNOWN_MODE } from '../../app/errors.ts';
 import type { SessionActions } from '../../app/sessions.ts';
 import { MAX_PROMPT_CHARS } from '../../config.ts';
-import { findSession, json, readJson, sendError } from '../../http.ts';
 import type { Store } from '../../store.ts';
+import { findSession, json, readJson, sendError } from '../common.ts';
 import type { Route } from './types.ts';
 
 const SESSION_GONE = '세션이 없거나 종료되었습니다.';

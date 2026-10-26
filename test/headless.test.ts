@@ -32,7 +32,7 @@ import {
   versionAtLeast,
 } from '../server/backends/protocol.ts';
 import { MAX_PROMPT_CHARS, RUN_DIR } from '../server/config.ts';
-import { holdForDecision } from '../server/http.ts';
+import { holdForDecision } from '../server/http/common.ts';
 import type { Store } from '../server/store.ts';
 import type { HookEvent, LogEntry, Session } from '../server/types.ts';
 
@@ -580,7 +580,7 @@ test('childEnv drops the parent claude/Orca session vars and points hooks at thi
 });
 
 test('backend errors map to HTTP statuses', async () => {
-  const { errorStatus, sendError } = await import('../server/http.ts');
+  const { errorStatus, sendError } = await import('../server/http/common.ts');
   for (const c of [
     'terminal_not_found',
     'not_claude',

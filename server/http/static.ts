@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import type { OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import path from 'node:path';
-import { SHARED_DIR, WEB_DIR } from './config.ts';
-import { decode } from './util.ts';
+import { SHARED_DIR, WEB_DIR } from '../config.ts';
+import { decode } from '../util.ts';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',

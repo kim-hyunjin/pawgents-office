@@ -1,11 +1,11 @@
 // Request plumbing shared by the routes: bodies, JSON replies, the same-origin guard.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { safeJsonParse } from '../shared/json.ts';
-import { AppError, type Refusal } from './app/errors.ts';
-import type { ParkedPermission } from './app/ports.ts';
-import { MAX_BODY_BYTES, PERMISSION_HEARTBEAT_MS, PORT } from './config.ts';
-import type { Store } from './store.ts';
-import type { Session } from './types.ts';
+import { safeJsonParse } from '../../shared/json.ts';
+import { AppError, type Refusal } from '../app/errors.ts';
+import type { ParkedPermission } from '../app/ports.ts';
+import { MAX_BODY_BYTES, PERMISSION_HEARTBEAT_MS, PORT } from '../config.ts';
+import type { Store } from '../store.ts';
+import type { Session } from '../types.ts';
 
 export const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',

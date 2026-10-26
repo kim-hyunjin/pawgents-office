@@ -2,7 +2,7 @@
 import { safeJsonParse } from '../../../shared/json.ts';
 import type { SessionActions } from '../../app/sessions.ts';
 import { MAX_BODY_BYTES } from '../../config.ts';
-import { holdForDecision, readBody, tooLarge } from '../../http.ts';
+import { holdForDecision, readBody, tooLarge } from '../common.ts';
 import type { Route } from './types.ts';
 
 export const hookRoutes = ({

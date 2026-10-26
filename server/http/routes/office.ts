@@ -1,7 +1,7 @@
 // The office editor and switcher: layout, reset, rename, close, and everyone in one office.
 import { NO_OFFICE, type OfficeActions } from '../../app/offices.ts';
-import { json, readJson, sendRefusal } from '../../http.ts';
 import type { Store } from '../../store.ts';
+import { json, readJson, sendRefusal } from '../common.ts';
 import type { Route, RouteCtx } from './types.ts';
 
 export function officeRoutes({

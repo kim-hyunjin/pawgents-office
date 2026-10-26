@@ -1,9 +1,9 @@
 // What the page reads: the whole state (GET /state, and as the first SSE event), backend availability, liveness.
 import type { BackendsReply } from '../../../shared/api.ts';
 import type { BackendRegistry } from '../../backends/index.ts';
-import { json } from '../../http.ts';
 import type { Sse } from '../../sse.ts';
 import type { Store } from '../../store.ts';
+import { json } from '../common.ts';
 import type { Route } from './types.ts';
 
 export const stateRoutes = ({

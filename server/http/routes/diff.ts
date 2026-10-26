@@ -1,7 +1,7 @@
 // GET /sessions/:id/diff?file=: what a session changed in one of its worked files.
 import type { SessionActions } from '../../app/sessions.ts';
-import { findSession, isOwnHost, json, sendError } from '../../http.ts';
 import type { Store } from '../../store.ts';
+import { findSession, isOwnHost, json, sendError } from '../common.ts';
 import type { Route } from './types.ts';
 
 export const diffRoutes = ({
