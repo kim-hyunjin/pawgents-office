@@ -69,6 +69,10 @@ const NOT_FOUND =
 const DETACHED_MSG =
   '러너에 연결되지 않은 세션입니다. 잠시 후 다시 시도해주세요.';
 const isWin = process.platform === 'win32';
+const WHERE_TIMEOUT_MS = 5000; // `where.exe claude`
+const VERSION_TIMEOUT_MS = 5000; // `claude --version`, the probe
+const RUN_FILE_POLL_MS = 100; // while a new runner writes its run file
+const DENIAL_ECHO_MS = 5000; // claude's report of a denial this soon after the office's own is the same denial
 /** The session's runner isn't connected (yet, or any more). */
 const detachedError = () => codedError(DETACHED_MSG, 'detached');
 
@@ -142,7 +146,7 @@ export function findClaude(): ClaudeCmd {
     spawnSync('where.exe', ['claude'], {
       encoding: 'utf8',
       windowsHide: true,
-      timeout: 5000,
+      timeout: WHERE_TIMEOUT_MS,
     }).stdout || '',
   )
     .split(/\r?\n/)
@@ -163,7 +167,7 @@ function probeClaude(c: ClaudeCmd): Promise<ClaudeProbe> {
     execFile(
       shellQuote(c, c.file), // same rule as the runner: shell:true joins argv with spaces
       [...c.prefix, '--version'].map((a) => shellQuote(c, a)),
-      { timeout: 5000, windowsHide: true, shell: c.shell },
+      { timeout: VERSION_TIMEOUT_MS, windowsHide: true, shell: c.shell },
       (e, stdout, stderr) => {
         const v = /(\d+\.\d+\.\d+)/.exec(String(stdout));
         if (!e && v)
@@ -300,7 +304,7 @@ function echoesOfficeDenial(s: Session, tool: string) {
     last?.ev === 'PermissionRequest' &&
     last.tool === tool &&
     /^→ (거부|응답 없음)$/.test(last.text ?? '') &&
-    Date.now() - last.t < 5000
+    Date.now() - last.t < DENIAL_ECHO_MS
   );
 }
 
@@ -349,7 +353,7 @@ async function waitRunFile(sid: string): Promise<RunInfo | null> {
   while (Date.now() < end) {
     const info: RunInfo | null = safeJsonParse(readSafe(runFile(sid))); // ENOENT / partial read -> null, keep polling
     if (info?.sid === sid) return info;
-    await sleep(100);
+    await sleep(RUN_FILE_POLL_MS);
   }
   return null;
 }

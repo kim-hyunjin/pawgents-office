@@ -12,6 +12,9 @@ import { conflict, notFound } from './errors.ts';
 import { label, preview } from './log.ts';
 import type { Logger, ParkedPermission } from './ports.ts';
 
+/** A clean file's diff shows its last commit since this long before the session started. */
+const DIFF_SINCE_SLACK_MS = 60_000;
+
 export const PROMPT_WAITING =
   '권한 승인·질문 응답을 기다리는 중입니다. 터미널에서 먼저 답해주세요.';
 const CLOSE_BUSY =
@@ -81,7 +84,7 @@ export function createSessionActions({
       const f = file ? s.files.get(path.normalize(file)) : null;
       if (!f) throw notFound('이 세션이 작업한 파일이 아닙니다.');
       const d = await fileDiff(s.cwd, f.path, {
-        since: s.startedAt - 60_000,
+        since: s.startedAt - DIFF_SINCE_SLACK_MS,
       });
       return { file: f.path, ...d };
     },

@@ -8,6 +8,16 @@ import { BACKEND_PROBE_TTL_MS, ORCA_BIN } from '../config.ts';
 import type { Store } from '../store.ts';
 import type { Session } from '../types.ts';
 
+const ORCA_TIMEOUT_MS = 15_000; // an ordinary `orca … --json` call
+const ORCA_PROBE_TIMEOUT_MS = 5000; // the availability probe: /backends waits on it
+const ORCA_MAX_BUFFER = 8 * 1024 * 1024;
+const LAUNCH_TIMEOUT_MS = 60_000; // `agent launch` opens a tab and starts claude
+const CREATE_WORKTREE_TIMEOUT_MS = 180_000; // `worktree create` checks out a tree and runs the repo's setup
+const DIALOG_CLOSE_WAIT_MS = 3000; // after the answer key, the dialog must change within this
+const DIALOG_POLL_MS = 150;
+const EXIT_WAIT_MS = 30_000; // after `/exit`, how long a launched tab waits for claude to go before it is left open
+const EXIT_POLL_MS = 1000;
+
 /** Per-instance state the functions below share: the store, and the tabs this server run opened. */
 interface Ctx {
   store: Store;
@@ -68,14 +78,14 @@ interface WorktreeBase {
 /** Run `orca <args> --json` and return `result`. Throws Error(message) with `.code` on failure. */
 function runOrca<T = unknown>(
   args: string[],
-  { timeoutMs = 15_000 }: { timeoutMs?: number } = {},
+  { timeoutMs = ORCA_TIMEOUT_MS }: { timeoutMs?: number } = {},
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     // No shell: user text goes through argv untouched (orca.cmd would let cmd.exe reparse it).
     execFile(
       ORCA_BIN,
       [...args, '--json'],
-      { timeout: timeoutMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+      { timeout: timeoutMs, windowsHide: true, maxBuffer: ORCA_MAX_BUFFER },
       (err, stdout, stderr) => {
         let out: OrcaReply | null = null;
         try {
@@ -108,7 +118,7 @@ function runOrca<T = unknown>(
 /** Is the Orca CLI installed and its app reachable? */
 async function probeOrca(): Promise<ProbeResult> {
   try {
-    await runOrca(['worktree', 'list'], { timeoutMs: 5000 });
+    await runOrca(['worktree', 'list'], { timeoutMs: ORCA_PROBE_TIMEOUT_MS });
     return { available: true };
   } catch (e) {
     return { available: false, reason: errMessage(e) };
@@ -421,8 +431,8 @@ async function answerPermission(
     );
   await sendText(t.handle, String(n));
   const sig = dialogKey(dialog);
-  for (const end = Date.now() + 3000; Date.now() < end; ) {
-    await sleep(150);
+  for (const end = Date.now() + DIALOG_CLOSE_WAIT_MS; Date.now() < end; ) {
+    await sleep(DIALOG_POLL_MS);
     if (dialogKey(await screenDialog(t.handle)) !== sig) {
       // gone, or the next call's dialog
       store.log(s, {
@@ -439,10 +449,10 @@ async function answerPermission(
 }
 
 function closeAfterExit(launched: Set<string>, s: Session, handle: string) {
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + EXIT_WAIT_MS;
   const tick = () => {
     if (s.pid && isPidAlive(s.pid) && Date.now() < deadline) {
-      setTimeout(tick, 1000);
+      setTimeout(tick, EXIT_POLL_MS);
       return;
     }
     if (s.pid && isPidAlive(s.pid)) return; // didn't exit; leave the tab alone
@@ -451,7 +461,7 @@ function closeAfterExit(launched: Set<string>, s: Session, handle: string) {
       console.error('[orca] close tab:', errMessage(e)),
     );
   };
-  setTimeout(tick, 1000);
+  setTimeout(tick, EXIT_POLL_MS);
 }
 
 /** The terminal handle an Orca launch opened, wherever the result nests it ({ kind: 'terminal', handle }). */
@@ -502,7 +512,7 @@ function launchClaude(
     `id:${worktreeId}`,
     ...promptAndModelArgs(prompt, model),
   ];
-  return launchTracked(launched, args, 60_000);
+  return launchTracked(launched, args, LAUNCH_TIMEOUT_MS);
 }
 
 export interface CreateWorktree {
@@ -534,7 +544,7 @@ function createWorktreeWithClaude(
     'claude',
     ...promptAndModelArgs(prompt, model),
   ];
-  return launchTracked(launched, args, 180_000);
+  return launchTracked(launched, args, CREATE_WORKTREE_TIMEOUT_MS);
 }
 
 // ---- the backend ---------------------------------------------------------------------------------------------------
