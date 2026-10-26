@@ -3,7 +3,7 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { codedError, errMessage } from '../../shared/errors.ts';
+import { gitFailed } from '../infra/git.ts';
 import { normalizePath, samePath as samePathKey } from '../infra/path.ts';
 import { repoOf } from '../repo.ts';
 import type { Store } from '../store.ts';
@@ -19,11 +19,6 @@ export interface WorktreeRow {
   isMain: boolean;
   name: string;
 }
-const gitErr = (e: unknown): string =>
-  String((e as { stderr?: unknown }).stderr || errMessage(e));
-/** A git failure as a 'git_failed' error (409: the user can act on git's message). */
-const gitFailed = (e: unknown, fallback = '') =>
-  codedError(gitErr(e).trim().slice(0, 300) || fallback, 'git_failed');
 
 const run = promisify(execFile);
 // git prints forward slashes; compare ignoring slash style, trailing slash and (on Windows) case
