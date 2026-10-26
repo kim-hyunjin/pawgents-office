@@ -1,7 +1,12 @@
 // Small DOM and formatting helpers shared by the office, its panels and dialogs, and the words, colors and icons
 // every view uses for a session (state, permission mode, tools, background work).
 
-import type { Backend, CurrentTool, SessionSnapshot } from '../shared/api.ts';
+import type {
+  Backend,
+  CurrentTool,
+  EntityState,
+  SessionSnapshot,
+} from '../shared/api.ts';
 import type { Sprite } from './sprites.ts';
 import { spriteSize } from './sprites.ts';
 
@@ -86,7 +91,7 @@ export const storage = {
 };
 
 // ---- session display vocabulary ---------------------------------------------------
-export const STATE_LABEL: Record<string, string> = {
+export const STATE_LABEL: Record<EntityState, string> = {
   idle: '대기',
   thinking: '생각 중',
   reading: '읽는 중',
@@ -98,7 +103,7 @@ export const STATE_LABEL: Record<string, string> = {
   waiting: '응답 대기',
   offduty: '퇴근',
 };
-export const STATE_COLOR: Record<string, string> = {
+export const STATE_COLOR: Record<EntityState, string> = {
   idle: '#8e9aaf',
   thinking: '#a78bfa',
   reading: '#60a5fa',
