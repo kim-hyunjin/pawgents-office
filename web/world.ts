@@ -538,7 +538,7 @@ export function entAt(heads: Frame['heads'], lx: number, ly: number) {
   }
   return best;
 }
-const PLACE: Record<string, string> = {
+const PLACE: Record<StationKind, string> = {
   desk: '자리',
   meeting: '회의실',
   plan: '기획 보드',

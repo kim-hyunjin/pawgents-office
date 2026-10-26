@@ -161,9 +161,9 @@ export class EditorCanvas {
       };
       return;
     }
-    if (tool.startsWith('item:')) {
-      const kind = tool.slice(5),
-        k = ITEM_KINDS[kind];
+    const kind = tool.startsWith('item:') ? tool.slice(5) : null,
+      k = kind === null ? undefined : ITEM_KINDS[kind]; // the panel's furniture buttons name known kinds
+    if (kind !== null && k) {
       const it = { id: uid('i'), kind, x: tx, y: ty };
       m.change(() => {
         moveItem(m.draft, it, tx - Math.floor((k.w - 1) / 2), ty);

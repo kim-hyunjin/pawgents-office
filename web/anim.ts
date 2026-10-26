@@ -13,8 +13,9 @@ const SPEED = 64; // logical px per second (cats run)
 
 /** Advance an entity along its path. Returns true if it moved. */
 export function step(ent: Walker, dt: number) {
-  if (!ent.path || ent.path.length === 0) return false;
-  const next = ent.path[0];
+  const path = ent.path,
+    next = path?.[0];
+  if (!path || !next) return false;
   const tx = next.x * TILE,
     ty = next.y * TILE;
   const dx = tx - ent.x,
@@ -25,8 +26,8 @@ export function step(ent: Walker, dt: number) {
   if (dist <= d) {
     ent.x = tx;
     ent.y = ty;
-    ent.path.shift();
-    if (ent.path.length === 0 && ent.onArrive) {
+    path.shift();
+    if (path.length === 0 && ent.onArrive) {
       const f = ent.onArrive;
       ent.onArrive = null;
       f();

@@ -3,6 +3,7 @@
 
 import type { Door, Geo, Pt, Rect, Wall } from '../shared/layout.ts';
 import { ITEM_KINDS, itemRect, TILE, WALL_RISE } from '../shared/layout.ts';
+import { cyclic } from '../shared/math.ts';
 
 /** A canvas context: the cached background is an OffscreenCanvas, props are drawn on the visible one. */
 export type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -56,7 +57,14 @@ const C = {
   coffee2: '#c0392b',
   shelf: '#7a4b2a',
   shelfDark: '#5a361d',
-  book: ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'],
+  book: [
+    '#e74c3c',
+    '#3498db',
+    '#2ecc71',
+    '#f1c40f',
+    '#9b59b6',
+    '#e67e22',
+  ] satisfies [string, ...string[]],
   plant: '#2e8b57',
   plantDark: '#206b40',
   pot: '#b5651d',
@@ -108,7 +116,10 @@ function buildBackground(geo: Geo) {
     for (let y = z.y; y < z.y + z.h; y++)
       for (let x = z.x; x < z.x + z.w; x++) tile(x, y, a, b);
   };
-  for (const r of geo.rooms) if (FLOOR[r.type]) fill(r, ...FLOOR[r.type]);
+  for (const r of geo.rooms) {
+    const floor = FLOOR[r.type];
+    if (floor) fill(r, ...floor);
+  }
   for (const r of geo.rugs) fill(itemRect(r), C.rug, C.rug2);
   // walls, Stardew-style 3/4 view: the top wall shows its face (cap, wallpaper, wainscot, baseboard) and casts
   // a shadow onto the floor; side and bottom walls face away, so only their dark caps are visible.
@@ -561,11 +572,11 @@ function drawBookshelf(g: Ctx, x: number, y: number, w: number) {
   for (const [ry, rh] of [
     [3, 5],
     [9, 5],
-  ]) {
+  ] as const) {
     for (let bx = x + 2, i = (ry * 7) % C.book.length; bx < x + w - 3; i++) {
       const bw = 2 + (i % 3 === 0 ? 1 : 0),
         bh = rh - (i % 4 === 1 ? 1 : 0);
-      g.fillStyle = C.book[i % C.book.length];
+      g.fillStyle = cyclic(C.book, i);
       g.fillRect(bx, y + ry + rh - bh, bw, bh);
       bx += bw + (i % 5 === 4 ? 2 : 0);
     }

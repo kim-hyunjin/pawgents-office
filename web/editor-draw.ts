@@ -48,7 +48,7 @@ export function drawEditorOverlay(
         [r.x + r.w, r.y],
         [r.x, r.y + r.h],
         [r.x + r.w, r.y + r.h],
-      ])
+      ] as const)
         ctx.fillRect(x * TILE - 2.5, y * TILE - 2.5, 5, 5);
     }
   }
@@ -56,13 +56,14 @@ export function drawEditorOverlay(
   // selected / hovered furniture
   const it = ed.sel?.kind === 'item' && ed.selected();
   if (it) {
-    const b = itemRect(it);
+    const b = itemRect(it),
+      wall = ITEM_KINDS[it.kind]?.wall;
     ctx.strokeStyle = '#ffd166';
     ctx.strokeRect(
       b.x * TILE,
-      (ITEM_KINDS[it.kind].wall ? -1 : b.y) * TILE,
+      (wall ? -1 : b.y) * TILE,
       b.w * TILE,
-      (ITEM_KINDS[it.kind].wall ? 2 : b.h) * TILE,
+      (wall ? 2 : b.h) * TILE,
     );
   }
   // front door, and where a click on the outer wall would move it
@@ -86,9 +87,11 @@ export function drawEditorOverlay(
     ctx.fillStyle = 'rgba(255,209,102,0.35)';
     ctx.fillRect(g.x * TILE, g.y * TILE, TILE, TILE);
   } else if (h && !ed.drag) {
-    if (ed.tool.startsWith('item:')) {
-      const k = ITEM_KINDS[ed.tool.slice(5)],
-        x = clamp(h.tx - Math.floor((k.w - 1) / 2), 1, d.w - 1 - k.w),
+    const k = ed.tool.startsWith('item:')
+      ? ITEM_KINDS[ed.tool.slice(5)] // the panel's furniture buttons name known kinds
+      : undefined;
+    if (k) {
+      const x = clamp(h.tx - Math.floor((k.w - 1) / 2), 1, d.w - 1 - k.w),
         y = k.wall ? 0 : clamp(h.ty, 1, d.h - 1 - k.h);
       ctx.fillStyle = 'rgba(255,209,102,0.35)';
       ctx.fillRect(

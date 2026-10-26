@@ -74,7 +74,7 @@ function row(cats: HTMLElement[], title: string, lines: string[]) {
 function breedPicker(fam: string) {
   const sel = document.createElement('select');
   sel.className = 'breed';
-  const def = FAMILIES[fam].breed,
+  const def = (FAMILIES[fam] ?? FAMILIES.other).breed,
     cur = choiceOf(fam);
   const opt = (k: string, label: string, extra = '') =>
     `<option value="${esc(k)}"${k === cur ? ' selected' : ''}${extra}>${esc(label)}</option>`;
@@ -144,8 +144,8 @@ function render(sessions: Sessions) {
   }
   list.append(
     row(
-      CAT_FAMILIES.filter((f) => f !== 'other').map(
-        (fam) => looks(breedOf(fam), 'assistant')[0],
+      CAT_FAMILIES.filter((f) => f !== 'other').flatMap((fam) =>
+        looks(breedOf(fam), 'assistant').slice(0, 1),
       ),
       '보조 직원 (서브에이전트)',
       ['부모 직원과 같은 품종의 새끼 고양이. 회의실이나 책상 옆에서 일해요.'],
@@ -200,7 +200,7 @@ function skinRow(s: ReturnType<typeof skinList>[number]) {
   const key = `skin:${s.id}`;
   const users = Object.keys(FAMILIES)
     .filter((fam) => choiceOf(fam) === key)
-    .map((fam) => FAMILIES[fam].label);
+    .map((fam) => FAMILIES[fam]?.label);
   const pics = s.rows ? looks(key) : [];
   const li = row(pics, esc(s.name), [
     s.failed
@@ -288,9 +288,11 @@ function draftForm() {
     <ol class="frames"></ol>
     <div class="err"></div>
     <div class="acts"><button type="button" class="primary" data-act="upload">올리기</button><button type="button" data-act="cancel">취소</button></div>`;
-  const [nameIn, wIn, hIn] = ['name', 'cellW', 'cellH'].map(
-    (n) => box.querySelector<HTMLInputElement>(`input[name=${n}]`)!,
-  );
+  const input = (n: string) =>
+    box.querySelector<HTMLInputElement>(`input[name=${n}]`)!;
+  const nameIn = input('name'),
+    wIn = input('cellW'),
+    hIn = input('cellH');
   const errEl = box.querySelector('.err')!,
     frames = box.querySelector('.frames')!;
   const up = box.querySelector<HTMLButtonElement>('[data-act=upload]')!;
@@ -313,11 +315,12 @@ function draftForm() {
         : SKIN_ROWS.map((anim) => {
             const li = document.createElement('li');
             const label = document.createElement('span');
-            label.textContent = SKIN_ROW_LABEL[anim];
+            label.textContent = SKIN_ROW_LABEL[anim] ?? anim;
             li.append(label);
-            if (rows[anim])
+            const frames = rows[anim];
+            if (frames)
               li.append(
-                ...rows[anim].map((f) =>
+                ...frames.map((f) =>
                   pic(Object.assign(f, { scale: skinScale(f.height) }), 2),
                 ),
               );

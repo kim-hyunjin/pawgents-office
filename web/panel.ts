@@ -414,7 +414,7 @@ export class Panel {
     const badge = q('#p-state');
     badge.textContent = STATE_LABEL[s.state] || s.state;
     badge.style.background = STATE_COLOR[s.state] || '#888';
-    const fam = FAMILIES[familyOf(s.model)];
+    const fam = FAMILIES[familyOf(s.model)] ?? FAMILIES.other; // familyOf names FAMILIES' keys
     const tool = s.currentTool
       ? `${toolHtml(s.currentTool)} <span class="dim">(${fmtDur(now - s.currentTool.startedAt)})</span>${s.currentTool.detail ? `<div class="detail">${esc(s.currentTool.detail)}</div>` : ''}`
       : awaitingBg(s)

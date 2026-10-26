@@ -280,8 +280,10 @@ function applySnapshot(snap: Snapshot) {
   firstSnapshot = false;
   if (seated) seedSessions(snap.sessions); // so the first office pick sees who works where
   const m = seated ? location.hash.match(/^#s=([^&]+)/) : null;
+  const prefix = m?.[1];
   const picked =
-    m && snap.sessions.find((x) => x.id.startsWith(decodeURIComponent(m[1])));
+    prefix &&
+    snap.sessions.find((x) => x.id.startsWith(decodeURIComponent(prefix)));
   putOffices(snap.offices);
   if (picked && officeOf(picked.officeId)) {
     putTogether(officeOf(snap.together) ? snap.together : null);
@@ -373,7 +375,7 @@ function describe(e: Ent) {
       `<div>${toolLine(a)}</div>${think(a)}`
     );
   }
-  const tier = FAMILIES[familyOf(s.model)].title;
+  const tier = (FAMILIES[familyOf(s.model)] ?? FAMILIES.other).title;
   return (
     `<b>${esc(s.name)}</b>${tier ? ` <span class="st">${tier}</span>` : ''}${where ? ` <span class="dim">· ${where}</span>` : ''}${s.title ? `<br>${esc(s.title)}` : ''}` +
     (s.lastPrompt ? `<div class="task">지시: ${esc(s.lastPrompt)}</div>` : '') +

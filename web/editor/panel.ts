@@ -116,11 +116,11 @@ export class EditorPanel {
           delete s.glass;
           fixDoors(m.draft, s);
         } else if (f === 'walls') {
-          if (t.checked === (ROOM_TYPES[s.type].walls ?? true)) delete s.walls;
+          if (t.checked === (ROOM_TYPES[s.type]?.walls ?? true)) delete s.walls;
           else s.walls = t.checked;
           fixDoors(m.draft, s);
         } else if (f === 'glass') {
-          if (t.checked === !!ROOM_TYPES[s.type].glass) delete s.glass;
+          if (t.checked === !!ROOM_TYPES[s.type]?.glass) delete s.glass;
           else s.glass = t.checked;
         }
       });
@@ -311,9 +311,8 @@ export class EditorPanel {
       box = $('ed-sel');
     box.hidden = !s;
     if (s && m.sel?.kind === 'room') {
-      const t = ROOM_TYPES[s.type] || {};
       const walls = hasWalls(s),
-        glass = s.glass ?? !!t.glass;
+        glass = s.glass ?? !!ROOM_TYPES[s.type]?.glass;
       const key = `room|${s.id}`;
       if (box.dataset.key !== key) {
         box.dataset.key = key;
@@ -337,7 +336,7 @@ export class EditorPanel {
         ? `문 ${s.doors.filter((x) => !x.open).length}개 · 통로 ${s.doors.filter((x) => x.open).length}개 — 벽 칸을 누르면 문 → 통로 → 벽 순으로 바뀝니다. 모서리를 끌면 크기가 바뀝니다.`
         : '벽 없는 구역입니다. 모서리를 끌면 크기가 바뀝니다.';
     } else if (s) {
-      const k = ITEM_KINDS[s.kind];
+      const k = ITEM_KINDS[s.kind] ?? { label: s.kind, w: 1, h: 1 }; // a draft's kinds are known (validate)
       box.dataset.key = `item|${s.id}`;
       box.innerHTML = `<h3>선택한 가구</h3><p>${esc(k.label)} <span class="dim">· ${k.w}×${k.h} 칸 · (${s.x}, ${s.y})</span></p><button type="button" data-f="remove">가구 지우기</button>`;
     } else box.dataset.key = '';

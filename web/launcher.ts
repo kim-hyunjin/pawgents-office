@@ -233,11 +233,13 @@ export async function openLauncher() {
     return;
   }
   const last = storage.get(LAST_BACKEND);
+  const [first] = ok;
+  if (!first) return; // checked above: ok is not empty
   backend = ok.includes(last as Backend)
     ? (last as Backend)
     : ok.includes(d.default!)
       ? d.default!
-      : ok[0];
+      : first;
   backendBox.hidden = ok.length < 2;
   for (const r of radios) r.checked = r.value === backend;
   submit.disabled = false;

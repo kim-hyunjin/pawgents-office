@@ -2,7 +2,7 @@
 // room names. Every function takes the draft and touches nothing else, so plain Node imports this file too (tests).
 // Editor-only: the server imports layout.ts, not this.
 
-import type { Item, Layout, Pt, Room } from '../shared/layout.ts';
+import type { Item, ItemKindDef, Layout, Pt, Room } from '../shared/layout.ts';
 import {
   hasWalls,
   ITEM_KINDS,
@@ -49,7 +49,7 @@ export function fixDoors(draft: Layout, r: Room) {
 export function contents(draft: Layout, r: Room) {
   return draft.items
     .filter((it) => {
-      if (ITEM_KINDS[it.kind].wall) return false;
+      if (ITEM_KINDS[it.kind]?.wall) return false;
       const b = itemRect(it);
       return (
         b.x >= r.x &&
@@ -84,7 +84,10 @@ export function moveRoom(
   }
 }
 export function moveItem(draft: Layout, it: Item, x: number, y: number) {
-  const k = ITEM_KINDS[it.kind],
+  const k: Pick<ItemKindDef, 'w' | 'h' | 'wall'> = ITEM_KINDS[it.kind] ?? {
+      w: 1,
+      h: 1,
+    }, // unknown kinds take one tile, as in itemRect
     { w, h } = draft;
   it.x = clamp(x, 1, w - 1 - k.w);
   it.y = k.wall ? 0 : clamp(y, 1, h - 1 - k.h);
@@ -93,7 +96,7 @@ export function moveItem(draft: Layout, it: Item, x: number, y: number) {
 // ---- hit testing (tile coords) ------------------------------------------------------------
 export function itemAt(draft: Layout, tx: number, ty: number): Item | null {
   const layer = (it: Item) =>
-    ITEM_KINDS[it.kind].wall ? 2 : ITEM_KINDS[it.kind].floor ? 0 : 1;
+    ITEM_KINDS[it.kind]?.wall ? 2 : ITEM_KINDS[it.kind]?.floor ? 0 : 1;
   let best: Item | null = null;
   for (const it of draft.items) {
     const k = ITEM_KINDS[it.kind];
@@ -155,7 +158,7 @@ export function fixFrontDoor(draft: Layout) {
 
 /** A new room's name: the type's label; meeting rooms get the first free letter ("회의실 A", "회의실 B", …). */
 export function roomName(draft: Layout, type: string) {
-  const label = ROOM_TYPES[type].label;
+  const label = ROOM_TYPES[type]?.label ?? type; // the panel offers ROOM_TYPES' keys
   if (type !== 'meeting') return label;
   const used = new Set(draft.rooms.map((r) => r.name));
   for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')

@@ -15,17 +15,14 @@ import { spriteSize } from './sprites.ts';
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 
+const ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+};
 export const esc = (s: unknown) =>
-  String(s ?? '').replace(
-    /[&<>"]/g,
-    (c) =>
-      (
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }) as Record<
-          string,
-          string
-        >
-      )[c],
-  );
+  String(s ?? '').replace(/[&<>"]/g, (c) => ENTITIES[c] ?? c); // the pattern matches only ENTITIES' keys
 export const fmtTime = (t: number | string | Date) =>
   new Date(t).toTimeString().slice(0, 8);
 /** A status line under a form: kind '' | 'ok' | 'err' (styled by .msg in style.css). */
@@ -243,7 +240,8 @@ export function awaitingBg(
 export function bgSummary(s: Pick<SessionSnapshot, 'bgTasks'>) {
   const tasks = s.bgTasks || [];
   if (!tasks.length) return '백그라운드 셸 결과 대기';
-  const t = tasks[0];
+  const [t] = tasks;
+  if (!t) return '백그라운드 셸 결과 대기';
   const what = t.command || t.description || t.type || '작업';
   return `백그라운드 작업 대기 · ${what}${tasks.length > 1 ? ` 외 ${tasks.length - 1}개` : ''}`;
 }
