@@ -1,11 +1,11 @@
 // Worktrees without Orca: plain `git worktree` over the repos the office already knows.
 
 import path from 'node:path';
+import { isDir } from '../infra/fs.ts';
 import { git, gitFailed } from '../infra/git.ts';
 import { normalizePath, samePath as samePathKey } from '../infra/path.ts';
 import { repoOf } from '../repo.ts';
 import type { Store } from '../store.ts';
-import { isDir } from '../util.ts';
 
 export interface WorktreeRow {
   id: string;

@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { safeJsonParse } from '../../shared/json.ts';
-import { debounce } from '../util.ts';
+import { debounce } from '../../shared/time.ts';
 
 export const SAVE_DEBOUNCE_MS = 500;
 

@@ -4,10 +4,11 @@ import { safeJsonParse } from '../shared/json.ts';
 import { isBusyState } from '../shared/model.ts';
 import { isPidAlive } from '../shared/node/process.ts';
 import { PROJECTS_DIR, SESSIONS_DIR, STALE_TOOL_MS } from './config.ts';
+import { projectDirName } from './infra/claude-paths.ts';
+import { readSafe } from './infra/fs.ts';
 import type { Store } from './store.ts';
 import { traitsOf } from './traits.ts';
 import type { Session } from './types.ts';
-import { projectDirName, readSafe } from './util.ts';
 
 /** One ~/.claude/sessions/<pid>.json: dynamic JSON written by Claude Code. */
 type RegistryEntry = Record<string, any>;

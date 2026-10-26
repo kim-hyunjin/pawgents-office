@@ -3,9 +3,9 @@ import { safeJsonParse } from '../shared/json.ts';
 import { cleanText, oneLine } from '../shared/text.ts';
 import { TRANSCRIPT_TAIL_BYTES } from './config.ts';
 import { replyText } from './domain/text.ts';
+import { readFrom, readSafe, readTail } from './infra/fs.ts';
 import type { Store } from './store.ts';
 import type { Entity, Session, Subagent } from './types.ts';
-import { readFrom, readSafe, readTail } from './util.ts';
 
 /**
  * Tails session / subagent transcripts (append-only JSONL) to fill in

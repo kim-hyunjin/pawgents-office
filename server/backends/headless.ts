@@ -33,9 +33,10 @@ import {
   RUNNER_RECONNECT_TRIES,
 } from '../config.ts';
 import { detailForTool, summarizeToolInput } from '../domain/tools.ts';
+import { projectDirName } from '../infra/claude-paths.ts';
+import { readSafe } from '../infra/fs.ts';
 import type { Store } from '../store.ts';
 import type { HookEvent, Session } from '../types.ts';
-import { projectDirName, readSafe } from '../util.ts';
 import { listGitWorktrees, repoRoots } from './git.ts';
 import type {
   ClaudeCmd,

@@ -9,7 +9,7 @@ import { addWorktree, samePath, worktreesAt } from '../backends/git.ts';
 import type { HeadlessBackend } from '../backends/headless.ts';
 import type { OrcaBackend } from '../backends/orca.ts';
 import { MAX_PROMPT_CHARS } from '../config.ts';
-import { isDir } from '../util.ts';
+import { isDir } from '../infra/fs.ts';
 import { BAD_REQUEST, failed, invalid, UNKNOWN_MODE } from './errors.ts';
 import { preview } from './log.ts';
 import type { BackendId, Logger } from './ports.ts';

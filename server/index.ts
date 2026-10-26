@@ -14,14 +14,13 @@ import {
   TRANSCRIPT_POLL_MS,
 } from './config.ts';
 import { syncAllFiles } from './files.ts';
-import { notFound } from './http/common.ts';
+import { decode, notFound } from './http/common.ts';
 import { makeRoutes } from './http/routes/index.ts';
 import { serveStatic } from './http/static.ts';
 import { pollRegistry } from './registry.ts';
 import { Sse } from './sse.ts';
 import { Store } from './store.ts';
 import { Tailer } from './transcript.ts';
-import { decode } from './util.ts';
 
 /** The HTTP server over `store`: routes first, then static files. No polling, no listening: see main(). */
 export function createApp({

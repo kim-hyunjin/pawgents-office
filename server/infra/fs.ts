@@ -1,3 +1,4 @@
+// Reading files without throwing: a missing or unreadable file answers false / '' / null.
 import fs from 'node:fs';
 
 export function isDir(p: string) {
@@ -44,31 +45,3 @@ export const readTail = (file: string, bytes: number) =>
 /** Read bytes [from, size) of a file. */
 export const readFrom = (file: string, from: number) =>
   readSlice(file, () => from);
-
-/** decodeURIComponent that answers null instead of throwing on a malformed escape. */
-export const decode = (s: string): string | null => {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return null;
-  }
-};
-
-/** Claude Code encodes the project dir by replacing non-alphanumerics with '-'. */
-export function projectDirName(cwd?: string | null) {
-  return String(cwd || '').replace(/[^a-zA-Z0-9]/g, '-');
-}
-
-export function debounce<A extends unknown[]>(
-  fn: (...args: A) => void,
-  ms: number,
-) {
-  let t: ReturnType<typeof setTimeout> | undefined;
-  return (...args: A) => {
-    clearTimeout(t);
-    t = setTimeout(() => {
-      t = undefined;
-      fn(...args);
-    }, ms);
-  };
-}

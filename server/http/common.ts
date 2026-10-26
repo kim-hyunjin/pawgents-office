@@ -7,6 +7,15 @@ import { MAX_BODY_BYTES, PERMISSION_HEARTBEAT_MS, PORT } from '../config.ts';
 import type { Store } from '../store.ts';
 import type { Session } from '../types.ts';
 
+/** decodeURIComponent that answers null instead of throwing on a malformed escape. */
+export const decode = (s: string): string | null => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return null;
+  }
+};
+
 export const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
   'Cache-Control': 'no-cache',
