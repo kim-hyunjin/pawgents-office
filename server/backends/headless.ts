@@ -42,7 +42,17 @@ import {
   summarizeToolInput,
   truncate,
 } from '../util.ts';
-import type { ClaudeCmd, FeedState, Msg, RunnerSpec } from './protocol.ts';
+import type {
+  ClaudeCmd,
+  ClientCmd,
+  ExitMsg,
+  FeedState,
+  HelloMsg,
+  RunInfo,
+  RunnerEvent,
+  RunnerMsg,
+  RunnerSpec,
+} from './protocol.ts';
 import {
   encode,
   feed,
@@ -66,7 +76,7 @@ const isWin = process.platform === 'win32';
 const detachedError = () => codedError(DETACHED_MSG, 'detached');
 
 interface Waiter {
-  resolve: (m: Msg) => void;
+  resolve: (m: RunnerMsg) => void;
   reject: (e: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -81,7 +91,7 @@ interface Parked {
 }
 interface Runner {
   sock: net.Socket;
-  info: Msg;
+  info: RunInfo;
   feedState: FeedState;
   waiters: Map<string, Waiter[]>;
   pending: Map<string, Parked>;
@@ -237,7 +247,7 @@ export function defaultModel(
 }
 
 // ---- runner connection -------------------------------------------------------------------------------------------
-function attach(store: Store, h: Msg): Session {
+function attach(store: Store, h: HelloMsg): Session {
   const s = store.getOrCreateSession(h.sid, {
     cwd: h.cwd,
     pid: h.claudePid,
@@ -305,7 +315,7 @@ function echoesOfficeDenial(s: Session, tool: string) {
 }
 
 /** Fold one runner 'event' (claude stream-json, already parsed) into the live session. Returns true if it changed. */
-function applyRunnerEvent(store: Store, s: Session, m: Msg) {
+function applyRunnerEvent(store: Store, s: Session, m: RunnerEvent) {
   if (m.kind === 'init' && m.model) {
     s.model = m.model; // exact id, over defaultModel's guess
     return true;
@@ -337,7 +347,7 @@ function applyRunnerEvent(store: Store, s: Session, m: Msg) {
 }
 
 /** Why a session ended, from the runner's exit message. */
-function endReason(r: Runner, m: Msg) {
+function endReason(r: Runner, m: ExitMsg) {
   if (r.killing) return 'killed';
   if (!m.code) return 'process exited';
   const tail = Array.isArray(m.stderrTail) ? m.stderrTail : [];
@@ -348,9 +358,9 @@ function endReason(r: Runner, m: Msg) {
 function connect(
   store: Store,
   sid: string,
-  info: Msg,
-  { onExit }: { onExit?: (m: Msg) => void } = {},
-): Promise<Msg> {
+  info: RunInfo,
+  { onExit }: { onExit?: (m: ExitMsg) => void } = {},
+): Promise<HelloMsg> {
   return new Promise((resolve, reject) => {
     const sock = net.connect({ path: pipePath(sid) });
     const r: Runner = {
@@ -371,7 +381,7 @@ function connect(
         reject(codedError('runner did not say hello', 'ETIMEDOUT'));
       }
     }, RUNNER_CMD_TIMEOUT_MS);
-    const onMsg = (m: Msg) => {
+    const onMsg = (m: RunnerMsg) => {
       if (m.type === 'hello') {
         if (helloed) return;
         helloed = true;
@@ -418,7 +428,9 @@ function connect(
         );
     };
     sock.setEncoding('utf8');
-    sock.on('data', (d: string) => feed(r.feedState, d, onMsg));
+    sock.on('data', (d: string) =>
+      feed(r.feedState, d, (m) => onMsg(m as RunnerMsg)),
+    ); // our own runner on the other end
     sock.on('error', (e: Error) => {
       if (!helloed) {
         clearTimeout(helloTimer);
@@ -437,7 +449,7 @@ function connect(
   });
 }
 
-async function reconnect(store: Store, sid: string, info: Msg) {
+async function reconnect(store: Store, sid: string, info: RunInfo) {
   for (let i = 0; i < RUNNER_RECONNECT_TRIES && isPidAlive(info.pid); i++) {
     await sleep(RUNNER_RECONNECT_MS);
     if (stopping || runners.has(sid)) return;
@@ -452,10 +464,10 @@ async function reconnect(store: Store, sid: string, info: Msg) {
 }
 
 /** Send a command and wait for the runner's answer (ack / status). */
-function command(sid: string, cmd: Msg): Promise<Msg> {
+function command(sid: string, cmd: ClientCmd): Promise<RunnerMsg> {
   const r = runners.get(sid);
   if (!r) return Promise.reject(detachedError());
-  return new Promise<Msg>((resolve, reject) => {
+  return new Promise<RunnerMsg>((resolve, reject) => {
     const key: string = cmd.type,
       q = r.waiters.get(key) ?? [];
     r.waiters.set(key, q);
@@ -480,17 +492,17 @@ function command(sid: string, cmd: Msg): Promise<Msg> {
 }
 
 // ---- launch ------------------------------------------------------------------------------------------------------
-async function waitRunFile(sid: string): Promise<Msg | null> {
+async function waitRunFile(sid: string): Promise<RunInfo | null> {
   const end = Date.now() + HEADLESS_LAUNCH_WAIT_MS;
   while (Date.now() < end) {
-    const info = safeJsonParse(readSafe(runFile(sid))); // ENOENT / partial read -> null, keep polling
+    const info: RunInfo | null = safeJsonParse(readSafe(runFile(sid))); // ENOENT / partial read -> null, keep polling
     if (info?.sid === sid) return info;
     await sleep(100);
   }
   return null;
 }
 
-const exitReason = (m: Msg | null) =>
+const exitReason = (m: { stderrTail?: string[] } | null) =>
   (Array.isArray(m?.stderrTail) ? m.stderrTail.join(' ') : '').slice(0, 300) ||
   'claude가 바로 종료되었습니다';
 
@@ -534,7 +546,7 @@ export async function launch(
   child.unref();
   const info = await waitRunFile(sid);
   if (!info) throw codedError('러너가 시작되지 않았습니다', 'headless_exit');
-  let exited: Msg | null = null,
+  let exited: ExitMsg | null = null,
     wake: (() => void) | null = null;
   const hello = await connect(store, sid, info, {
     onExit: (m) => {
@@ -555,8 +567,15 @@ export async function launch(
 }
 
 export const has = (sid: string) => runners.has(sid);
-export const sendPrompt = (store: Store, s: Session, text: string) =>
-  command(s.id, { type: 'prompt', text });
+/** Queue a turn; the runner's ack says nothing more than "sent". */
+export async function sendPrompt(
+  store: Store,
+  s: Session,
+  text: string,
+): Promise<{ accepted?: boolean }> {
+  await command(s.id, { type: 'prompt', text });
+  return {};
+}
 
 const MODE_REFUSED: Record<string, string> = {
   bypass_not_launched:
@@ -690,7 +709,7 @@ export async function restore(store: Store) {
   const results = await Promise.all(
     files.map(async (f): Promise<number> => {
       const sid = f.slice(0, -5),
-        info = safeJsonParse(readSafe(path.join(RUN_DIR, f)));
+        info: RunInfo | null = safeJsonParse(readSafe(path.join(RUN_DIR, f)));
       if (!info || info.sid !== sid || !Number.isInteger(info.pid)) return 0; // half-written or foreign: leave it
       if (!isPidAlive(info.pid)) {
         forgetRunFile(sid);

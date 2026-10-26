@@ -7,7 +7,38 @@ import { BACKEND_PROBE_TTL_MS, ORCA_BIN } from '../config.ts';
 import type { Store } from '../store.ts';
 import type { Session } from '../types.ts';
 
-export type OrcaResult = any; // `result` of an `orca ... --json` call: shape depends on the subcommand
+/** `orca ... --json` output: `result` on success (its shape depends on the subcommand), `error` otherwise. */
+interface OrcaReply {
+  ok?: boolean;
+  result?: unknown;
+  error?: { message?: string; code?: string };
+}
+/** One `orca worktree list` entry (the fields read here). */
+interface OrcaWorktree {
+  id: string;
+  repoId?: string;
+  head?: string;
+  path?: string;
+  displayName?: string;
+  branch?: string;
+  lastActivityAt?: number;
+  isArchived?: boolean;
+}
+/** A launcher row made from an Orca worktree. */
+export interface OrcaWorktreeRow {
+  id: string;
+  repoId: string;
+  head: string;
+  path: string;
+  repo: string;
+  name: string;
+  branch: string;
+  lastActivityAt: number;
+}
+/** `orca terminal send`: whether the text went in, when it says so. */
+export interface SendResult {
+  accepted?: boolean;
+}
 interface Terminal {
   handle: string;
   agentIdentity?: string;
@@ -28,10 +59,10 @@ interface WorktreeBase {
 }
 
 /** Run `orca <args> --json` and return `result`. Throws Error(message) with `.code` on failure. */
-function runOrca(
+function runOrca<T = unknown>(
   args: string[],
   { timeoutMs = 15_000 }: { timeoutMs?: number } = {},
-): Promise<OrcaResult> {
+): Promise<T> {
   return new Promise((resolve, reject) => {
     // No shell: user text goes through argv untouched (orca.cmd would let cmd.exe reparse it).
     execFile(
@@ -39,14 +70,14 @@ function runOrca(
       [...args, '--json'],
       { timeout: timeoutMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout, stderr) => {
-        let out: any = null;
+        let out: OrcaReply | null = null;
         try {
           out = JSON.parse(stdout);
         } catch {
           /* not json */
         }
         if (out?.ok) {
-          resolve(out.result);
+          resolve(out.result as T);
           return;
         }
         reject(
@@ -108,7 +139,7 @@ const within = (dir: unknown, root: unknown) => {
 // ---- terminal I/O --------------------------------------------------------------------------------------------------
 /** Type `text` into a terminal; `enter` submits it. */
 const sendText = (handle: string, text: string, { enter = false } = {}) =>
-  runOrca([
+  runOrca<SendResult | null>([
     'terminal',
     'send',
     '--terminal',
@@ -121,7 +152,7 @@ const closeTerminal = (handle: string) =>
   runOrca(['terminal', 'close', '--terminal', handle]);
 /** The rendered screen's last lines. */
 async function readScreen(handle: string): Promise<string[]> {
-  const r = await runOrca([
+  const r = await runOrca<{ terminal?: { tail?: string[] } } | null>([
     'terminal',
     'read',
     '--terminal',
@@ -132,16 +163,18 @@ async function readScreen(handle: string): Promise<string[]> {
 }
 
 async function listTerminals(): Promise<Terminal[]> {
-  const r = await runOrca(['terminal', 'list']);
+  const r = await runOrca<{ terminals?: Terminal[] }>(['terminal', 'list']);
   return r.terminals || [];
 }
 
-export async function listWorktrees() {
-  const r = await runOrca(['worktree', 'list']);
+export async function listWorktrees(): Promise<OrcaWorktreeRow[]> {
+  const r = await runOrca<{ worktrees?: OrcaWorktree[] }>(['worktree', 'list']);
   return (r.worktrees || [])
-    .filter((w: any) => !w.isArchived && w.path)
-    .map((w: any) => ({
-      id: w.id as string,
+    .filter(
+      (w): w is OrcaWorktree & { path: string } => !w.isArchived && !!w.path,
+    )
+    .map((w) => ({
+      id: w.id,
       repoId: w.repoId || String(w.id).split('::')[0],
       head: w.head || '',
       path: w.path,
@@ -150,10 +183,7 @@ export async function listWorktrees() {
       branch: String(w.branch || '').replace(/^refs\/heads\//, ''),
       lastActivityAt: w.lastActivityAt || 0,
     }))
-    .sort(
-      (a: { lastActivityAt: number }, b: { lastActivityAt: number }) =>
-        b.lastActivityAt - a.lastActivityAt,
-    );
+    .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 }
 
 /**
@@ -432,9 +462,10 @@ function closeAfterExit(s: Session, handle: string) {
 }
 
 /** The terminal handle an Orca launch opened, wherever the result nests it ({ kind: 'terminal', handle }). */
-function launchedHandle(r: any, depth = 0): string | null {
+function launchedHandle(r: unknown, depth = 0): string | null {
   if (!r || typeof r !== 'object' || depth > 4) return null;
-  if (r.kind === 'terminal' && typeof r.handle === 'string') return r.handle;
+  const o = r as { kind?: unknown; handle?: unknown };
+  if (o.kind === 'terminal' && typeof o.handle === 'string') return o.handle;
   for (const v of Object.values(r)) {
     const h = launchedHandle(v, depth + 1);
     if (h) return h;

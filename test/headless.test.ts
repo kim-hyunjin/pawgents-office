@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { parseWorktrees, repoRoots } from '../server/backends/git.ts';
-import type { Msg, RunnerSpec } from '../server/backends/protocol.ts';
+import type { RunnerSpec } from '../server/backends/protocol.ts';
 import {
   buildClaudeArgs,
   encode,
@@ -30,6 +30,9 @@ import {
 import { MAX_PROMPT_CHARS, RUN_DIR } from '../server/config.ts';
 import type { Store } from '../server/store.ts';
 import type { HookEvent, LogEntry, Session } from '../server/types.ts';
+
+/** A decoded line as the tests read it: any field, unchecked. */
+type Msg = Record<string, any>;
 
 const fixture = [
   'worktree C:/Users/x/repo',

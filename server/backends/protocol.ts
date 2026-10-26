@@ -4,8 +4,84 @@ import path from 'node:path';
 import { MODEL_RE, PERMISSION_MODES } from '../../shared/permission.ts';
 import { MAX_PROMPT_CHARS, RUN_DIR } from '../config.ts';
 
-export type Msg = Record<string, any>; // a decoded JSON payload (NDJSON line, claude stream-json line)
+/** A decoded JSON line (NDJSON, claude stream-json), shape not checked yet. */
+export type Json = Record<string, unknown>;
 export type FeedState = { rem: string; skipping: boolean };
+
+/** Server -> runner command (what parseCommand lets through). */
+export type ClientCmd =
+  | { type: 'prompt'; text: string }
+  | { type: 'mode'; mode: string }
+  | { type: 'close' | 'kill' | 'status' };
+export type CmdType = ClientCmd['type'];
+
+/** The claude stream-json lines the office reads (parseClaudeLine). */
+export type ClaudeEvent =
+  | { kind: 'init'; model: string | null; sessionId: string | null }
+  | { kind: 'denied'; tool: string | null }
+  | { kind: 'mode'; mode: string }
+  | {
+      kind: 'control';
+      requestId: string;
+      ok: boolean;
+      error: string | null;
+      errorCode: string | null;
+    }
+  | {
+      kind: 'result';
+      isError: boolean;
+      subtype: string | null;
+      costUsd: number | null;
+      denials: string[];
+    };
+/** What the runner broadcasts as an `event`: claude's events (control answers go to the asker as acks) and its stderr. */
+export type RunnerEvent =
+  | Exclude<ClaudeEvent, { kind: 'control' }>
+  | { kind: 'stderr'; line: string };
+
+export interface Exited {
+  code: number | null;
+  signal: string | null;
+}
+/** run/<sid>.json: how the server finds a runner (written once it listens). */
+export interface RunInfo {
+  sid: string;
+  pid: number;
+  claudePid: number | null;
+  cwd: string;
+  model: string | null;
+  permissionMode: string | null;
+  startedAt: number;
+  pipe: string;
+  version: string | null;
+}
+export type HelloMsg = { type: 'hello' } & Omit<RunInfo, 'pipe' | 'version'> & {
+    alive: boolean;
+    exited: Exited | null;
+    stderrTail?: string[];
+    recent: RunnerEvent[];
+  };
+export type ExitMsg = { type: 'exit'; stderrTail: string[] } & Exited;
+export interface AckMsg {
+  type: 'ack';
+  for: CmdType;
+  ok: boolean;
+  error?: string;
+  code?: string;
+}
+/** Runner -> server message. */
+export type RunnerMsg =
+  | HelloMsg
+  | ({ type: 'event' } & RunnerEvent)
+  | ExitMsg
+  | AckMsg
+  | {
+      type: 'status';
+      alive: boolean;
+      claudePid: number | null;
+      exited: Exited | null;
+    }
+  | { type: 'error'; message: string };
 export interface ClaudeCmd {
   file: string;
   prefix: string[];
@@ -57,7 +133,7 @@ export const newFeed = (): FeedState => ({ rem: '', skipping: false });
 export function feed(
   state: FeedState,
   chunk: unknown,
-  onMsg: (m: Msg) => void,
+  onMsg: (m: Json) => void,
 ) {
   const lines = (state.rem + String(chunk)).split('\n');
   state.rem = lines.pop()!;
@@ -67,13 +143,13 @@ export function feed(
       continue;
     } // tail of a line already dropped as oversize
     if (line.length > MAX_LINE_BYTES || !line.trim()) continue;
-    let obj: any;
+    let obj: unknown;
     try {
       obj = JSON.parse(line);
     } catch {
       continue;
     }
-    if (obj && typeof obj === 'object') onMsg(obj);
+    if (obj && typeof obj === 'object') onMsg(obj as Json);
   }
   if (state.rem.length > MAX_LINE_BYTES) {
     state.rem = '';
@@ -82,10 +158,9 @@ export function feed(
 }
 
 /** Client -> runner command, or null when it isn't one we accept. */
-export function parseCommand(
-  obj: any,
-): { type: string; text?: string; mode?: string } | null {
-  if (!obj || typeof obj !== 'object') return null;
+export function parseCommand(raw: unknown): ClientCmd | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Json;
   if (obj.type === 'prompt') {
     if (typeof obj.text !== 'string') return null;
     const text = obj.text.trim();
@@ -94,17 +169,18 @@ export function parseCommand(
       : null;
   }
   if (obj.type === 'mode')
-    return PERMISSION_MODES.includes(obj.mode)
+    return typeof obj.mode === 'string' && PERMISSION_MODES.includes(obj.mode)
       ? { type: 'mode', mode: obj.mode }
       : null;
-  return ['close', 'kill', 'status'].includes(obj.type)
+  return obj.type === 'close' || obj.type === 'kill' || obj.type === 'status'
     ? { type: obj.type }
     : null;
 }
 
 /** The few claude stream-json lines the office cares about; the rest (assistant, user, hooks) arrive through hooks anyway. */
-export function parseClaudeLine(o: any): Msg | null {
-  if (!o || typeof o !== 'object') return null;
+export function parseClaudeLine(raw: unknown): ClaudeEvent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Json;
   if (o.type === 'system' && o.subtype === 'init')
     return {
       kind: 'init',
@@ -112,7 +188,11 @@ export function parseClaudeLine(o: any): Msg | null {
       sessionId: typeof o.session_id === 'string' ? o.session_id : null,
     };
   if (o.type === 'system' && o.subtype === 'permission_denied') {
-    const tool = o.tool_name ?? o.tool ?? o.toolName;
+    const tool = (o.tool_name ?? o.tool ?? o.toolName) as
+      | { name?: unknown }
+      | string
+      | null
+      | undefined;
     return {
       kind: 'denied',
       tool:
@@ -127,16 +207,13 @@ export function parseClaudeLine(o: any): Msg | null {
   if (
     o.type === 'system' &&
     o.subtype === 'status' &&
+    typeof o.permissionMode === 'string' &&
     PERMISSION_MODES.includes(o.permissionMode)
   )
     return { kind: 'mode', mode: o.permissionMode };
-  if (
-    o.type === 'control_response' &&
-    o.response &&
-    typeof o.response.request_id === 'string'
-  ) {
-    const r = o.response,
-      ok = r.subtype === 'success';
+  const r = o.response as Json | null | undefined;
+  if (o.type === 'control_response' && r && typeof r.request_id === 'string') {
+    const ok = r.subtype === 'success';
     return {
       kind: 'control',
       requestId: r.request_id,
@@ -154,9 +231,9 @@ export function parseClaudeLine(o: any): Msg | null {
       subtype: typeof o.subtype === 'string' ? o.subtype : null,
       costUsd: typeof o.total_cost_usd === 'number' ? o.total_cost_usd : null,
       denials: Array.isArray(o.permission_denials)
-        ? o.permission_denials
+        ? (o.permission_denials as (Json | null)[])
             .slice(0, 20)
-            .map((d: any) => String(d?.tool_name ?? d?.tool ?? '?'))
+            .map((d) => String(d?.tool_name ?? d?.tool ?? '?'))
         : [],
     };
   return null;
