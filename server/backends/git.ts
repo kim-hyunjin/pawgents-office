@@ -1,9 +1,7 @@
 // Worktrees without Orca: plain `git worktree` over the repos the office already knows.
 
-import { execFile } from 'node:child_process';
 import path from 'node:path';
-import { promisify } from 'node:util';
-import { gitFailed } from '../infra/git.ts';
+import { git, gitFailed } from '../infra/git.ts';
 import { normalizePath, samePath as samePathKey } from '../infra/path.ts';
 import { repoOf } from '../repo.ts';
 import type { Store } from '../store.ts';
@@ -20,7 +18,7 @@ export interface WorktreeRow {
   name: string;
 }
 
-const run = promisify(execFile);
+const ADD_TIMEOUT_MS = 60_000; // `worktree add` checks out a whole tree
 // git prints forward slashes; compare ignoring slash style, trailing slash and (on Windows) case
 const norm = (p: unknown) => normalizePath(p);
 
@@ -55,12 +53,8 @@ export function parseWorktrees(text: unknown, repoRoot: string): WorktreeRow[] {
 
 /** `git worktree list --porcelain` of the repo containing `dir`, as launcher rows. */
 async function readWorktrees(dir: string) {
-  const { stdout } = await run(
-    'git',
-    ['-C', dir, 'worktree', 'list', '--porcelain'],
-    { timeout: 5000, windowsHide: true },
-  );
-  return parseWorktrees(stdout, dir);
+  const { out } = await git(dir, ['worktree', 'list', '--porcelain']); // GIT_TIMEOUT_MS (5 s)
+  return parseWorktrees(out, dir);
 }
 
 /** Repo roots to list: the offices' repos (minus the 'default' bucket) plus live sessions' repos, if they still exist. */
@@ -123,11 +117,9 @@ export async function addWorktree({
     `${path.basename(repoRoot)}-${name}`,
   );
   try {
-    await run(
-      'git',
-      ['-C', repoRoot, 'worktree', 'add', '-b', name, dir, base],
-      { timeout: 60_000, windowsHide: true },
-    );
+    await git(repoRoot, ['worktree', 'add', '-b', name, dir, base], {
+      timeoutMs: ADD_TIMEOUT_MS,
+    });
   } catch (e) {
     throw gitFailed(e);
   }
