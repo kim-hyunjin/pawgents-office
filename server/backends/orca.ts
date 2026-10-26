@@ -5,6 +5,7 @@ import { isPidAlive } from '../../shared/node/process.ts';
 import { sleep } from '../../shared/time.ts';
 import type { Backend, ProbeResult } from '../app/ports.ts';
 import { BACKEND_PROBE_TTL_MS, ORCA_BIN } from '../config.ts';
+import { slashPath } from '../infra/path.ts';
 import type { Store } from '../store.ts';
 import type { Session } from '../types.ts';
 
@@ -125,11 +126,8 @@ async function probeOrca(): Promise<ProbeResult> {
   }
 }
 
-const norm = (p: unknown) =>
-  String(p || '')
-    .replace(/\\/g, '/')
-    .replace(/\/+$/, '')
-    .toLowerCase();
+/** Lowercased on every platform (unlike normalizePath, which folds case only on Windows). */
+const norm = (p: unknown) => slashPath(p).toLowerCase();
 const normTitle = (t: unknown) =>
   String(t || '')
     .replace(/\s+/g, ' ')

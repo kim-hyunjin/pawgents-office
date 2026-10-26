@@ -36,6 +36,7 @@ import {
 import { detailForTool, summarizeToolInput } from '../domain/tools.ts';
 import { transcriptPathOf } from '../infra/claude-paths.ts';
 import { readSafe } from '../infra/fs.ts';
+import { isWindows } from '../infra/platform.ts';
 import type { Store } from '../store.ts';
 import type { HookEvent, Session } from '../types.ts';
 import { listGitWorktrees, repoRoots } from './git.ts';
@@ -68,7 +69,7 @@ const NOT_FOUND =
   'claude CLI를 찾을 수 없습니다 (PAWGENTS_OFFICE_CLAUDE_BIN 으로 경로를 지정할 수 있어요)';
 const DETACHED_MSG =
   '러너에 연결되지 않은 세션입니다. 잠시 후 다시 시도해주세요.';
-const isWin = process.platform === 'win32';
+const isWin = isWindows();
 const WHERE_TIMEOUT_MS = 5000; // `where.exe claude`
 const VERSION_TIMEOUT_MS = 5000; // `claude --version`, the probe
 const RUN_FILE_POLL_MS = 100; // while a new runner writes its run file

@@ -3,6 +3,7 @@
 import path from 'node:path';
 import { MODEL_RE, PERMISSION_MODES } from '../../shared/permission.ts';
 import { MAX_PROMPT_CHARS, RUN_DIR } from '../config.ts';
+import { isWindows } from '../infra/platform.ts';
 
 /** A decoded JSON line (NDJSON, claude stream-json), shape not checked yet. */
 export type Json = Record<string, unknown>;
@@ -116,7 +117,7 @@ export function checkSid(sid: unknown): string {
 }
 
 export const pipePath = (sid: unknown) =>
-  process.platform === 'win32'
+  isWindows()
     ? `\\\\.\\pipe\\pawgents-office-${checkSid(sid)}`
     : path.join(RUN_DIR, `${checkSid(sid)}.sock`);
 export const runFile = (sid: unknown) =>

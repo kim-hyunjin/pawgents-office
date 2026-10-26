@@ -27,6 +27,7 @@ import {
   userMessageLine,
 } from './backends/protocol.ts';
 import { RUN_DIR } from './config.ts';
+import { isWindows } from './infra/platform.ts';
 
 const RECENT_MAX = 30,
   STDERR_MAX = 20,
@@ -39,7 +40,7 @@ const { sid, cwd, model, permissionMode, version } = spec;
 const pipe = pipePath(sid),
   runPath = runFile(sid),
   startedAt = Date.now();
-const isWin = process.platform === 'win32';
+const isWin = isWindows();
 fs.mkdirSync(RUN_DIR, { recursive: true });
 if (!isWin)
   try {
