@@ -1,4 +1,6 @@
 // The offices (one per repo, or everyone in one) and the desk each session was given, remembered across restarts.
+
+import { isRecord } from '../../shared/json.ts';
 import type { Layout } from '../../shared/layout.ts';
 import {
   cloneOffice,
@@ -21,7 +23,6 @@ import {
 } from '../domain/office.ts';
 import type { DeskMemory, Office, Session } from '../types.ts';
 import type { EventBus } from './events.ts';
-import { isRecord } from './persistence.ts';
 
 export class OfficeRepo {
   offices: Office[];

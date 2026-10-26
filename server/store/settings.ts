@@ -1,11 +1,11 @@
 // The look of the office: which breed each model family is drawn as, and the uploaded sprite sheets.
 import fs from 'node:fs';
 import path from 'node:path';
+import { isRecord } from '../../shared/json.ts';
 import { isCatFamily } from '../../shared/model.ts';
 import { DEFAULT_SKIN_NAME, hasSkin, newSkinId, SKIN_ID } from '../skins.ts';
 import type { Skin } from '../types.ts';
 import type { EventBus } from './events.ts';
-import { isRecord } from './persistence.ts';
 
 // a built-in breed (the list itself lives in web/sprites.js) or an uploaded skin, 'skin:<id>'
 export const BREED_KEY = /^([a-z]{2,24}|skin:[a-z0-9]{10})$/;

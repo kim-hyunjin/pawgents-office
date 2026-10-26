@@ -3,6 +3,7 @@
 // session sits, live here; the parts themselves know nothing of each other.
 import fs from 'node:fs';
 import path from 'node:path';
+import { field } from '../shared/json.ts';
 import type { Layout } from '../shared/layout.ts';
 import { SKINS_DIR, STATE_FILE } from './config.ts';
 import { DEFAULT_OFFICE_ID, type RepoResolver } from './domain/office.ts';
@@ -18,7 +19,7 @@ import * as dto from './http/dto.ts';
 import { repoOf as gitRepoOf } from './repo.ts';
 import { EventBus, type Listener } from './store/events.ts';
 import { OfficeRepo } from './store/offices.ts';
-import { field, Persistence } from './store/persistence.ts';
+import { Persistence } from './store/persistence.ts';
 import { SessionRepo } from './store/sessions.ts';
 import { SettingsRepo } from './store/settings.ts';
 import type {

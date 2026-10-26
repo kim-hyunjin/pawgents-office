@@ -6,13 +6,6 @@ import { debounce } from '../../shared/time.ts';
 
 export const SAVE_DEBOUNCE_MS = 500;
 
-/** A JSON object (or array): what the loaders look into before trusting any field. */
-export const isRecord = (x: unknown): x is Record<string, unknown> =>
-  typeof x === 'object' && x !== null;
-/** `x[key]` if `x` is an object, else undefined. */
-export const field = (x: unknown, key: string): unknown =>
-  isRecord(x) ? x[key] : undefined;
-
 export class Persistence {
   file: string;
   collect: () => Record<string, unknown>;
