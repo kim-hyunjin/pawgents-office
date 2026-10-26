@@ -26,14 +26,13 @@ import {
   HEADLESS_SETTINGS_FILE,
   PERMISSION_WAIT_MS,
   PORT,
-  PROJECTS_DIR,
   RUN_DIR,
   RUNNER_CMD_TIMEOUT_MS,
   RUNNER_RECONNECT_MS,
   RUNNER_RECONNECT_TRIES,
 } from '../config.ts';
 import { detailForTool, summarizeToolInput } from '../domain/tools.ts';
-import { projectDirName } from '../infra/claude-paths.ts';
+import { transcriptPathOf } from '../infra/claude-paths.ts';
 import { readSafe } from '../infra/fs.ts';
 import type { Store } from '../store.ts';
 import type { HookEvent, Session } from '../types.ts';
@@ -253,11 +252,7 @@ function attach(store: Store, h: HelloMsg): Session {
     s.model ||= h.model || defaultModel(h.cwd); // provisional: claude's init line replaces it with the exact model id
     store.setBackend(s, 'headless'); // registry or a hook may have created it first
     if (h.claudePid && !s.pid) s.pid = h.claudePid;
-    s.transcriptPath ||= path.join(
-      PROJECTS_DIR,
-      projectDirName(h.cwd),
-      `${h.sid}.jsonl`,
-    );
+    s.transcriptPath ||= transcriptPathOf(h.cwd, h.sid);
   });
   return s;
 }

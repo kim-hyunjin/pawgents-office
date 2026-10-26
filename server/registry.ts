@@ -3,8 +3,8 @@ import path from 'node:path';
 import { safeJsonParse } from '../shared/json.ts';
 import { isBusyState } from '../shared/model.ts';
 import { isPidAlive } from '../shared/node/process.ts';
-import { PROJECTS_DIR, SESSIONS_DIR, STALE_TOOL_MS } from './config.ts';
-import { projectDirName } from './infra/claude-paths.ts';
+import { SESSIONS_DIR, STALE_TOOL_MS } from './config.ts';
+import { transcriptPathOf } from './infra/claude-paths.ts';
 import { readSafe } from './infra/fs.ts';
 import type { Store } from './store.ts';
 import { traitsOf } from './traits.ts';
@@ -113,11 +113,7 @@ function foldEntry(
     changed = true;
   }
   if (!s.transcriptPath && d.cwd) {
-    s.transcriptPath = path.join(
-      PROJECTS_DIR,
-      projectDirName(d.cwd),
-      `${s.id}.jsonl`,
-    );
+    s.transcriptPath = transcriptPathOf(d.cwd, s.id);
   }
   // 'shell': the turn ended but a background shell will wake it. Works without our hooks too.
   const awaitingShell = d.status === 'shell';
