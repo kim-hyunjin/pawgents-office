@@ -32,8 +32,7 @@ import {
 } from './sprites.ts';
 import { bindDialogClose, downloadBlob, esc, pic } from './ui.ts';
 
-const dlg = document.getElementById('legend') as HTMLDialogElement;
-const body = document.getElementById('lg-body')!;
+let dlg: HTMLDialogElement, body: HTMLElement;
 type Sessions = Map<string, SessionSnapshot>;
 const MONITOR: Record<string, string> = {
   'wide-gold': '금색 와이드 모니터',
@@ -43,7 +42,12 @@ const MONITOR: Record<string, string> = {
 };
 const ZOOM = 2;
 
-bindDialogClose(dlg, document.getElementById('lg-close')!);
+/** Find the dialog and wire its close button; once, before openLegend(). */
+export function initLegend() {
+  dlg = document.getElementById('legend') as HTMLDialogElement;
+  body = document.getElementById('lg-body')!;
+  bindDialogClose(dlg, document.getElementById('lg-close')!);
+}
 
 const cat = (pal: Palette, anim = 'idle') => pic(sprite(pal, anim, 0), ZOOM);
 

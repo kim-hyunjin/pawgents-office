@@ -13,7 +13,7 @@ let canvas: HTMLCanvasElement,
   editorOpen: () => boolean;
 let PANEL_W = 0,
   PANEL_ANIM_MS = 0; // read from style.css (--panel-w / --panel-ms) so the two can't drift apart
-/** sideOpen(): the panel or the editor covers the right edge; editorOpen(): the editor (which has its own buttons). */
+/** Wire the canvas and the zoom buttons; once, before anything resizes. sideOpen(): the panel or the editor covers the right edge; editorOpen(): the editor (which has its own buttons). */
 export function initViewport(o: {
   canvas: HTMLCanvasElement;
   barEl: HTMLElement;
@@ -26,6 +26,13 @@ export function initViewport(o: {
   const css = getComputedStyle(document.documentElement);
   PANEL_W = parseInt(css.getPropertyValue('--panel-w'), 10);
   PANEL_ANIM_MS = parseInt(css.getPropertyValue('--panel-ms'), 10);
+  const z = Math.round(Number(storage.get('pawgents.zoom')));
+  zoom = z >= 1 ? Math.min(z, MAX_SCALE) : null;
+  zoomBtn = $('t-zoom');
+  $('t-zoom-out').addEventListener('click', () => setZoom(S - 1));
+  $('t-zoom-in').addEventListener('click', () => setZoom(S + 1));
+  zoomBtn.addEventListener('click', () => setZoom(null));
+  window.addEventListener('resize', resize);
 }
 // Width the open panel takes from the office. On narrow windows the panel just covers it.
 const panelRoom = () =>
@@ -36,11 +43,8 @@ const panelRoom = () =>
 // pin a zoom instead (remembered per browser); the zoom button between them goes back to fitting.
 const MIN_SCALE = 2,
   MAX_SCALE = 8;
-let zoom: number | null = null; // pinned scale, or null: fit the window
-{
-  const z = Math.round(Number(storage.get('pawgents.zoom')));
-  zoom = z >= 1 ? Math.min(z, MAX_SCALE) : null;
-}
+let zoom: number | null = null; // pinned scale, or null: fit the window (initViewport reads the saved one)
+let zoomBtn: HTMLElement;
 function fitScale() {
   if (zoom) return zoom;
   const ticker = $('ticker');
@@ -58,16 +62,12 @@ function fitScale() {
     MAX_SCALE,
   );
 }
-const zoomBtn = $('t-zoom');
 function setZoom(z: number | null) {
   zoom = z ? clamp(z, 1, MAX_SCALE) : null;
   if (zoom) storage.set('pawgents.zoom', zoom);
   else storage.remove('pawgents.zoom');
   resize();
 }
-$('t-zoom-out').addEventListener('click', () => setZoom(S - 1));
-$('t-zoom-in').addEventListener('click', () => setZoom(S + 1));
-zoomBtn.addEventListener('click', () => setZoom(null));
 function showZoom() {
   zoomBtn.textContent = `${S}×`;
   zoomBtn.classList.toggle('pinned', !!zoom);
@@ -116,7 +116,6 @@ export function refit() {
   clearTimeout(refitTimer);
   refitTimer = setTimeout(resize, PANEL_ANIM_MS + 20);
 }
-window.addEventListener('resize', resize);
 
 /** Pointer position in office (unscaled) pixels; CSS size can differ from the backing store mid-refit. */
 export function officeXY(ev: MouseEvent): [number, number] {

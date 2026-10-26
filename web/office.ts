@@ -6,14 +6,16 @@ import type {
 } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
 import { getState, setTogether as setTogetherOn } from './api.ts';
+import { initDiff } from './diff.ts';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
 import { feedFrom, renderFeed } from './feed.ts';
-import { openLauncher } from './launcher.ts';
-import { openLegend, refreshLegend } from './legend.ts';
+import { initLauncher, openLauncher } from './launcher.ts';
+import { initLegend, openLegend, refreshLegend } from './legend.ts';
 import { connectEvents } from './net/events.ts';
 import { Panel } from './panel.ts';
 import { HUD_BTN, render } from './render.ts';
+import { initReply } from './reply.ts';
 import { Roster } from './roster.ts';
 import {
   FAMILIES,
@@ -65,6 +67,11 @@ const toolsEl = $('tools');
 const stageEl = $('stage');
 const ctx = canvas.getContext('2d')!;
 const tip = $('tip');
+// dialogs first: the reply dialog notes where the panel's composer lives before anything can move it
+initLauncher();
+initLegend();
+initDiff();
+initReply();
 const panel = new Panel($('panel'), {
   onOpen: () => refit(),
   onClose: () => {

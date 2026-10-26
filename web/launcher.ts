@@ -9,31 +9,85 @@ import { MAX_HIRES, WORKTREE_NAME_RE } from '../shared/limits.ts';
 import { getBackends, getWorktrees, launch } from './api.ts';
 import { $, bindDialogClose, esc, setMsg as setMsgOn, storage } from './ui.ts';
 
-const dlg = $<HTMLDialogElement>('launcher'),
-  form = $<HTMLFormElement>('l-form'),
-  msg = $('l-msg'),
+// the dialog's elements, looked up by initLauncher()
+let dlg: HTMLDialogElement,
+  form: HTMLFormElement,
+  msg: HTMLElement,
+  submit: HTMLButtonElement;
+let backendBox: HTMLElement,
+  backendHint: HTMLElement,
+  radios: HTMLInputElement[];
+let sel: HTMLSelectElement, wtRow: HTMLElement;
+let cwdSel: HTMLSelectElement,
+  cwdRow: HTMLElement,
+  cwdCustom: HTMLInputElement,
+  permRow: HTMLElement,
+  perm: HTMLSelectElement;
+let model: HTMLInputElement, prompt: HTMLTextAreaElement;
+let newWt: HTMLInputElement,
+  newHint: HTMLElement,
+  nameRow: HTMLElement,
+  nameIn: HTMLInputElement;
+let countIn: HTMLInputElement, countHint: HTMLElement;
+
+/** Find the dialog's elements and wire them up; once, before openLauncher(). */
+export function initLauncher() {
+  dlg = $<HTMLDialogElement>('launcher');
+  form = $<HTMLFormElement>('l-form');
+  msg = $('l-msg');
   submit = $<HTMLButtonElement>('l-submit');
-const backendBox = $('l-backend'),
-  backendHint = $('l-backend-hint'),
+  backendBox = $('l-backend');
+  backendHint = $('l-backend-hint');
   radios = [
     ...form.querySelectorAll<HTMLInputElement>('input[name="backend"]'),
   ];
-const sel = $<HTMLSelectElement>('l-worktree'),
+  sel = $<HTMLSelectElement>('l-worktree');
   wtRow = $('l-worktree-row');
-const cwdSel = $<HTMLSelectElement>('l-cwd'),
-  cwdRow = $('l-cwd-row'),
-  cwdCustom = $<HTMLInputElement>('l-cwd-custom'),
-  permRow = $('l-perm-row'),
+  cwdSel = $<HTMLSelectElement>('l-cwd');
+  cwdRow = $('l-cwd-row');
+  cwdCustom = $<HTMLInputElement>('l-cwd-custom');
+  permRow = $('l-perm-row');
   perm = $<HTMLSelectElement>('l-perm');
-const model = $<HTMLInputElement>('l-model'),
+  model = $<HTMLInputElement>('l-model');
   prompt = $<HTMLTextAreaElement>('l-prompt');
-const newWt = $<HTMLInputElement>('l-new'),
-  newHint = $('l-new-hint'),
-  nameRow = $('l-name-row'),
+  newWt = $<HTMLInputElement>('l-new');
+  newHint = $('l-new-hint');
+  nameRow = $('l-name-row');
   nameIn = $<HTMLInputElement>('l-name');
-const countIn = $<HTMLInputElement>('l-count'),
+  countIn = $<HTMLInputElement>('l-count');
   countHint = $('l-count-hint');
-countIn.max = String(MAX_HIRES); // the one copy of the limit: index.html leaves max off
+  countIn.max = String(MAX_HIRES); // the one copy of the limit: index.html leaves max off
+
+  sel.addEventListener('change', syncForm);
+  cwdSel.addEventListener('change', () => {
+    syncForm();
+    if (cwdSel.value === CUSTOM) cwdCustom.focus();
+  });
+  countIn.addEventListener('input', syncForm);
+  nameIn.addEventListener('input', syncForm);
+  newWt.addEventListener('change', () => {
+    if (newWt.checked && !nameIn.value.trim())
+      nameIn.value = `cat-${Math.random().toString(36).slice(2, 6)}`;
+    syncForm();
+    if (newWt.checked) nameIn.select();
+  });
+  for (const r of radios)
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      backend = r.value as Backend;
+      setMsg('');
+      syncForm();
+      loadWorktrees(backend);
+    });
+  bindDialogClose(dlg, $('l-cancel'));
+  prompt.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+  form.addEventListener('submit', onSubmit);
+}
 
 const CUSTOM = '__custom';
 const LAST_WT = 'pawgents-office:last-worktree',
@@ -144,27 +198,6 @@ function syncForm() {
         : `(같은 워크트리에 탭 ${n}개)`
       : '';
 }
-sel.addEventListener('change', syncForm);
-cwdSel.addEventListener('change', () => {
-  syncForm();
-  if (cwdSel.value === CUSTOM) cwdCustom.focus();
-});
-countIn.addEventListener('input', syncForm);
-nameIn.addEventListener('input', syncForm);
-newWt.addEventListener('change', () => {
-  if (newWt.checked && !nameIn.value.trim())
-    nameIn.value = `cat-${Math.random().toString(36).slice(2, 6)}`;
-  syncForm();
-  if (newWt.checked) nameIn.select();
-});
-for (const r of radios)
-  r.addEventListener('change', () => {
-    if (!r.checked) return;
-    backend = r.value as Backend;
-    setMsg('');
-    syncForm();
-    loadWorktrees(backend);
-  });
 
 export async function openLauncher() {
   if (dlg.open) return;
@@ -211,15 +244,8 @@ export async function openLauncher() {
   syncForm();
   loadWorktrees(backend);
 }
-bindDialogClose(dlg, $('l-cancel'));
-prompt.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
-    e.preventDefault();
-    form.requestSubmit();
-  }
-});
 
-form.addEventListener('submit', async (e) => {
+async function onSubmit(e: SubmitEvent) {
   e.preventDefault();
   if (!backend || submit.disabled) return;
   const hl = backend === 'headless',
@@ -278,4 +304,4 @@ form.addEventListener('submit', async (e) => {
     setMsg((err as Error).message, 'err');
     submit.disabled = false;
   }
-});
+}

@@ -5,31 +5,39 @@ import type { DiffReply, SessionSnapshot } from '../shared/api.ts';
 import { getDiff } from './api.ts';
 import { $, bindDialogClose, esc } from './ui.ts';
 
-const dlg = $<HTMLDialogElement>('diff');
-const nameEl = $('d-name');
-const metaEl = $('d-meta');
-const warnEl = $('d-warn');
-const body = $('d-body');
-const copyBtn = $('d-copy');
+let dlg: HTMLDialogElement,
+  nameEl: HTMLElement,
+  metaEl: HTMLElement,
+  warnEl: HTMLElement,
+  body: HTMLElement;
 
 let cur: { id: string; file: string; t: number; patch: string } | null = null;
 
-bindDialogClose(dlg, $('d-close'));
-dlg.addEventListener('close', () => {
-  cur = null;
-});
-copyBtn.addEventListener('click', async () => {
-  if (!cur) return;
-  try {
-    await navigator.clipboard.writeText(cur.patch);
-    copyBtn.textContent = '복사됨 ✓';
-  } catch {
-    copyBtn.textContent = '복사 실패';
-  }
-  setTimeout(() => {
-    copyBtn.textContent = '복사';
-  }, 1500);
-});
+/** Find the dialog's elements and wire them up; once, before openDiff(). */
+export function initDiff() {
+  dlg = $<HTMLDialogElement>('diff');
+  nameEl = $('d-name');
+  metaEl = $('d-meta');
+  warnEl = $('d-warn');
+  body = $('d-body');
+  const copyBtn = $('d-copy');
+  bindDialogClose(dlg, $('d-close'));
+  dlg.addEventListener('close', () => {
+    cur = null;
+  });
+  copyBtn.addEventListener('click', async () => {
+    if (!cur) return;
+    try {
+      await navigator.clipboard.writeText(cur.patch);
+      copyBtn.textContent = '복사됨 ✓';
+    } catch {
+      copyBtn.textContent = '복사 실패';
+    }
+    setTimeout(() => {
+      copyBtn.textContent = '복사';
+    }, 1500);
+  });
+}
 
 const STATUS: Record<string, string> = {
   changed: 'HEAD 기준 작업 트리 변경',

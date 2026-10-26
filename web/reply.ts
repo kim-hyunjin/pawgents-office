@@ -5,35 +5,45 @@ import { getReply } from './api.ts';
 import { renderMarkdown } from './markdown.ts';
 import { $, bindDialogClose, fmtTime } from './ui.ts';
 
-const dlg = $<HTMLDialogElement>('reply');
-const nameEl = $('r-name');
-const metaEl = $('r-meta');
-const body = $('r-body');
-const copyBtn = $('r-copy');
-
-const compose = $('p-compose');
-const composeHome = compose.parentNode!,
-  composeNext = compose.nextSibling;
+let dlg: HTMLDialogElement,
+  nameEl: HTMLElement,
+  metaEl: HTMLElement,
+  body: HTMLElement,
+  compose: HTMLElement;
 
 let cur: { id: string; at: number; text: string } | null = null;
 
-bindDialogClose(dlg, $('r-close'));
-dlg.addEventListener('close', () => {
-  cur = null;
-  composeHome.insertBefore(compose, composeNext); // hand the composer back to the panel
-});
-copyBtn.addEventListener('click', async () => {
-  if (!cur) return;
-  try {
-    await navigator.clipboard.writeText(cur.text);
-    copyBtn.textContent = '복사됨 ✓';
-  } catch {
-    copyBtn.textContent = '복사 실패';
-  }
-  setTimeout(() => {
-    copyBtn.textContent = '복사';
-  }, 1500);
-});
+/**
+ * Find the dialog's elements and wire them up; once, before openReply(). Also notes where the panel's composer
+ * (#p-compose) sits, so it can go back there after the dialog borrowed it: call it while the composer is still home.
+ */
+export function initReply() {
+  dlg = $<HTMLDialogElement>('reply');
+  nameEl = $('r-name');
+  metaEl = $('r-meta');
+  body = $('r-body');
+  const copyBtn = $('r-copy');
+  compose = $('p-compose');
+  const composeHome = compose.parentNode!,
+    composeNext = compose.nextSibling;
+  bindDialogClose(dlg, $('r-close'));
+  dlg.addEventListener('close', () => {
+    cur = null;
+    composeHome.insertBefore(compose, composeNext); // hand the composer back to the panel
+  });
+  copyBtn.addEventListener('click', async () => {
+    if (!cur) return;
+    try {
+      await navigator.clipboard.writeText(cur.text);
+      copyBtn.textContent = '복사됨 ✓';
+    } catch {
+      copyBtn.textContent = '복사 실패';
+    }
+    setTimeout(() => {
+      copyBtn.textContent = '복사';
+    }, 1500);
+  });
+}
 
 export function openReply(s: SessionSnapshot) {
   cur = { id: s.id, at: -1, text: '' };
