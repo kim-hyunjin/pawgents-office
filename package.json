@@ -4,12 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Watch Claude Code sessions work as cats in a pixel-art office",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "bun": ">=1.4"
+  },
   "scripts": {
-    "start": "node server/index.mjs",
-    "demo": "node scripts/demo.mjs --loop",
-    "install-hooks": "node hooks/install.mjs",
-    "uninstall-hooks": "node hooks/uninstall.mjs",
-    "test": "node --test test/"
+    "start": "bun server/index.ts",
+    "demo": "bun scripts/demo.ts --loop",
+    "install-hooks": "bun hooks/install.ts",
+    "uninstall-hooks": "bun hooks/uninstall.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test test/"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "^7.0.2"
   }
 }

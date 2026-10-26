@@ -7,7 +7,7 @@ Claude Code 세션들이 일하는 모습을 **픽셀아트 사무실**로 보�
 - 권한 승인을 기다리면 손을 들고 `!`, 답변이 끝나면 말풍선, 세션이 끝나면 문으로 퇴근합니다.
 - 직원을 클릭하면 오른쪽 패널에 활동 로그가 나옵니다. 패널의 답변 카드를 누르면 전체 답변을 마크다운으로 크게 볼 수 있고, 작업한 파일을 누르면 그 파일의 git diff가 열립니다.
 
-의존성 없음. Node 24 이상만 있으면 됩니다.
+런타임 의존성 없음. [Bun](https://bun.sh) 1.4 이상이 있으면 됩니다(훅과 서버를 `bun`으로 실행하므로 PATH에 있어야 합니다). 전체가 TypeScript이고 빌드 단계는 없습니다(서버가 `web/*.ts`를 요청 때 변환해 내려줍니다).
 
 ## 사용법
 
@@ -25,26 +25,27 @@ Claude Code 세션들이 일하는 모습을 **픽셀아트 사무실**로 보�
 | `/pawgents-office:open` | 서버를 (꺼져 있으면) 띄우고 브라우저로 http://127.0.0.1:17777 을 엽니다 |
 | `/pawgents-office:stop` | 백그라운드 서버를 끕니다 |
 
-자동 시작이 싫으면 `PAWGENTS_OFFICE_AUTOSTART=0`을 설정하고 `pnpm start`로 직접 띄우세요.
-예전에 `pnpm install-hooks`로 훅을 설치했다면 이벤트가 두 번 들어가니 `pnpm uninstall-hooks`로 먼저 지우세요.
+자동 시작이 싫으면 `PAWGENTS_OFFICE_AUTOSTART=0`을 설정하고 `bun run start`로 직접 띄우세요.
+예전에 `bun run install-hooks`로 훅을 설치했다면 이벤트가 두 번 들어가니 `bun run uninstall-hooks`로 먼저 지우세요.
 로컬 클론을 그대로 쓰려면 `/plugin marketplace add ~/pawgents-office` 처럼 경로를 넣으면 됩니다.
 
 ### 직접 실행
 
 ```bash
 cd ~/pawgents-office
-pnpm install-hooks     # 최초 1회: ~/.claude/settings.json에 hook 등록 (자동 백업)
-pnpm start             # http://127.0.0.1:17777
+bun run install-hooks     # 최초 1회: ~/.claude/settings.json에 hook 등록 (자동 백업)
+bun run start             # http://127.0.0.1:17777
 claude                 # 아무 터미널, 아무 레포에서 평소처럼 사용
 ```
 
 ```bash
-pnpm demo              # Claude 없이 가짜 직원 2명으로 화면 확인
-pnpm uninstall-hooks   # hook 제거 (settings.json 원복)
-pnpm test              # node --test: 공유 상수·레이아웃 순수 함수, 파일 diff·헤드리스 백엔드 테스트
+bun run demo              # Claude 없이 가짜 직원 2명으로 화면 확인
+bun run uninstall-hooks   # hook 제거 (settings.json 원복)
+bun run test          # bun test: 공유 상수·레이아웃 순수 함수, 파일 diff·헤드리스 백엔드 테스트
+bun run typecheck     # tsc --noEmit (strict)
 ```
 
-`pnpm`이 없으면 `node server/index.mjs`, `node hooks/install.mjs` 처럼 직접 실행해도 됩니다.
+`bun server/index.ts`, `bun hooks/install.ts` 처럼 직접 실행해도 됩니다.
 
 ## 동작 방식
 
@@ -129,7 +130,7 @@ pnpm test              # node --test: 공유 상수·레이아웃 순수 함수,
 | 직원 목록 ("목록 ▾") | 모든 사무실 직원의 상태와 위치(자리·회의실·기획 보드·서가·놀이터·로비 등) |
 | 화면 하단 활동 기록 | 모든 세션의 툴 사용·지시·답변이 최신순으로 쌓임. 스크롤하면 최근 500건까지 볼 수 있음 |
 
-`hooks/send.mjs`는 `tool_response`의 앞 400자만 남기고 버리며, Agent 툴의 지시문은 600자까지 보조 직원에게 연결합니다. 생각 중 내용과 비용은 transcript에서 읽습니다(thinking 블록, `cost-state`).
+`hooks/send.ts`는 `tool_response`의 앞 400자만 남기고 버리며, Agent 툴의 지시문은 600자까지 보조 직원에게 연결합니다. 생각 중 내용과 비용은 transcript에서 읽습니다(thinking 블록, `cost-state`).
 
 ## 웹에서 지시하기
 
@@ -222,29 +223,29 @@ pnpm test              # node --test: 공유 상수·레이아웃 순수 함수,
 
 ## 트러블슈팅
 
-- **직원이 안 나타남**: 플러그인이 켜져 있는지(`/plugin`) 또는 `pnpm install-hooks`를 실행했는지, 서버가 떠 있는지 확인. 이미 떠 있던 `claude`는 재시작해야 툴 상세가 보입니다(존재 여부는 레지스트리로 바로 보임).
+- **직원이 안 나타남**: 플러그인이 켜져 있는지(`/plugin`) 또는 `bun run install-hooks`를 실행했는지, 서버가 떠 있는지 확인. 이미 떠 있던 `claude`는 재시작해야 툴 상세가 보입니다(존재 여부는 레지스트리로 바로 보임).
 - **훅이 도는지 확인**: `PAWGENTS_OFFICE_DEBUG=1 claude` 로 실행한 뒤 `~/.pawgents-office/hook.log`를 보거나, `claude --debug hooks`.
 - **서버 로그**: 서버 터미널에 `[hook] PreToolUse Edit · office.js  <세션> → coding` 식으로 찍힙니다.
-- **포트 충돌**: `PAWGENTS_OFFICE_PORT=18000 pnpm start` 처럼 바꾸고, 훅도 같은 변수를 보도록 쉘 환경에 export 하세요.
+- **포트 충돌**: `PAWGENTS_OFFICE_PORT=18000 bun run start` 처럼 바꾸고, 훅도 같은 변수를 보도록 쉘 환경에 export 하세요.
 
 ## 구조
 
 ```
-server/   index.mjs(부팅·디스패처) · routes.mjs(HTTP 라우트 표) · http.mjs(요청 처리 공용) · skins.mjs(스킨 id·검증)
-          reducer.mjs(이벤트→상태) · store.mjs(모델/사무실/책상/영속화) · repo.mjs(저장소 판별) · diff.mjs(git diff·status) · files.mjs(작업한 파일 동기화)
-          registry.mjs(세션 레지스트리 폴링) · transcript.mjs(transcript tail)
-          backends/index.mjs(백엔드 선택) · backends/orca.mjs(Orca CLI 연동) · backends/headless.mjs(claude -p 러너 관리·권한 대기)
-          backends/git.mjs(git 워크트리) · backends/protocol.mjs(러너 프로토콜) · headless-runner.mjs(세션별 중계 프로세스)
-          sse.mjs · static.mjs(정적 파일) · config.mjs(경로·포트·시간 상수) · util.mjs
+server/   index.ts(부팅·디스패처) · routes.ts(HTTP 라우트 표) · http.ts(요청 처리 공용) · skins.ts(스킨 id·검증)
+          reducer.ts(이벤트→상태) · store.ts(모델/사무실/책상/영속화) · repo.ts(저장소 판별) · diff.ts(git diff·status) · files.ts(작업한 파일 동기화)
+          registry.ts(세션 레지스트리 폴링) · transcript.ts(transcript tail)
+          backends/index.ts(백엔드 선택) · backends/orca.ts(Orca CLI 연동) · backends/headless.ts(claude -p 러너 관리·권한 대기)
+          backends/git.ts(git 워크트리) · backends/protocol.ts(러너 프로토콜) · headless-runner.ts(세션별 중계 프로세스)
+          sse.ts · static.ts(정적 파일) · config.ts(경로·포트·시간 상수) · util.ts
 web/      index.html · style.css · office.js(진입점: 탭·SSE·입력·루프) · world.js(상태·자리·동선) · feed.js(티커) · viewport.js(배율·줌·리핏)
           render.js · anim.js · sprites.js · cats.js(고양이 도트) · tilemap.js(배경 그리기)
           layout.js(배치 데이터·검증, 서버와 공유) · limits.js(이름·인원·스킨 한도, 서버와 공유) · editor.js(배치 편집)
           layout-edit.js(배치 편집 연산, DOM 없음) · editor-draw.js(편집 오버레이) · panel.js · roster.js(직원 목록)
           launcher.js(새 직원) · legend.js(모델 안내) · reply.js(전체 답변 창) · diff.js(파일 diff 창) · markdown.js
           api.js(JSON 요청) · ui.js(공용 DOM·포맷 도우미, 상태 이름·색·툴 아이콘)
-hooks/    send.mjs(훅 본체) · ensure-server.mjs(서버 자동 시작) · decision.mjs(권한 결정 JSON) · ensure.mjs(서버 자동 시작 공용) · hooks.json(플러그인 훅) · install.mjs · uninstall.mjs · _common.mjs
-scripts/  demo.mjs(가짜 이벤트 재생) · stop.mjs(백그라운드 서버 종료)
-test/     shared.test.mjs(공유 상수·레이아웃 순수 함수 테스트) · diff.test.mjs(임시 git 저장소로 diff 상태 검사) · headless.test.mjs(러너·프로토콜·결정 훅) · fixtures/fake-claude.mjs
+hooks/    send.ts(훅 본체) · ensure-server.ts(서버 자동 시작) · decision.ts(권한 결정 JSON) · ensure.ts(서버 자동 시작 공용) · hooks.json(플러그인 훅) · install.ts · uninstall.ts · _common.ts
+scripts/  demo.ts(가짜 이벤트 재생) · stop.ts(백그라운드 서버 종료)
+test/     shared.test.ts(공유 상수·레이아웃 순수 함수 테스트) · diff.test.ts(임시 git 저장소로 diff 상태 검사) · headless.test.ts(러너·프로토콜·결정 훅) · fixtures/fake-claude.ts
 commands/ open.md · stop.md (플러그인 슬래시 명령)
 .claude-plugin/  plugin.json · marketplace.json
 ```
