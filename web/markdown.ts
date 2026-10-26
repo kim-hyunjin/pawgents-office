@@ -12,21 +12,34 @@ const QUOTE = /^\s{0,3}>\s?/;
 const LIST = /^(\s*)([-*+]|\d{1,9}[.)])\s+/;
 const TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
+/** Line `i`, or '' past either end (a blank line: what every caller already treats the end as). */
+const at = (lines: string[], i: number) => lines[i] ?? '';
 const indentOf = (l: string) =>
-  l.match(/^\s*/)![0].replace(/\t/g, '    ').length;
+  (/^\s*/.exec(l)?.[0] ?? '').replace(/\t/g, '    ').length;
 const blank = (l?: string) => !l || !l.trim();
 const isTableStart = (lines: string[], i: number) =>
-  lines[i].includes('|') &&
+  at(lines, i).includes('|') &&
   i + 1 < lines.length &&
-  TABLE_SEP.test(lines[i + 1]) &&
-  lines[i + 1].includes('-');
-const startsBlock = (lines: string[], i: number) =>
-  FENCE.test(lines[i]) ||
-  HEADING.test(lines[i]) ||
-  RULE.test(lines[i]) ||
-  QUOTE.test(lines[i]) ||
-  LIST.test(lines[i]) ||
-  isTableStart(lines, i);
+  TABLE_SEP.test(at(lines, i + 1)) &&
+  at(lines, i + 1).includes('-');
+const startsBlock = (lines: string[], i: number) => {
+  const l = at(lines, i);
+  return (
+    FENCE.test(l) ||
+    HEADING.test(l) ||
+    RULE.test(l) ||
+    QUOTE.test(l) ||
+    LIST.test(l) ||
+    isTableStart(lines, i)
+  );
+};
+/** A list marker line: its indent, its marker, and the whole match (the content starts after it). */
+function listMarker(l: string) {
+  const m = LIST.exec(l);
+  if (!m) return null;
+  const [all, indent = '', marker = ''] = m;
+  return { all, indent, marker };
+}
 
 export function renderMarkdown(src: unknown) {
   return blocks(
@@ -41,23 +54,28 @@ function blocks(lines: string[], tight: boolean): string {
   let out = '';
   let i = 0;
   while (i < lines.length) {
-    const line = lines[i];
+    const line = at(lines, i);
     if (blank(line)) {
       i++;
       continue;
     }
-    let m: RegExpExecArray | string | null;
-    if ((m = FENCE.exec(line))) {
-      const fence = m[2],
-        ind = m[1].length,
+    let fence: RegExpExecArray | null, heading: RegExpExecArray | null;
+    if ((fence = FENCE.exec(line))) {
+      const [, indent = '', marker = '', lang = ''] = fence,
+        ind = indent.length,
         body: string[] = [];
-      for (i++; i < lines.length && !lines[i].trim().startsWith(fence); i++)
-        body.push(lines[i].slice(Math.min(ind, indentOf(lines[i]))));
+      for (
+        i++;
+        i < lines.length && !at(lines, i).trim().startsWith(marker);
+        i++
+      )
+        body.push(at(lines, i).slice(Math.min(ind, indentOf(at(lines, i)))));
       i++;
-      out += `<pre><code${m[3] ? ` data-lang="${esc(m[3])}"` : ''}>${esc(body.join('\n'))}</code></pre>`;
-    } else if ((m = HEADING.exec(line))) {
-      const n = m[1].length;
-      out += `<h${n}>${inline(m[2])}</h${n}>`;
+      out += `<pre><code${lang ? ` data-lang="${esc(lang)}"` : ''}>${esc(body.join('\n'))}</code></pre>`;
+    } else if ((heading = HEADING.exec(line))) {
+      const [, hashes = '', text = ''] = heading,
+        n = hashes.length;
+      out += `<h${n}>${inline(text)}</h${n}>`;
       i++;
     } else if (RULE.test(line)) {
       out += '<hr>';
@@ -66,25 +84,27 @@ function blocks(lines: string[], tight: boolean): string {
       const body: string[] = [];
       while (
         i < lines.length &&
-        !blank(lines[i]) &&
-        (QUOTE.test(lines[i]) || !startsBlock(lines, i))
+        !blank(at(lines, i)) &&
+        (QUOTE.test(at(lines, i)) || !startsBlock(lines, i))
       )
-        body.push(lines[i++].replace(QUOTE, ''));
+        body.push(at(lines, i++).replace(QUOTE, ''));
       out += `<blockquote>${blocks(body, false)}</blockquote>`;
     } else if (isTableStart(lines, i)) {
-      ({ html: m, i } = table(lines, i));
-      out += m;
+      let html: string;
+      ({ html, i } = table(lines, i));
+      out += html;
     } else if (LIST.test(line)) {
-      ({ html: m, i } = list(lines, i));
-      out += m;
+      let html: string;
+      ({ html, i } = list(lines, i));
+      out += html;
     } else {
       const para: string[] = [];
       while (
         i < lines.length &&
-        !blank(lines[i]) &&
+        !blank(at(lines, i)) &&
         (para.length === 0 || !startsBlock(lines, i))
       )
-        para.push(lines[i++].trim());
+        para.push(at(lines, i++).trim());
       const html = para.map(inline).join('<br>');
       out += tight ? html : `<p>${html}</p>`;
     }
@@ -92,39 +112,39 @@ function blocks(lines: string[], tight: boolean): string {
   return out;
 }
 
+/** Called on a line LIST matches (blocks() checked). */
 function list(lines: string[], i: number) {
-  const first = LIST.exec(lines[i])!;
-  const indent = first[1].length;
-  const ordered = /\d/.test(first[2]);
-  const start = ordered ? parseInt(first[2], 10) : 1;
+  const first = listMarker(at(lines, i));
+  const indent = first?.indent.length ?? 0;
+  const ordered = /\d/.test(first?.marker ?? '');
+  const start = ordered ? parseInt(first?.marker ?? '', 10) : 1;
+  /** Another item of this list: same indent, same kind of marker. */
+  const sameList = (m: ReturnType<typeof listMarker>) =>
+    !!m && m.indent.length === indent && /\d/.test(m.marker) === ordered;
   const items: string[][] = [];
   let loose = false;
   while (i < lines.length) {
-    const m = LIST.exec(lines[i]);
-    if (!m || m[1].length !== indent || /\d/.test(m[2]) !== ordered) break;
-    const col = m[0].length; // content column: continuation lines are dedented by this much
-    const body = [lines[i].slice(col)];
+    const m = listMarker(at(lines, i));
+    if (!m || !sameList(m)) break;
+    const col = m.all.length; // content column: continuation lines are dedented by this much
+    const body = [at(lines, i).slice(col)];
     i++;
     while (i < lines.length) {
-      const l = lines[i];
+      const l = at(lines, i);
       if (blank(l)) {
         let j = i + 1;
-        while (j < lines.length && blank(lines[j])) j++;
-        if (j < lines.length && indentOf(lines[j]) > indent) {
+        while (j < lines.length && blank(at(lines, j))) j++;
+        if (j < lines.length && indentOf(at(lines, j)) > indent) {
           body.push('');
           i++;
           continue;
         }
-        const next = LIST.exec(lines[j] || '');
-        if (next && next[1].length === indent && /\d/.test(next[2]) === ordered)
-          loose = true;
+        if (sameList(listMarker(at(lines, j)))) loose = true;
         break;
       }
       const ind = indentOf(l);
       if (ind > indent) {
-        body.push(
-          l.replace(/^\s+/, (ws: string) => ' '.repeat(Math.max(0, ind - col))),
-        );
+        body.push(l.replace(/^\s+/, () => ' '.repeat(Math.max(0, ind - col))));
         i++;
         continue;
       }
@@ -135,22 +155,22 @@ function list(lines: string[], i: number) {
     if (body.some(blank)) loose = true;
     items.push(body);
   }
-  while (i < lines.length && blank(lines[i])) {
+  while (i < lines.length && blank(at(lines, i))) {
     // swallow the blank lines we stopped on only if the list continues after them
-    const m = LIST.exec(lines[i + 1] || '');
-    if (m && m[1].length === indent && /\d/.test(m[2]) === ordered) i++;
+    if (sameList(listMarker(at(lines, i + 1)))) i++;
     else break;
   }
   const lis = items
     .map((body) => {
       let task = '';
-      const t = /^\[([ xX])\]\s+/.exec(body[0]);
+      const head = body[0] ?? ''; // an item has its marker line at least
+      const t = /^\[([ xX])\]\s+/.exec(head);
       if (t) {
         task =
           t[1] === ' '
             ? '<span class="task">☐</span> '
             : '<span class="task done">☑</span> ';
-        body[0] = body[0].slice(t[0].length);
+        body[0] = head.slice(t[0].length);
       }
       return `<li${task ? ' class="task-item"' : ''}>${task}${blocks(body, !loose)}</li>`;
     })
@@ -172,8 +192,8 @@ function splitRow(line: string) {
 }
 
 function table(lines: string[], i: number) {
-  const head = splitRow(lines[i]);
-  const align = splitRow(lines[i + 1]).map((c: string) =>
+  const head = splitRow(at(lines, i));
+  const align = splitRow(at(lines, i + 1)).map((c: string) =>
     c.startsWith(':') && c.endsWith(':')
       ? 'center'
       : c.endsWith(':')
@@ -187,10 +207,10 @@ function table(lines: string[], i: number) {
   let html = `<div class="table"><table><thead><tr>${head.map((c, k) => cell('th', c, k)).join('')}</tr></thead><tbody>`;
   for (
     i += 2;
-    i < lines.length && !blank(lines[i]) && lines[i].includes('|');
+    i < lines.length && !blank(at(lines, i)) && at(lines, i).includes('|');
     i++
   ) {
-    const row = splitRow(lines[i]);
+    const row = splitRow(at(lines, i));
     html += `<tr>${head.map((_, k) => cell('td', row[k] ?? '', k)).join('')}</tr>`;
   }
   return { html: html + '</tbody></table></div>', i };
@@ -217,7 +237,7 @@ function inline(text: unknown): string {
     .replace(/(^|[^_\w])_(?=\S)([^_]*?\S)_(?![_\w])/g, '$1<em>$2</em>')
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<del>$1</del>');
   // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL brackets the placeholders `hold` stashed
-  return s.replace(/\u0000(\d+)\u0000/g, (_, n) => slots[Number(n)]);
+  return s.replace(/\u0000(\d+)\u0000/g, (_, n) => String(slots[Number(n)]));
 }
 
 function link(href: string, label: string) {

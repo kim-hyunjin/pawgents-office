@@ -1,5 +1,13 @@
-import type { Desk, Geo, Item, Placed, Reception, Rect } from './layout.ts';
-import { TILE, WALL_RISE } from './layout.ts';
+import type {
+  Desk,
+  Geo,
+  Item,
+  Placed,
+  Reception,
+  Rect,
+} from '../shared/layout.ts';
+import { ITEM_KINDS, TILE, WALL_RISE } from '../shared/layout.ts';
+import { cyclic } from '../shared/math.ts';
 import {
   animFor,
   backAnim,
@@ -12,14 +20,15 @@ import {
   sprite,
   spriteSize,
 } from './sprites.ts';
+import type { AppState } from './state.ts';
 import type { Ctx } from './tilemap.ts';
-import { drawBox, drawReception } from './tilemap.ts';
+import { background, drawBox, drawReception } from './tilemap.ts';
 import { fmtTime } from './ui.ts';
 import type { Ent, World } from './world.ts';
 
 const FONT =
   '"Galmuri11", "DotumChe", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif';
-const SCREEN: Record<string, string> = {
+const SCREEN: Record<string, string> & { idle: string } = {
   idle: '#1b1b24',
   offduty: '#1b1b24',
   thinking: '#263047',
@@ -38,20 +47,27 @@ const fpx = (k: number, S: number) => Math.max(13, k * S);
 
 const NO_ENTS = new Map<string, Ent>();
 
+/** What a frame drew that input needs until the next one: the HUD button and each cat's sprite top / height (office px). */
+export interface Frame {
+  hud: Rect;
+  heads: Map<string, { top: number; h: number }>;
+}
+
 /** Draws world.view (the live office, or the editor's draft); cats are hidden while editing. */
 export function render(
   ctx: CanvasRenderingContext2D,
   S: number,
   world: World,
+  st: AppState,
   now: number,
-) {
-  const { hoverKey, selectedKey } = world;
-  const { bg, geo } = world.view;
+): Frame {
+  const { hoverKey, selectedKey } = st;
+  const geo = world.view;
   const ents = world.editing ? NO_ENTS : world.ents;
   // office space starts WALL_RISE below the canvas top; the band above is the raised top wall
   ctx.setTransform(S, 0, 0, S, 0, WALL_RISE * S);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(bg, 0, -WALL_RISE);
+  ctx.drawImage(background(geo), 0, -WALL_RISE);
 
   // who is at which desk right now
   const atDesk = new Map<number, Ent['data']>();
@@ -116,17 +132,67 @@ export function render(
   for (const w of geo.wheels) drawWheel(ctx, w, seatedAt('wheel', w.id), now);
 
   const list = [...ents.values()].sort((a, b) => a.y - b.y);
+  const heads: Frame['heads'] = new Map(); // skins can be taller than a cat: the bubble and hit testing need it
   for (const e of list)
-    drawEntity(ctx, geo, e, now, e.key === selectedKey, e.key === hoverKey);
+    heads.set(
+      e.key,
+      drawEntity(ctx, geo, e, now, e.key === selectedKey, e.key === hoverKey),
+    );
 
   // screen-space text
   ctx.setTransform(1, 0, 0, 1, 0, WALL_RISE * S);
   drawSign(ctx, S, geo);
   const placed: Rect[] = [];
-  for (const e of list) drawBubble(ctx, S, e, now, placed, geo.W);
+  for (const e of list)
+    drawBubble(ctx, S, e, now, placed, geo.W, heads.get(e.key)?.h);
   ctx.setTransform(1, 0, 0, 1, 0, 0); // HUD hangs on the raised wall
-  drawHUD(ctx, S, world, now);
+  return { hud: drawHUD(ctx, S, world, st, now), heads };
 }
+
+type Box = [x: number, y: number, w: number, h: number];
+/** Desk monitors by family (Family.monitor), in px from the monitor box's corner; text: [x, y, rows, max width]. */
+interface Monitor {
+  color: string;
+  frame: Box;
+  screen: Box;
+  standColor: string;
+  stand: Box;
+  text: [x: number, y: number, rows: number, maxW: number];
+}
+const MONITORS: Record<string, Monitor> & { normal: Monitor } = {
+  'wide-gold': {
+    color: '#d4a017',
+    frame: [0, 1, 12, 10],
+    screen: [1, 2, 10, 8],
+    standColor: '#d4a017',
+    stand: [5, 11, 2, 2],
+    text: [2, 3, 3, 7],
+  },
+  silver: {
+    color: '#c8d0d8',
+    frame: [1, 2, 11, 9],
+    screen: [2, 3, 9, 7],
+    standColor: '#9aa3b2',
+    stand: [6, 11, 2, 2],
+    text: [3, 4, 3, 6],
+  },
+  laptop: {
+    color: '#2c2c36',
+    frame: [2, 4, 9, 6],
+    screen: [3, 5, 7, 4],
+    standColor: '#44454f', // the keyboard deck
+    stand: [1, 10, 11, 2],
+    text: [4, 6, 2, 4],
+  },
+  normal: {
+    color: '#23242e',
+    frame: [1, 2, 11, 9],
+    screen: [2, 3, 9, 7],
+    standColor: '#3a3b47',
+    stand: [6, 11, 2, 2],
+    text: [3, 4, 3, 6],
+  },
+};
 
 // ---- furniture state ------------------------------------------------------------
 /**
@@ -154,42 +220,20 @@ function drawDeskProps(
   for (let i = 0; i < 5; i++) g.fillRect(kx + 1, dy + 3 + i * 2, 1, 1);
   g.fillStyle = '#50545e';
   g.fillRect(kx, dy + 15, 3, 2);
-  // monitor
-  if (kind === 'wide-gold') {
-    g.fillStyle = '#d4a017';
-    g.fillRect(mx, dy + 1, 12, 10);
-    g.fillStyle = SCREEN[state] || SCREEN.idle;
-    g.fillRect(mx + 1, dy + 2, 10, 8);
-    g.fillStyle = '#d4a017';
-    g.fillRect(mx + 5, dy + 11, 2, 2);
-  } else if (kind === 'silver') {
-    g.fillStyle = '#c8d0d8';
-    g.fillRect(mx + 1, dy + 2, 11, 9);
-    g.fillStyle = SCREEN[state] || SCREEN.idle;
-    g.fillRect(mx + 2, dy + 3, 9, 7);
-    g.fillStyle = '#9aa3b2';
-    g.fillRect(mx + 6, dy + 11, 2, 2);
-  } else if (kind === 'laptop') {
-    g.fillStyle = '#2c2c36';
-    g.fillRect(mx + 2, dy + 4, 9, 6);
-    g.fillStyle = SCREEN[state] || SCREEN.idle;
-    g.fillRect(mx + 3, dy + 5, 7, 4);
-    g.fillStyle = '#44454f';
-    g.fillRect(mx + 1, dy + 10, 11, 2);
-  } else {
-    g.fillStyle = '#23242e';
-    g.fillRect(mx + 1, dy + 2, 11, 9);
-    g.fillStyle = SCREEN[state] || SCREEN.idle;
-    g.fillRect(mx + 2, dy + 3, 9, 7);
-    g.fillStyle = '#3a3b47';
-    g.fillRect(mx + 6, dy + 11, 2, 2);
-  }
-  const sx =
-    kind === 'wide-gold' ? mx + 2 : kind === 'laptop' ? mx + 4 : mx + 3;
-  const sy =
-    kind === 'wide-gold' ? dy + 3 : kind === 'laptop' ? dy + 6 : dy + 4;
-  const rowsN = kind === 'laptop' ? 2 : 3;
-  const maxW = kind === 'laptop' ? 4 : kind === 'wide-gold' ? 7 : 6;
+  // monitor: frame, screen (colored by state), stand
+  const m = MONITORS[kind] || MONITORS.normal;
+  const box = (c: string, [x, y, w, h]: Box) => {
+    g.fillStyle = c;
+    g.fillRect(mx + x, dy + y, w, h);
+  };
+  box(m.color, m.frame);
+  box(SCREEN[state] || SCREEN.idle, m.screen);
+  box(m.standColor, m.stand);
+  // text lines on the screen start at (sx, sy): rowsN rows, at most maxW px wide
+  const sx = mx + m.text[0],
+    sy = dy + m.text[1],
+    rowsN = m.text[2],
+    maxW = m.text[3];
   if (state === 'coding' || state === 'terminal' || state === 'working') {
     g.fillStyle =
       state === 'coding'
@@ -198,14 +242,9 @@ function drawDeskProps(
           ? '#5dff7a'
           : '#8a94a6';
     const sc = Math.floor(t / (AUTO_MODES.has(mode!) ? 200 : 350)) % 3;
-    const widths = [6, 4, 7, 3, 5];
+    const widths: [number, ...number[]] = [6, 4, 7, 3, 5];
     for (let i = 0; i < rowsN; i++)
-      g.fillRect(
-        sx,
-        sy + i * 2,
-        Math.min(maxW, widths[(i + sc) % widths.length]),
-        1,
-      );
+      g.fillRect(sx, sy + i * 2, Math.min(maxW, cyclic(widths, i + sc)), 1);
   } else if (state === 'searching') {
     g.fillStyle = '#9bd3ff';
     g.fillRect(sx, sy + 1, Math.min(maxW, 5), 1);
@@ -411,6 +450,20 @@ const SEAT_Y: Record<string, number> = {
   wheel: 13,
 };
 
+// ms per animation frame (typing has its own: faster in an auto mode); everything else 450
+const FRAME_MS: Record<string, number> = {
+  walk: 90,
+  bat: 260,
+  scratch: 240,
+  write: 500,
+};
+/** Sprite x within its tile: centered, except paws against the post on the next tile, or centered in the 2-tile wheel. */
+function offsetX(act: string | null | undefined, w: number) {
+  if (act === 'scratch') return TILE + 5 - w;
+  if (act === 'wheel') return TILE - Math.round(w / 2);
+  return Math.round((TILE - w) / 2);
+}
+
 // ---- entities ------------------------------------------------------------------
 function drawEntity(
   g: Ctx,
@@ -426,31 +479,14 @@ function drawEntity(
   const st = e.phase === 'seated' ? e.station : null;
   const stationKind = st?.kind ?? null;
   const act = st?.kind === 'play' ? st.act : null;
-  const anim = act ? PLAY_ANIM[act] : animFor(state, moving, stationKind);
+  const anim = (act && PLAY_ANIM[act]) || animFor(state, moving, stationKind); // every play spot's act is in PLAY_ANIM
   const auto = !!emp && AUTO_MODES.has(emp.permissionMode!);
-  const rate =
-    anim === 'walk'
-      ? 90
-      : anim === 'type'
-        ? auto
-          ? 100
-          : 160
-        : anim === 'bat'
-          ? 260
-          : act === 'scratch'
-            ? 240
-            : anim === 'write'
-              ? 500
-              : 450;
+  const rate = anim === 'type' ? (auto ? 100 : 160) : (FRAME_MS[anim] ?? 450);
   const frame = Math.floor((t + e.seed) / rate);
   // pacing follows the base animation; seats facing away from the viewer swap in back-view frames, desk chairs profile ones
-  const look = !st
-    ? anim
-    : st.back
-      ? backAnim(e.pal, anim)
-      : st.face
-        ? sideAnim(e.pal, anim)
-        : anim;
+  let look = anim;
+  if (st?.back) look = backAnim(e.pal, anim);
+  else if (st?.face) look = sideAnim(e.pal, anim);
   const img = sprite(e.pal, look, frame);
   const { w, h } = spriteSize(img); // world size: uploaded skins are scaled to a cat's height
   const flip =
@@ -459,16 +495,8 @@ function drawEntity(
   const isAsst = e.kind === 'assistant';
   // centered on the tile, feet on the shadow line, unless it sits on something (SEAT_Y)
   const seatY = SEAT_Y[act || stationKind || ''] ?? 14;
-  // horizontally centered, except: paws against the post on the next tile, or centered in the 2-tile wheel
-  const ox =
-    act === 'scratch'
-      ? TILE + 5 - w
-      : act === 'wheel'
-        ? TILE - Math.round(w / 2)
-        : Math.round((TILE - w) / 2);
+  const ox = offsetX(act, w);
   const oy = seatY - h;
-  e.headTop = oy;
-  e.spriteH = h; // for the speech bubble and hit testing (skins can be taller than a cat)
   const bob =
     !moving &&
     (anim === 'idle' || anim === 'read' || anim === 'sit') &&
@@ -522,6 +550,7 @@ function drawEntity(
       drawGlyph(g, 'check', e.x + ox - 6, e.y + oy + 1, t);
   }
   g.globalAlpha = 1;
+  return { top: oy, h };
 }
 
 // ---- text -------------------------------------------------------------------------
@@ -531,7 +560,11 @@ function drawSign(ctx: CanvasRenderingContext2D, S: number, geo: Geo) {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#2a2d45';
   for (const s of geo.signs)
-    ctx.fillText('PAWGENTS OFFICE', (s.x * TILE + (5 * TILE) / 2) * S, -3 * S);
+    ctx.fillText(
+      'PAWGENTS OFFICE',
+      (s.x * TILE + (ITEM_KINDS.sign.w * TILE) / 2) * S,
+      -3 * S,
+    );
   ctx.textAlign = 'left';
 }
 
@@ -557,7 +590,7 @@ function wrapText(
   let line: string | null = '',
     lastSpace = -1;
   for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
+    const ch = text.charAt(i);
     const cand: string = line + ch;
     if (ctx.measureText(cand).width > maxW && line) {
       if (ch !== ' ' && lastSpace > 0 && line.length - lastSpace < 12) {
@@ -578,7 +611,7 @@ function wrapText(
     }
   }
   if (line === null)
-    lines[maxLines - 1] = fitText(ctx, lines[maxLines - 1] + '…', maxW);
+    lines[maxLines - 1] = fitText(ctx, `${lines[maxLines - 1] ?? ''}…`, maxW); // lines.length === maxLines here
   else if (line) lines.push(line);
   return lines;
 }
@@ -590,6 +623,7 @@ function drawBubble(
   now: number,
   placed: Rect[],
   W: number,
+  spriteH = 0,
 ) {
   const data = e.data;
   if (
@@ -614,7 +648,7 @@ function drawBubble(
   const bw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2;
   const bh = lines.length * lh + pad * 2;
   const isAsst = e.kind === 'assistant';
-  const lift = -Math.max(0, (e.spriteH ?? 0) - (isAsst ? 8 : 10)); // taller than a cat: raise the bubble by the difference
+  const lift = -Math.max(0, spriteH - (isAsst ? 8 : 10)); // taller than a cat: raise the bubble by the difference
   const headX = (e.x + 8) * S,
     headY = (e.y + (isAsst ? 5 : 2) - 7 + lift) * S;
   let bx = Math.round(headX - bw / 2),
@@ -682,14 +716,15 @@ function drawHUD(
   ctx: CanvasRenderingContext2D,
   S: number,
   world: World,
+  st: AppState,
   now: number,
-) {
-  const { sessions, connected } = world;
+): Rect {
+  const { sessions, connected } = st;
   let emp = 0,
     asst = 0,
     busy = 0;
   for (const s of sessions.values()) {
-    if (s.ended || s.officeId !== world.officeId) continue; // this office only
+    if (s.ended || s.officeId !== st.officeId) continue; // this office only
     emp++;
     if (s.state !== 'idle') busy++;
     for (const a of s.subagents) if (!a.ended) asst++;
@@ -700,13 +735,13 @@ function drawHUD(
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   const text = `직원 ${emp}  ·  보조 ${asst}  ·  일하는 중 ${busy}${meetings ? `  ·  회의 ${meetings}` : ''}`;
-  const toggle = world.rosterOpen ? '목록 ▴' : '목록 ▾';
+  const toggle = st.rosterOpen ? '목록 ▴' : '목록 ▾';
   const tw = ctx.measureText(text).width,
     gw = ctx.measureText(toggle).width;
   const x0 = 1.5 * TILE * S,
     w = tw + gw + 16 * S;
   ctx.fillStyle =
-    world.hoverKey === HUD_BTN ? 'rgba(52,56,92,0.95)' : 'rgba(20,22,40,0.85)';
+    st.hoverKey === HUD_BTN ? 'rgba(52,56,92,0.95)' : 'rgba(20,22,40,0.85)';
   roundRect(ctx, x0, 2 * S, w, 10 * S, 2 * S);
   ctx.fill();
   ctx.fillStyle = connected ? '#22c55e' : '#ef4444';
@@ -715,17 +750,18 @@ function drawHUD(
   ctx.fillText(text, x0 + 7 * S, 7 * S);
   ctx.fillStyle = '#ffd166';
   ctx.fillText(toggle, x0 + 7 * S + tw + 5 * S, 7 * S);
-  world.hudBtn = { x: x0 / S, y: 2 - WALL_RISE, w: w / S, h: 10 }; // office px (the HUD hangs above the office origin)
+  const hud = { x: x0 / S, y: 2 - WALL_RISE, w: w / S, h: 10 }; // office px (the HUD hangs above the office origin)
   const clock = fmtTime(now);
   ctx.textAlign = 'right';
   const cw = ctx.measureText(clock).width + 6 * S;
-  const cx = (world.view.geo.W - TILE) * S - 2 * S;
+  const cx = (world.view.W - TILE) * S - 2 * S;
   ctx.fillStyle = 'rgba(20,22,40,0.85)';
   roundRect(ctx, cx - cw, 2 * S, cw, 10 * S, 2 * S);
   ctx.fill();
   ctx.fillStyle = '#f3f4f6';
   ctx.fillText(clock, cx - 3 * S, 7 * S);
   ctx.textAlign = 'left';
+  return hud;
 }
 
 export const HUD_BTN = '__hud__';

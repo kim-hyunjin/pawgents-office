@@ -3,16 +3,19 @@ import type {
   SessionSnapshot,
   Snapshot,
   SubagentSnapshot,
-} from '../server/types.ts';
-import { post } from './api.ts';
+} from '../shared/api.ts';
+import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
+import { getState, setTogether as setTogetherOn } from './api.ts';
+import { initDiff } from './diff.ts';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
-import { feedFrom, renderFeed } from './feed.ts';
-import { openLauncher } from './launcher.ts';
-import { DEFAULT_OFFICE, inRect } from './layout.ts';
-import { openLegend, refreshLegend } from './legend.ts';
+import { followSessions as feedFollows, renderFeed } from './feed.ts';
+import { initLauncher, openLauncher } from './launcher.ts';
+import { initLegend, openLegend, refreshLegend } from './legend.ts';
+import { connectEvents } from './net/events.ts';
 import { Panel } from './panel.ts';
-import { HUD_BTN, render } from './render.ts';
+import { type Frame, HUD_BTN, render } from './render.ts';
+import { initReply } from './reply.ts';
 import { Roster } from './roster.ts';
 import {
   FAMILIES,
@@ -24,6 +27,17 @@ import {
   sprite,
 } from './sprites.ts';
 import {
+  app,
+  dropSession,
+  here,
+  putOfficeId,
+  putOffices,
+  putSession,
+  putTogether,
+  seedSessions,
+  setUi,
+} from './state.ts';
+import {
   $,
   awaitingBg,
   bgSummary,
@@ -32,6 +46,7 @@ import {
   STATE_LABEL,
   storage,
   thinkingFresh,
+  toolHtml,
 } from './ui.ts';
 import {
   initViewport,
@@ -44,18 +59,19 @@ import {
 import type { Ent } from './world.ts';
 import {
   applyLayout,
-  dropCats,
   entAt,
-  exitSession,
+  enterOffice,
   fadeStep,
-  here,
   placeOf,
+  relayout,
+  repaintCats as repaintEnts,
   retarget,
-  syncSession,
   world,
+  followSessions as worldFollows,
 } from './world.ts';
 
 const params = new URLSearchParams(location.search);
+const st = app.get(); // the page's state: read here, changed only through state.ts's actions
 
 const canvas = $<HTMLCanvasElement>('office');
 const tabsEl = $('tabs');
@@ -64,10 +80,15 @@ const toolsEl = $('tools');
 const stageEl = $('stage');
 const ctx = canvas.getContext('2d')!;
 const tip = $('tip');
+// dialogs first: the reply dialog notes where the panel's composer lives before anything can move it
+initLauncher();
+initLegend();
+initDiff();
+initReply();
 const panel = new Panel($('panel'), {
   onOpen: () => refit(),
   onClose: () => {
-    world.selectedKey = null;
+    setUi({ selectedKey: null });
     history.replaceState(null, '', location.pathname + location.search);
     refit();
   },
@@ -91,66 +112,56 @@ applyLayout(DEFAULT_OFFICE);
 resize();
 
 const refreshLists = () => {
-  roster.update(world);
+  roster.update(st.sessions);
   renderTabs();
 };
-function upsertSession(s: SessionSnapshot, seated = false) {
-  const now = Date.now();
-  const prev = world.sessions.get(s.id),
-    moved = !!prev && prev.officeId !== s.officeId;
-  world.sessions.set(s.id, s);
-  feedFrom(s);
-  if (moved) renderFeed(false); // its history comes along to (or leaves) the office on screen
-  if (here(s)) syncSession(s, seated, now);
-  else dropCats(s.id); // works in another office: no cat here
-  panel.update(s);
+// Everything that shows sessions follows the session list, in this order: the ticker, the cats, the panel, then the
+// roster and the office tabs.
+app.subscribe(feedFollows);
+app.subscribe(worldFollows);
+app.subscribe((c) => {
+  if (c.type === 'session') panel.update(c.s);
+  else if (c.type === 'remove') panel.remove(c.id);
+});
+app.subscribe((c) => {
+  if (c.type !== 'session' && c.type !== 'remove') return;
   refreshLists();
-}
-function removeSession(id: string) {
-  const s = world.sessions.get(id);
-  world.sessions.delete(id);
-  exitSession(id);
-  panel.remove(id);
-  refreshLists();
-  if (world.selectedKey === id) world.selectedKey = null;
-  return s;
-}
+  if (c.type === 'remove' && st.selectedKey === c.id)
+    setUi({ selectedKey: null });
+});
+
 /** Show a session in the panel; `key` is the cat to highlight (an assistant's, when it was clicked). */
 function select(
   s: SessionSnapshot,
   { key = s.id, hash = true }: { key?: string; hash?: boolean } = {},
 ) {
-  world.selectedKey = key;
+  setUi({ selectedKey: key });
   panel.open(s);
   if (hash) history.replaceState(null, '', `#s=${encodeURIComponent(s.id)}`);
 }
 function deselect() {
-  world.selectedKey = null;
+  setUi({ selectedKey: null });
   panel.close();
 }
 
 // ---- offices ---------------------------------------------------------------------
 const OFFICE_KEY = 'pawgents-office:office';
-const officeOf = (id?: string | null) => world.offices.find((o) => o.id === id);
+const officeOf = (id?: string | null) => st.offices.find((o) => o.id === id);
 /** Server list changed: keep the current office (or pick one), re-lay it out if its layout changed, redraw the tabs. */
 function setOffices(list: Office[], together: string | null = null) {
-  world.offices = list;
-  world.together = officeOf(together) ? together : null;
-  if (world.together && world.officeId !== world.together) {
+  putOffices(list);
+  putTogether(officeOf(together) ? together : null);
+  if (st.together && st.officeId !== st.together) {
     editor.close();
-    switchOffice(world.together);
+    switchOffice(st.together);
     return;
   }
-  const cur = officeOf(world.officeId);
+  const cur = officeOf(st.officeId);
   if (!cur) {
     switchOffice(preferredOffice());
     return;
   }
-  if (JSON.stringify(cur.layout) !== world.layoutJson) {
-    world.layoutJson = JSON.stringify(cur.layout);
-    applyLayout(cur.layout);
-    resize();
-  }
+  if (relayout(cur.layout)) resize();
   renderTabs();
 }
 function preferredOffice() {
@@ -159,27 +170,24 @@ function preferredOffice() {
   if (officeOf(want)) return want;
   // otherwise the busiest office
   const n = (o: Office) =>
-    [...world.sessions.values()].filter((s) => !s.ended && s.officeId === o.id)
+    [...st.sessions.values()].filter((s) => !s.ended && s.officeId === o.id)
       .length;
-  return [...world.offices].sort((a, b) => n(b) - n(a))[0]?.id;
+  return [...st.offices].sort((a, b) => n(b) - n(a))[0]?.id;
 }
 /** Show another office: its layout, with its staff already at their places. */
 function switchOffice(id?: string | null) {
   const o = officeOf(id);
   if (!o) return;
-  world.officeId = o.id;
+  putOfficeId(o.id);
   storage.set(OFFICE_KEY, o.id);
   if (params.has('office')) {
     params.set('office', o.id);
     history.replaceState(null, '', `?${params}${location.hash}`);
   }
-  world.ents.clear();
-  world.hoverKey = null;
-  world.layoutJson = JSON.stringify(o.layout);
-  applyLayout(o.layout);
+  enterOffice(o.layout);
   resize();
-  for (const s of world.sessions.values())
-    if (here(s) && !s.ended) upsertSession(s, true);
+  for (const s of st.sessions.values())
+    if (here(s) && !s.ended) putSession(s, true);
   renderFeed(false);
   refreshLists();
 }
@@ -188,7 +196,7 @@ function switchOffice(id?: string | null) {
  * and a button to gather everyone here / split up again. Gathered: only the shared office's tab. Hidden with one office.
  */
 function renderTabs() {
-  const hidden = world.offices.length < 2 && !world.together;
+  const hidden = st.offices.length < 2 && !st.together;
   if (tabsEl.hidden !== hidden) {
     tabsEl.hidden = hidden;
     tabsEl.dataset.html = '';
@@ -196,13 +204,13 @@ function renderTabs() {
   }
   if (hidden) return;
   const shown = !tabsEl.dataset.html; // first fill: the office shrinks to make room
-  const offices = world.together
-    ? world.offices.filter((o) => o.id === world.together)
-    : world.offices;
+  const offices = st.together
+    ? st.offices.filter((o) => o.id === st.together)
+    : st.offices;
   const html =
     offices
       .map((o) => {
-        const staff = [...world.sessions.values()].filter(
+        const staff = [...st.sessions.values()].filter(
           (s) => !s.ended && s.officeId === o.id,
         );
         const dot = staff.some((s) => s.state === 'waiting')
@@ -213,10 +221,10 @@ function renderTabs() {
         const title =
           o.repos.filter((r) => r !== 'default').join('\n') ||
           '저장소 밖에서 일하는 세션';
-        return `<button type="button" data-id="${esc(o.id)}" class="${o.id === world.officeId ? 'on' : ''}" title="${esc(title)}">${esc(o.name)}<span class="n">${staff.length}</span>${dot}</button>`;
+        return `<button type="button" data-id="${esc(o.id)}" class="${o.id === st.officeId ? 'on' : ''}" title="${esc(title)}">${esc(o.name)}<span class="n">${staff.length}</span>${dot}</button>`;
       })
       .join('') +
-    (world.together
+    (st.together
       ? '<button type="button" class="act" data-act="split" title="저장소마다 각자의 사무실로 돌아갑니다">↔ 저장소별로 나누기</button>'
       : '<button type="button" class="act" data-act="gather" title="모든 세션이 지금 보고 있는 사무실에 모여서 일합니다">⇢ 이 사무실에 모두 모이기</button>');
   if (html !== tabsEl.dataset.html) {
@@ -230,13 +238,13 @@ tabsEl.addEventListener('click', (ev) => {
     'button[data-act]',
   );
   if (act) {
-    setTogether(act.dataset.act === 'gather' ? world.officeId : null, act);
+    setTogether(act.dataset.act === 'gather' ? st.officeId : null, act);
     return;
   }
   const b = (ev.target as HTMLElement).closest<HTMLButtonElement>(
     'button[data-id]',
   );
-  if (b && b.dataset.id !== world.officeId) {
+  if (b && b.dataset.id !== st.officeId) {
     editor.close();
     switchOffice(b.dataset.id);
   }
@@ -245,7 +253,7 @@ tabsEl.addEventListener('click', (ev) => {
 async function setTogether(officeId: string | null, btn: HTMLButtonElement) {
   btn.disabled = true;
   try {
-    await post('/settings/together', { officeId });
+    await setTogetherOn(officeId);
   } catch (e) {
     btn.title = `실패: ${(e as Error).message}`;
   } finally {
@@ -262,36 +270,32 @@ function applyCatChoices({ cats, skins }: Pick<Snapshot, 'cats' | 'skins'>) {
 // a skin finished loading: families picking it switch from their default breed to it
 onSkinLoad(() => repaintCats());
 function repaintCats() {
-  for (const e of world.ents.values()) {
-    const s = world.sessions.get(e.sessionId);
-    if (!s) continue;
-    if (e.kind === 'employee') e.pal = paletteFor(s.id, 'employee', s.model);
-    else e.pal = paletteFor(e.agentId, 'assistant', e.data?.model || s.model);
-  }
-  roster.update(world);
+  repaintEnts();
+  roster.update(st.sessions);
   refreshLegend();
 }
 function applySnapshot(snap: Snapshot) {
   applyCatChoices(snap);
   const seated = firstSnapshot;
   firstSnapshot = false;
-  if (seated) for (const s of snap.sessions) world.sessions.set(s.id, s); // so the first office pick sees who works where
+  if (seated) seedSessions(snap.sessions); // so the first office pick sees who works where
   const m = seated ? location.hash.match(/^#s=([^&]+)/) : null;
+  const prefix = m?.[1];
   const picked =
-    m && snap.sessions.find((x) => x.id.startsWith(decodeURIComponent(m[1])));
-  world.offices = snap.offices;
+    prefix &&
+    snap.sessions.find((x) => x.id.startsWith(decodeURIComponent(prefix)));
+  putOffices(snap.offices);
   if (picked && officeOf(picked.officeId)) {
-    world.together = officeOf(snap.together) ? snap.together : null;
+    putTogether(officeOf(snap.together) ? snap.together : null);
     switchOffice(picked.officeId);
   } else setOffices(snap.offices, snap.together);
   const ids = new Set();
   for (const s of snap.sessions) {
     ids.add(s.id);
-    upsertSession(s, seated && !s.ended);
+    putSession(s, seated && !s.ended);
   }
-  for (const id of [...world.sessions.keys()])
-    if (!ids.has(id)) removeSession(id);
-  if (picked) select(world.sessions.get(picked.id)!, { hash: false });
+  for (const id of [...st.sessions.keys()]) if (!ids.has(id)) dropSession(id);
+  if (picked) select(st.sessions.get(picked.id)!, { hash: false });
 }
 // Re-evaluate stations once a second (lounge timing, meeting/library linger).
 setInterval(() => {
@@ -300,69 +304,63 @@ setInterval(() => {
 }, 1000);
 
 // ---- SSE -----------------------------------------------------------------------
-let everConnected = false;
-function connect() {
-  const es = new EventSource('/events');
-  es.addEventListener('snapshot', (ev) => {
-    world.connected = true;
-    applySnapshot(JSON.parse(ev.data));
-  });
-  es.addEventListener('session', (ev) => upsertSession(JSON.parse(ev.data)));
-  es.addEventListener('remove', (ev) => removeSession(JSON.parse(ev.data).id));
-  es.addEventListener('settings', (ev) => applyCatChoices(JSON.parse(ev.data)));
-  es.addEventListener('offices', (ev) => {
-    const d = JSON.parse(ev.data);
-    setOffices(d.offices, d.together);
-  });
-  es.onopen = () => {
-    world.connected = true;
-    if (everConnected)
-      fetch('/state')
-        .then((r) => r.json())
-        .then(applySnapshot)
-        .catch(() => {});
-    everConnected = true;
-  };
-  es.onerror = () => {
-    world.connected = false;
-  };
-}
-connect();
+connectEvents(
+  {
+    snapshot: (snap) => {
+      setUi({ connected: true });
+      applySnapshot(snap);
+    },
+    session: (s) => putSession(s),
+    remove: ({ id }) => dropSession(id),
+    settings: (d) => applyCatChoices(d),
+    offices: (d) => setOffices(d.offices, d.together),
+  },
+  {
+    onOpen: (reconnected) => {
+      setUi({ connected: true });
+      // events may have been missed while away: start over from a fresh snapshot
+      if (reconnected)
+        getState()
+          .then(applySnapshot)
+          .catch(() => {});
+    },
+    onError: () => setUi({ connected: false }),
+  },
+);
 
 // ---- roster (opened from the HUD) ----------------------------------------------------
 const roster = new Roster($('roster'), {
   onPick: (id) => {
-    const s = world.sessions.get(id);
+    const s = st.sessions.get(id);
     if (!s) return;
     if (!here(s)) switchOffice(s.officeId);
     select(s);
   },
   placeOf: (id) => {
-    const s = world.sessions.get(id);
+    const s = st.sessions.get(id);
     if (s && !here(s)) return officeOf(s.officeId)?.name || ''; // works in another office
     const e = world.ents.get(id);
     return e && e.station?.kind !== 'desk' ? placeOf(e) : '';
   },
+  palOf: (id) => world.ents.get(id)?.pal,
 });
 function toggleRoster() {
-  roster.toggle(world, rosterAnchor());
-  world.rosterOpen = roster.isOpen;
+  roster.toggle(st.sessions, rosterAnchor(lastFrame!.hud));
+  setUi({ rosterOpen: roster.isOpen });
 }
-$('rs-close').addEventListener('click', () => {
-  world.rosterOpen = false;
-});
+$('rs-close').addEventListener('click', () => setUi({ rosterOpen: false }));
 window.addEventListener('resize', () => {
-  if (roster.isOpen) roster.open(world, rosterAnchor());
+  if (roster.isOpen) roster.open(st.sessions, rosterAnchor(lastFrame!.hud));
 });
 
 // ---- input ---------------------------------------------------------------------
 function describe(e: Ent) {
-  const s = world.sessions.get(e.sessionId);
+  const s = st.sessions.get(e.sessionId);
   if (!s) return '';
   const where = placeOf(e);
   const toolLine = (d: SessionSnapshot | SubagentSnapshot) =>
     d.currentTool
-      ? `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span> · <b>${esc(d.currentTool.name)}</b>${d.currentTool.target ? ' · ' + esc(d.currentTool.target) : ''}${d.currentTool.detail ? `<div class="detail">${esc(d.currentTool.detail)}</div>` : ''}`
+      ? `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span> · ${toolHtml(d.currentTool)}${d.currentTool.detail ? `<div class="detail">${esc(d.currentTool.detail)}</div>` : ''}`
       : `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span>`;
   const think = (d: SessionSnapshot | SubagentSnapshot) =>
     thinkingFresh(d, Date.now()) && d.state !== 'idle'
@@ -377,7 +375,7 @@ function describe(e: Ent) {
       `<div>${toolLine(a)}</div>${think(a)}`
     );
   }
-  const tier = FAMILIES[familyOf(s.model)].title;
+  const tier = (FAMILIES[familyOf(s.model)] ?? FAMILIES.other).title;
   return (
     `<b>${esc(s.name)}</b>${tier ? ` <span class="st">${tier}</span>` : ''}${where ? ` <span class="dim">· ${where}</span>` : ''}${s.title ? `<br>${esc(s.title)}` : ''}` +
     (s.lastPrompt ? `<div class="task">지시: ${esc(s.lastPrompt)}</div>` : '') +
@@ -387,26 +385,30 @@ function describe(e: Ent) {
   );
 }
 
-/** The HUD on the top wall is the one canvas-drawn button (its rect is written by render.js each frame). */
+/** What the last frame drew where: the HUD button and the cats' sprite heights, for hit testing. */
+let lastFrame: Frame | null = null;
+/** The HUD on the top wall is the one canvas-drawn button. */
 const buttonAt = ([x, y]: [number, number]) =>
-  world.hudBtn && inRect(world.hudBtn, x, y) ? HUD_BTN : null;
+  lastFrame && inRect(lastFrame.hud, x, y) ? HUD_BTN : null;
+const catAt = ([x, y]: [number, number]) =>
+  lastFrame ? entAt(lastFrame.heads, x, y) : null;
 
 canvas.addEventListener('mousemove', (ev) => {
   if (editor.isOpen) {
-    world.hoverKey = null;
+    setUi({ hoverKey: null });
     tip.hidden = true;
     return;
   } // the editor handles the pointer
   const xy = officeXY(ev);
   const btn = buttonAt(xy);
   if (btn) {
-    world.hoverKey = btn;
+    setUi({ hoverKey: btn });
     canvas.style.cursor = 'pointer';
     tip.hidden = true;
     return;
   }
-  const e = entAt(...xy);
-  world.hoverKey = e ? e.key : null;
+  const e = catAt(xy);
+  setUi({ hoverKey: e ? e.key : null });
   canvas.style.cursor = e ? 'pointer' : 'default';
   if (e) {
     tip.innerHTML = describe(e);
@@ -423,7 +425,7 @@ canvas.addEventListener('mousemove', (ev) => {
   } else tip.hidden = true;
 });
 canvas.addEventListener('mouseleave', () => {
-  world.hoverKey = null;
+  setUi({ hoverKey: null });
   tip.hidden = true;
 });
 canvas.addEventListener('click', (ev) => {
@@ -434,22 +436,22 @@ canvas.addEventListener('click', (ev) => {
     toggleRoster();
     return;
   }
-  const e = entAt(...xy);
+  const e = catAt(xy);
   if (!e) {
     deselect();
     return;
   }
-  const s = world.sessions.get(e.sessionId);
+  const s = st.sessions.get(e.sessionId);
   if (s) select(s, { key: e.key });
-  else world.selectedKey = e.key;
+  else setUi({ selectedKey: e.key });
 });
 
 // ---- tool buttons (above the office) ---------------------------------------------------
 $('t-new').addEventListener('click', () => openLauncher());
-$('t-legend').addEventListener('click', () => openLegend(world.sessions));
+$('t-legend').addEventListener('click', () => openLegend(st.sessions));
 $('t-edit').addEventListener('click', () => {
   // layout editor takes the panel's place
-  const o = officeOf(world.officeId);
+  const o = officeOf(st.officeId);
   if (editor.isOpen || !o) return;
   if (roster.isOpen) toggleRoster();
   deselect();
@@ -470,7 +472,7 @@ function frame(now: number) {
   // rAF time is page-relative; fadeAt and everything else use wall-clock ms
   const wall = Date.now();
   fadeStep(wall, dt);
-  render(ctx, S, world, wall);
+  lastFrame = render(ctx, S, world, st, wall);
   if (editor.isOpen) drawEditorOverlay(ctx, S, editor);
   requestAnimationFrame(frame);
 }

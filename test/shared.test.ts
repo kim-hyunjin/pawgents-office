@@ -1,14 +1,21 @@
 // Tests for the code shared by server, hooks and browser: DOM-free modules only (limits, sprites' SKIN_ROWS, layout, layout-edit).
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import { EVENTS } from '../hooks/_common.ts';
-import { cloneOffice, DEFAULT_OFFICE, validate } from '../web/layout.ts';
+import { loadConfig } from '../server/config.ts';
+import { cloneOffice, DEFAULT_OFFICE, validate } from '../shared/layout.ts';
+import {
+  isCell,
+  isName,
+  MAX_SKIN_ROWS,
+  skinGridError,
+} from '../shared/limits.ts';
+import { CAT_FAMILIES } from '../shared/model.ts';
 import { fixDoors, moveRoom, roomName } from '../web/layout-edit.ts';
-import { isCell, isName, MAX_SKIN_ROWS, skinGridError } from '../web/limits.ts';
-import { SKIN_ROWS } from '../web/sprites.ts';
+import { FAMILIES, SKIN_ROWS } from '../web/sprites.ts';
 
 const root = new URL('..', import.meta.url);
 const hooks = JSON.parse(
@@ -17,6 +24,10 @@ const hooks = JSON.parse(
 
 test('hooks.json registers exactly the events hooks/_common.ts installs', () => {
   assert.deepEqual(new Set(Object.keys(hooks.hooks)), new Set(EVENTS));
+});
+
+test('every model family the server accepts has a cat in the browser', () => {
+  assert.deepEqual(Object.keys(FAMILIES), [...CAT_FAMILIES]);
 });
 
 test('skin limits', () => {
@@ -32,21 +43,30 @@ test('skin limits', () => {
 });
 
 test('config: PAWGENTS_OFFICE_PORT wins over PORT', () => {
-  const read = (extra: Record<string, string>) => {
-    const env = { ...process.env, ...extra };
-    if (!extra.PAWGENTS_OFFICE_PORT) delete env.PAWGENTS_OFFICE_PORT;
-    const code =
-      "import('./server/config.ts').then(m => console.log(m.PORT, m.BASE_URL))";
-    return execFileSync(process.execPath, ['-e', code], {
-      env,
-      cwd: root,
-      encoding: 'utf8',
-    }).trim();
+  const read = (env: Record<string, string>) => {
+    const c = loadConfig(env);
+    return `${c.PORT} ${c.BASE_URL}`;
   };
   assert.equal(read({ PORT: '18001' }), '18001 http://127.0.0.1:18001');
   assert.equal(
     read({ PORT: '18001', PAWGENTS_OFFICE_PORT: '18002' }),
     '18002 http://127.0.0.1:18002',
+  );
+});
+
+test('config: backend choice and data paths come from env', () => {
+  const c = loadConfig({ PAWGENTS_OFFICE_DATA: '/d' }, 'linux', '/home/u');
+  assert.equal(c.BACKEND, 'auto');
+  assert.equal(c.ORCA_BIN, 'orca-ide');
+  assert.equal(c.STATE_FILE, path.join('/d', 'state.json'));
+  assert.equal(c.CLAUDE_DIR, path.join('/home/u', '.claude'));
+  assert.equal(
+    loadConfig({ PAWGENTS_OFFICE_BACKEND: 'headless' }).BACKEND,
+    'headless',
+  );
+  assert.equal(
+    loadConfig({ PAWGENTS_OFFICE_BACKEND: 'bogus' }).BACKEND,
+    'auto',
   );
 });
 

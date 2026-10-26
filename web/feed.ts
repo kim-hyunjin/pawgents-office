@@ -1,6 +1,7 @@
-import type { LogEntry, SessionSnapshot } from '../server/types.ts';
-import { EV_ICON, esc, fmtTime, ICON } from './ui.ts';
-import { world } from './world.ts';
+import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
+import type { Change } from './state.ts';
+import { app } from './state.ts';
+import { esc, fmtTime, logIcon, toolHtml } from './ui.ts';
 
 // ---- activity ticker (sessions of the office on screen) ---------------------------
 const FEED_EVENTS = new Set([
@@ -52,16 +53,23 @@ export function feedFrom(s: SessionSnapshot) {
     per.set(o, n);
     return n <= FEED_MAX;
   });
-  if (s.officeId === world.officeId) renderFeed(true);
+  if (s.officeId === app.get().officeId) renderFeed(true);
+}
+/** A session changed: take in its new log lines; one that moved office takes its history along (or out of view). */
+export function followSessions(c: Change) {
+  if (c.type !== 'session') return;
+  feedFrom(c.s);
+  if (c.prev && c.prev.officeId !== c.s.officeId) renderFeed(false);
 }
 /** Redraw the ticker with the current office's items; `live` = new items arrived (animate, keep the scroll anchored). */
 /** Sessions move between offices (gathering in one, splitting up): an item follows its session's current office. */
 const feedOffice = (it: FeedItem) =>
-  world.sessions.get(it.sid)?.officeId ?? it.officeId;
+  app.get().sessions.get(it.sid)?.officeId ?? it.officeId;
 export function renderFeed(live?: boolean) {
   const ul = document.getElementById('ticker-list')!;
   const box = ul.parentElement!;
-  const items = feed.items.filter((it) => feedOffice(it) === world.officeId);
+  const { officeId } = app.get();
+  const items = feed.items.filter((it) => feedOffice(it) === officeId);
   // keep the viewport anchored when the user has scrolled back into history
   const prevTop = box.scrollTop,
     prevH = box.scrollHeight;
@@ -69,10 +77,10 @@ export function renderFeed(live?: boolean) {
   ul.innerHTML = items
     .map((it) => {
       const e = it.e;
-      const icon = e.tool ? ICON[e.tool] || '🔧' : EV_ICON[e.ev] || '•';
+      const icon = logIcon(e);
       let what: string;
       if (e.tool)
-        what = `<b>${esc(e.tool)}</b>${e.target ? ' · ' + esc(e.target) : ''}${e.detail ? ` <span class="dim">— ${esc(e.detail)}</span>` : ''}`;
+        what = `${toolHtml({ name: e.tool, target: e.target })}${e.detail ? ` <span class="dim">— ${esc(e.detail)}</span>` : ''}`;
       else if (e.ev === 'UserPromptSubmit')
         what = `<span class="dim">지시:</span> ${esc(e.text || '')}`;
       else if (e.ev === 'Stop')

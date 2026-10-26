@@ -1,9 +1,8 @@
 // "모델 안내" dialog: which cat stands for which model, opened from the #t-legend toolbar button. Each model row has a
-// breed picker; the choice is saved on the server and pushed to every open office (office.js applies it). Also shows
-// the kittens (subagents) and the receptionist, and manages uploaded skins: PNG sprite sheets that can stand in for a breed (format in sprites.js SKIN_ROWS / README).
+// breed picker; the choice is saved on the server and pushed to every open office (office.ts applies it). Also shows
+// the kittens (subagents) and the receptionist, and manages uploaded skins: PNG sprite sheets that can stand in for a breed (format in sprites.ts SKIN_ROWS / README).
 
-import type { SessionSnapshot } from '../server/types.ts';
-import { post } from './api.ts';
+import type { SessionSnapshot } from '../shared/api.ts';
 import {
   isCell,
   MAX_CELL,
@@ -11,7 +10,9 @@ import {
   MAX_SKIN_BYTES,
   MIN_CELL,
   skinGridError,
-} from './limits.ts';
+} from '../shared/limits.ts';
+import { CAT_FAMILIES } from '../shared/model.ts';
+import { deleteSkin, setCatChoice, uploadSkin } from './api.ts';
 import {
   BREEDS,
   breedOf,
@@ -29,10 +30,9 @@ import {
   sliceSheet,
   sprite,
 } from './sprites.ts';
-import { bindDialogClose, downloadBlob, esc, pic } from './ui.ts';
+import { armConfirm, bindDialogClose, downloadBlob, esc, pic } from './ui.ts';
 
-const dlg = document.getElementById('legend') as HTMLDialogElement;
-const body = document.getElementById('lg-body')!;
+let dlg: HTMLDialogElement, body: HTMLElement;
 type Sessions = Map<string, SessionSnapshot>;
 const MONITOR: Record<string, string> = {
   'wide-gold': '금색 와이드 모니터',
@@ -42,7 +42,12 @@ const MONITOR: Record<string, string> = {
 };
 const ZOOM = 2;
 
-bindDialogClose(dlg, document.getElementById('lg-close')!);
+/** Find the dialog and wire its close button; once, before openLegend(). */
+export function initLegend() {
+  dlg = document.getElementById('legend') as HTMLDialogElement;
+  body = document.getElementById('lg-body')!;
+  bindDialogClose(dlg, document.getElementById('lg-close')!);
+}
 
 const cat = (pal: Palette, anim = 'idle') => pic(sprite(pal, anim, 0), ZOOM);
 
@@ -69,7 +74,7 @@ function row(cats: HTMLElement[], title: string, lines: string[]) {
 function breedPicker(fam: string) {
   const sel = document.createElement('select');
   sel.className = 'breed';
-  const def = FAMILIES[fam].breed,
+  const def = (FAMILIES[fam] ?? FAMILIES.other).breed,
     cur = choiceOf(fam);
   const opt = (k: string, label: string, extra = '') =>
     `<option value="${esc(k)}"${k === cur ? ' selected' : ''}${extra}>${esc(label)}</option>`;
@@ -84,10 +89,7 @@ function breedPicker(fam: string) {
   sel.addEventListener('change', async () => {
     sel.disabled = true;
     try {
-      await post('/settings/cats', {
-        family: fam,
-        breed: sel.value === def ? null : sel.value,
-      });
+      await setCatChoice(fam, sel.value === def ? null : sel.value);
     } catch (e) {
       sel.value = choiceOf(fam);
       alertRow(sel, (e as Error).message);
@@ -142,8 +144,8 @@ function render(sessions: Sessions) {
   }
   list.append(
     row(
-      ['fable', 'opus', 'sonnet', 'haiku'].map(
-        (fam) => looks(breedOf(fam), 'assistant')[0],
+      CAT_FAMILIES.filter((f) => f !== 'other').flatMap((fam) =>
+        looks(breedOf(fam), 'assistant').slice(0, 1),
       ),
       '보조 직원 (서브에이전트)',
       ['부모 직원과 같은 품종의 새끼 고양이. 회의실이나 책상 옆에서 일해요.'],
@@ -166,8 +168,7 @@ interface Draft {
   error: string | null;
 }
 let draft: Draft | null = null; // sheet picked for upload
-let armed: string | null = null; // skin id whose 삭제 button waits for the confirming click
-let armTimer: ReturnType<typeof setTimeout> | undefined;
+const delArm = armConfirm<string>(3000, () => refreshLegend()); // skin id whose 삭제 button waits for the confirming click
 
 function skinSection() {
   const sec = document.createElement('section');
@@ -199,7 +200,7 @@ function skinRow(s: ReturnType<typeof skinList>[number]) {
   const key = `skin:${s.id}`;
   const users = Object.keys(FAMILIES)
     .filter((fam) => choiceOf(fam) === key)
-    .map((fam) => FAMILIES[fam].label);
+    .map((fam) => FAMILIES[fam]?.label);
   const pics = s.rows ? looks(key) : [];
   const li = row(pics, esc(s.name), [
     s.failed
@@ -212,28 +213,17 @@ function skinRow(s: ReturnType<typeof skinList>[number]) {
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'del';
-  del.textContent = armed === s.id ? '정말 삭제' : '삭제';
-  del.classList.toggle('armed', armed === s.id);
+  del.textContent = delArm.is(s.id) ? '정말 삭제' : '삭제';
+  del.classList.toggle('armed', delArm.is(s.id));
   del.title = users.length
     ? '삭제하면 이 스킨을 쓰던 모델은 기본 품종으로 돌아가요.'
     : '';
   del.addEventListener('click', async () => {
-    if (armed !== s.id) {
-      // first click arms, second confirms
-      armed = s.id;
-      clearTimeout(armTimer);
-      armTimer = setTimeout(() => {
-        armed = null;
-        refreshLegend();
-      }, 3000);
-      refreshLegend();
-      return;
-    }
-    armed = null;
-    clearTimeout(armTimer);
+    if (!delArm.click(s.id)) return; // first click arms, second confirms
+    delArm.disarm();
     del.disabled = true;
     try {
-      await post(`/skins/${s.id}/delete`, {});
+      await deleteSkin(s.id);
     } catch (e) {
       del.disabled = false;
       alertRow(del, (e as Error).message);
@@ -298,9 +288,11 @@ function draftForm() {
     <ol class="frames"></ol>
     <div class="err"></div>
     <div class="acts"><button type="button" class="primary" data-act="upload">올리기</button><button type="button" data-act="cancel">취소</button></div>`;
-  const [nameIn, wIn, hIn] = ['name', 'cellW', 'cellH'].map(
-    (n) => box.querySelector<HTMLInputElement>(`input[name=${n}]`)!,
-  );
+  const input = (n: string) =>
+    box.querySelector<HTMLInputElement>(`input[name=${n}]`)!;
+  const nameIn = input('name'),
+    wIn = input('cellW'),
+    hIn = input('cellH');
   const errEl = box.querySelector('.err')!,
     frames = box.querySelector('.frames')!;
   const up = box.querySelector<HTMLButtonElement>('[data-act=upload]')!;
@@ -323,11 +315,12 @@ function draftForm() {
         : SKIN_ROWS.map((anim) => {
             const li = document.createElement('li');
             const label = document.createElement('span');
-            label.textContent = SKIN_ROW_LABEL[anim];
+            label.textContent = SKIN_ROW_LABEL[anim] ?? anim;
             li.append(label);
-            if (rows[anim])
+            const frames = rows[anim];
+            if (frames)
               li.append(
-                ...rows[anim].map((f) =>
+                ...frames.map((f) =>
                   pic(Object.assign(f, { scale: skinScale(f.height) }), 2),
                 ),
               );
@@ -353,7 +346,7 @@ function draftForm() {
   up.addEventListener('click', async () => {
     up.disabled = true;
     try {
-      await post('/skins', {
+      await uploadSkin({
         name: d.name.trim(),
         cellW: d.cellW,
         cellH: d.cellH,

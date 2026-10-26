@@ -1,35 +1,93 @@
 // "새 직원" dialog: start claude sessions through the server's POST /launch, either in an Orca terminal (Orca CLI)
 // or headless (`claude -p` behind a per-session runner). Opened from the #t-new toolbar button.
-import type { Backend } from '../server/types.ts';
-import { api, post } from './api.ts';
-import { MAX_HIRES, WORKTREE_NAME_RE } from './limits.ts';
+import type {
+  Backend,
+  BackendsReply,
+  WorktreeInfo as Worktree,
+} from '../shared/api.ts';
+import { MAX_HIRES, WORKTREE_NAME_RE } from '../shared/limits.ts';
+import { getBackends, getWorktrees, launch } from './api.ts';
 import { $, bindDialogClose, esc, setMsg as setMsgOn, storage } from './ui.ts';
 
-const dlg = $<HTMLDialogElement>('launcher'),
-  form = $<HTMLFormElement>('l-form'),
-  msg = $('l-msg'),
+// the dialog's elements, looked up by initLauncher()
+let dlg: HTMLDialogElement,
+  form: HTMLFormElement,
+  msg: HTMLElement,
+  submit: HTMLButtonElement;
+let backendBox: HTMLElement,
+  backendHint: HTMLElement,
+  radios: HTMLInputElement[];
+let sel: HTMLSelectElement, wtRow: HTMLElement;
+let cwdSel: HTMLSelectElement,
+  cwdRow: HTMLElement,
+  cwdCustom: HTMLInputElement,
+  permRow: HTMLElement,
+  perm: HTMLSelectElement;
+let model: HTMLInputElement, prompt: HTMLTextAreaElement;
+let newWt: HTMLInputElement,
+  newHint: HTMLElement,
+  nameRow: HTMLElement,
+  nameIn: HTMLInputElement;
+let countIn: HTMLInputElement, countHint: HTMLElement;
+
+/** Find the dialog's elements and wire them up; once, before openLauncher(). */
+export function initLauncher() {
+  dlg = $<HTMLDialogElement>('launcher');
+  form = $<HTMLFormElement>('l-form');
+  msg = $('l-msg');
   submit = $<HTMLButtonElement>('l-submit');
-const backendBox = $('l-backend'),
-  backendHint = $('l-backend-hint'),
+  backendBox = $('l-backend');
+  backendHint = $('l-backend-hint');
   radios = [
     ...form.querySelectorAll<HTMLInputElement>('input[name="backend"]'),
   ];
-const sel = $<HTMLSelectElement>('l-worktree'),
+  sel = $<HTMLSelectElement>('l-worktree');
   wtRow = $('l-worktree-row');
-const cwdSel = $<HTMLSelectElement>('l-cwd'),
-  cwdRow = $('l-cwd-row'),
-  cwdCustom = $<HTMLInputElement>('l-cwd-custom'),
-  permRow = $('l-perm-row'),
+  cwdSel = $<HTMLSelectElement>('l-cwd');
+  cwdRow = $('l-cwd-row');
+  cwdCustom = $<HTMLInputElement>('l-cwd-custom');
+  permRow = $('l-perm-row');
   perm = $<HTMLSelectElement>('l-perm');
-const model = $<HTMLInputElement>('l-model'),
+  model = $<HTMLInputElement>('l-model');
   prompt = $<HTMLTextAreaElement>('l-prompt');
-const newWt = $<HTMLInputElement>('l-new'),
-  newHint = $('l-new-hint'),
-  nameRow = $('l-name-row'),
+  newWt = $<HTMLInputElement>('l-new');
+  newHint = $('l-new-hint');
+  nameRow = $('l-name-row');
   nameIn = $<HTMLInputElement>('l-name');
-const countIn = $<HTMLInputElement>('l-count'),
+  countIn = $<HTMLInputElement>('l-count');
   countHint = $('l-count-hint');
-countIn.max = String(MAX_HIRES); // the one copy of the limit: index.html leaves max off
+  countIn.max = String(MAX_HIRES); // the one copy of the limit: index.html leaves max off
+
+  sel.addEventListener('change', syncForm);
+  cwdSel.addEventListener('change', () => {
+    syncForm();
+    if (cwdSel.value === CUSTOM) cwdCustom.focus();
+  });
+  countIn.addEventListener('input', syncForm);
+  nameIn.addEventListener('input', syncForm);
+  newWt.addEventListener('change', () => {
+    if (newWt.checked && !nameIn.value.trim())
+      nameIn.value = `cat-${Math.random().toString(36).slice(2, 6)}`;
+    syncForm();
+    if (newWt.checked) nameIn.select();
+  });
+  for (const r of radios)
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      backend = r.value as Backend;
+      setMsg('');
+      syncForm();
+      loadWorktrees(backend);
+    });
+  bindDialogClose(dlg, $('l-cancel'));
+  prompt.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+  form.addEventListener('submit', onSubmit);
+}
 
 const CUSTOM = '__custom';
 const LAST_WT = 'pawgents-office:last-worktree',
@@ -40,15 +98,6 @@ const HINT: Record<Backend, string> = {
   headless: '사무실 서버가 claude -p 를 직접 띄웁니다. Orca가 없어도 돼요.',
 };
 let backend: Backend | null = null; // null while /backends is loading or nothing is available
-interface Worktree {
-  id: string;
-  repo: string;
-  branch?: string;
-  name?: string;
-  path: string;
-  isMain?: boolean;
-  head?: string;
-}
 const lists: Record<Backend, Worktree[]> = { orca: [], headless: [] };
 let loadSeq = 0; // a slower list for a backend the user already switched away from must not overwrite the current one
 const setMsg = (text: string, kind = '') => setMsgOn(msg, text, kind);
@@ -61,9 +110,7 @@ async function loadWorktrees(b: Backend) {
   box.disabled = true;
   box.innerHTML = '<option value="">불러오는 중…</option>';
   try {
-    const list =
-      (await api<{ worktrees?: Worktree[] }>(`/worktrees?backend=${b}`))
-        .worktrees || [];
+    const list = (await getWorktrees(b)).worktrees || [];
     if (seq !== loadSeq) return;
     lists[b] = list;
     if (b === 'orca') {
@@ -151,34 +198,7 @@ function syncForm() {
         : `(같은 워크트리에 탭 ${n}개)`
       : '';
 }
-sel.addEventListener('change', syncForm);
-cwdSel.addEventListener('change', () => {
-  syncForm();
-  if (cwdSel.value === CUSTOM) cwdCustom.focus();
-});
-countIn.addEventListener('input', syncForm);
-nameIn.addEventListener('input', syncForm);
-newWt.addEventListener('change', () => {
-  if (newWt.checked && !nameIn.value.trim())
-    nameIn.value = `cat-${Math.random().toString(36).slice(2, 6)}`;
-  syncForm();
-  if (newWt.checked) nameIn.select();
-});
-for (const r of radios)
-  r.addEventListener('change', () => {
-    if (!r.checked) return;
-    backend = r.value as Backend;
-    setMsg('');
-    syncForm();
-    loadWorktrees(backend);
-  });
 
-interface BackendsReply {
-  forced?: boolean;
-  default?: Backend;
-  orca?: { available: boolean };
-  headless?: { available: boolean };
-}
 export async function openLauncher() {
   if (dlg.open) return;
   // every open starts from the defaults (the lists still preselect the last worktree / folder used)
@@ -198,7 +218,7 @@ export async function openLauncher() {
   prompt.focus();
   let d: BackendsReply;
   try {
-    d = await api('/backends');
+    d = await getBackends();
   } catch (e) {
     setMsg((e as Error).message, 'err');
     return;
@@ -213,26 +233,21 @@ export async function openLauncher() {
     return;
   }
   const last = storage.get(LAST_BACKEND);
+  const [first] = ok;
+  if (!first) return; // checked above: ok is not empty
   backend = ok.includes(last as Backend)
     ? (last as Backend)
     : ok.includes(d.default!)
       ? d.default!
-      : ok[0];
+      : first;
   backendBox.hidden = ok.length < 2;
   for (const r of radios) r.checked = r.value === backend;
   submit.disabled = false;
   syncForm();
   loadWorktrees(backend);
 }
-bindDialogClose(dlg, $('l-cancel'));
-prompt.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
-    e.preventDefault();
-    form.requestSubmit();
-  }
-});
 
-form.addEventListener('submit', async (e) => {
+async function onSubmit(e: SubmitEvent) {
   e.preventDefault();
   if (!backend || submit.disabled) return;
   const hl = backend === 'headless',
@@ -265,7 +280,7 @@ form.addEventListener('submit', async (e) => {
         : `Orca에서 ${count}명 시작하는 중…`,
   );
   try {
-    const d = await post<{ started: number; errors?: string[] }>('/launch', {
+    const d = await launch({
       backend,
       ...(hl ? { cwd, permissionMode: perm.value } : { worktreeId: sel.value }),
       newWorktree: newWt.checked ? { name } : null,
@@ -291,4 +306,4 @@ form.addEventListener('submit', async (e) => {
     setMsg((err as Error).message, 'err');
     submit.disabled = false;
   }
-});
+}

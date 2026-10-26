@@ -5,7 +5,13 @@
 import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
-import type { Msg } from './backends/protocol.ts';
+import type {
+  AckMsg,
+  ClientCmd,
+  Exited,
+  RunnerEvent,
+  RunnerMsg,
+} from './backends/protocol.ts';
 import {
   buildClaudeArgs,
   encode,
@@ -17,9 +23,11 @@ import {
   pipePath,
   runFile,
   setModeLine,
+  shellQuote,
   userMessageLine,
 } from './backends/protocol.ts';
 import { RUN_DIR } from './config.ts';
+import { isWindows } from './infra/platform.ts';
 
 const RECENT_MAX = 30,
   STDERR_MAX = 20,
@@ -32,15 +40,14 @@ const { sid, cwd, model, permissionMode, version } = spec;
 const pipe = pipePath(sid),
   runPath = runFile(sid),
   startedAt = Date.now();
-const isWin = process.platform === 'win32';
+const isWin = isWindows();
 fs.mkdirSync(RUN_DIR, { recursive: true });
 if (!isWin)
   try {
     fs.unlinkSync(pipe);
   } catch {} // stale socket from a crashed runner
 
-// With shell:true the runtime joins argv with spaces; args are validated (no quotes), so quoting paths with spaces is enough.
-const q = (a: string) => (spec.claude.shell && /\s/.test(a) ? `"${a}"` : a);
+const q = (a: string) => shellQuote(spec.claude, a);
 const child = spawn(
   q(spec.claude.file),
   [...spec.claude.prefix, ...buildClaudeArgs(spec)].map(q),
@@ -53,24 +60,23 @@ const child = spawn(
 );
 
 const clients = new Set<net.Socket>(),
-  recent: Msg[] = [],
+  recent: RunnerEvent[] = [],
   stderrTail: string[] = [];
-let exited: { code: number | null; signal: NodeJS.Signals | null } | null =
-    null,
+let exited: Exited | null = null,
   stdinEnded = false,
   everConnected = false,
   finishing = false;
-const control = new Map(); // control request id -> socket that asked (its ack waits for claude's control_response)
+const control = new Map<string, net.Socket>(); // control request id -> socket that asked (its ack waits for claude's control_response)
 let controlSeq = 0;
-const send = (sock: net.Socket, msg: Msg) => {
+const send = (sock: net.Socket, msg: RunnerMsg) => {
   try {
     sock.write(encode(msg));
   } catch {}
 };
-const broadcast = (msg: Msg) => {
+const broadcast = (msg: RunnerMsg) => {
   for (const c of clients) send(c, msg);
 };
-const event = (ev: Msg) => {
+const event = (ev: RunnerEvent) => {
   recent.push(ev);
   if (recent.length > RECENT_MAX) recent.shift();
   broadcast({ type: 'event', ...ev });
@@ -185,7 +191,18 @@ child.on('error', (err) => {
   onGone();
 });
 
-function onCommand(sock: net.Socket, cmd: ReturnType<typeof parseCommand>) {
+/** claude can't take input any more: the refusal a prompt / mode command gets, or null while stdin is open. */
+function inputClosedAck(type: 'prompt' | 'mode'): AckMsg | null {
+  if (!exited && !stdinEnded && !child.stdin.writableEnded) return null;
+  return {
+    type: 'ack',
+    for: type,
+    ok: false,
+    error: exited ? 'claude has exited' : 'input already closed',
+  };
+}
+
+function onCommand(sock: net.Socket, cmd: ClientCmd | null) {
   if (!cmd) return send(sock, { type: 'error', message: 'unknown command' });
   if (cmd.type === 'status')
     return send(sock, {
@@ -195,27 +212,17 @@ function onCommand(sock: net.Socket, cmd: ReturnType<typeof parseCommand>) {
       exited,
     });
   if (cmd.type === 'prompt') {
-    if (exited || stdinEnded || child.stdin.writableEnded)
-      return send(sock, {
-        type: 'ack',
-        for: 'prompt',
-        ok: false,
-        error: exited ? 'claude has exited' : 'input already closed',
-      });
-    child.stdin.write(userMessageLine(cmd.text!));
+    const refused = inputClosedAck('prompt');
+    if (refused) return send(sock, refused);
+    child.stdin.write(userMessageLine(cmd.text));
     return send(sock, { type: 'ack', for: 'prompt', ok: true });
   }
   if (cmd.type === 'mode') {
-    if (exited || stdinEnded || child.stdin.writableEnded)
-      return send(sock, {
-        type: 'ack',
-        for: 'mode',
-        ok: false,
-        error: exited ? 'claude has exited' : 'input already closed',
-      });
+    const refused = inputClosedAck('mode');
+    if (refused) return send(sock, refused);
     const id = `po-mode-${++controlSeq}`;
     control.set(id, sock);
-    child.stdin.write(setModeLine(id, cmd.mode!));
+    child.stdin.write(setModeLine(id, cmd.mode));
     return;
   }
   if (cmd.type === 'close') {

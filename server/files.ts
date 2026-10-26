@@ -13,10 +13,19 @@ interface Pending {
 }
 const pending = new Map<string, Pending>(); // session id -> { timer, running, again }
 
+function pendingFor(sessionId: string): Pending {
+  const p = pending.get(sessionId) || {
+    timer: null,
+    running: false,
+    again: false,
+  };
+  pending.set(sessionId, p);
+  return p;
+}
+
 /** Sync soon (debounced per session): called after edits, shell commands and when the panel opens. */
 export function scheduleFileSync(store: Store, s: Session) {
-  const p = pending.get(s.id) || { timer: null, running: false, again: false };
-  pending.set(s.id, p);
+  const p = pendingFor(s.id);
   if (p.running) {
     p.again = true;
     return;
@@ -30,8 +39,7 @@ export function scheduleFileSync(store: Store, s: Session) {
 
 /** Run git status for the session's worktree and fold the result into its file list. Emits the session if it changed. */
 export async function syncFiles(store: Store, s: Session) {
-  const p = pending.get(s.id) || { timer: null, running: false, again: false };
-  pending.set(s.id, p);
+  const p = pendingFor(s.id);
   if (p.running) {
     p.again = true;
     return;
@@ -39,8 +47,8 @@ export async function syncFiles(store: Store, s: Session) {
   p.running = true;
   try {
     const list = await changedFiles(s.cwd);
-    if (list && store.sessions.get(s.id) === s && store.setGitFiles(s, list))
-      store.emitSession(s);
+    if (list && store.sessions.get(s.id) === s)
+      store.updateSession(s, () => store.setGitFiles(s, list));
   } catch (err) {
     const e = err as SysError;
     if (e.code !== 'ENOENT') console.error('[files]', s.name, e.message); // no git at all: stay quiet

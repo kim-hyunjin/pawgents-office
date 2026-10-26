@@ -1,4 +1,6 @@
 // Stands in for `claude -p --input-format stream-json --output-format stream-json` in tests: ignores flags it doesn't need.
+import { field } from '../../shared/json.ts';
+
 const i = process.argv.indexOf('--session-id');
 const sid = i > 0 ? process.argv[i + 1] : null;
 const out = (o: Record<string, unknown>) =>
@@ -10,24 +12,26 @@ process.stdin.on('data', (chunk: string) => {
   const lines = (rem + chunk).split('\n');
   rem = lines.pop()!;
   for (const line of lines) {
-    let o: any;
+    let o: unknown;
     try {
       o = JSON.parse(line);
     } catch {
       continue;
     }
+    const request = field(o, 'request'),
+      request_id = field(o, 'request_id');
     if (
-      o?.type === 'control_request' &&
-      o.request?.subtype === 'set_permission_mode'
+      field(o, 'type') === 'control_request' &&
+      field(request, 'subtype') === 'set_permission_mode'
     ) {
       // like claude: bypass needs a launch flag
-      const { mode } = o.request;
+      const mode = field(request, 'mode');
       if (mode === 'bypassPermissions') {
         out({
           type: 'control_response',
           response: {
             subtype: 'error',
-            request_id: o.request_id,
+            request_id,
             error: 'not launched with --dangerously-skip-permissions',
             error_code: 'bypass_not_launched',
           },
@@ -38,7 +42,7 @@ process.stdin.on('data', (chunk: string) => {
         type: 'control_response',
         response: {
           subtype: 'success',
-          request_id: o.request_id,
+          request_id,
           response: { mode },
         },
       });
@@ -51,7 +55,7 @@ process.stdin.on('data', (chunk: string) => {
       });
       continue;
     }
-    if (o?.type !== 'user') continue;
+    if (field(o, 'type') !== 'user') continue;
     out({
       type: 'assistant',
       message: { content: [{ type: 'text', text: 'ok' }] },

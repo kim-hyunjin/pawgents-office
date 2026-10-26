@@ -1,42 +1,15 @@
-import fs from 'node:fs';
+// What Claude Code's tools mean to a reader: a short target and a longer description of one tool call.
 import path from 'node:path';
-import { MAX_REPLY_CHARS } from './config.ts';
-import type { SysError, ToolInput } from './types.ts';
+import { field } from '../../shared/json.ts';
+import { oneLine, truncate } from '../../shared/text.ts';
+import type { ToolInput } from '../types.ts';
 
-export function safeJsonParse(text: string): any {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
+const todoMark = (status: unknown) =>
+  status === 'completed' ? '✓' : status === 'in_progress' ? '▶' : '○';
 
-export function oneLine(s?: unknown) {
-  return String(s ?? '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-export function truncate(v: unknown, n: number) {
-  const s = String(v ?? '');
-  return s.length > n ? s.slice(0, n - 1) + '…' : s;
-}
-
-/** Assistant text kept verbatim (markdown intact) for the reply dialog. */
-export function replyText(s?: unknown) {
-  return truncate(String(s ?? '').trim(), MAX_REPLY_CHARS);
-}
-
-/** Strip code fences / markdown noise so a bubble reads naturally. */
-export function cleanText(v: unknown, n = 280) {
-  const s = String(v ?? '')
-    .replace(/```[\s\S]*?```/g, ' [code] ')
-    .replace(/`([^`]*)`/g, '$1')
-    .replace(/^#+\s*/gm, '')
-    .replace(/\*\*([^*]*)\*\*/g, '$1')
-    .replace(/^\s*[-*]\s+/gm, '• ');
-  return truncate(oneLine(s), n);
-}
+/** The file a tool call names (Read/Edit/Write/NotebookEdit…, or a search's `path`). */
+const toolFilePath = (input: ToolInput) =>
+  input.file_path || input.notebook_path || input.path;
 
 /** Short human target for a tool call: file name, command head, pattern... */
 export function summarizeToolInput(
@@ -44,7 +17,7 @@ export function summarizeToolInput(
   input?: ToolInput | null,
 ) {
   if (!input || typeof input !== 'object') return '';
-  const fp = input.file_path || input.notebook_path || input.path;
+  const fp = toolFilePath(input);
   switch (tool) {
     case 'Read':
     case 'Edit':
@@ -88,7 +61,7 @@ export function detailForTool(
   input?: ToolInput | null,
 ) {
   if (!input || typeof input !== 'object') return '';
-  const fp = input.file_path || input.notebook_path || input.path || '';
+  const fp = toolFilePath(input) || '';
   const n = (v: unknown) => (typeof v === 'string' ? v.length : 0);
   let d = '';
   switch (tool) {
@@ -133,7 +106,7 @@ export function detailForTool(
     case 'AskUserQuestion':
       d = Array.isArray(input.questions)
         ? input.questions
-            .map((q: any) => q?.question)
+            .map((q: unknown) => field(q, 'question'))
             .filter(Boolean)
             .join(' / ')
         : '';
@@ -142,8 +115,8 @@ export function detailForTool(
       d = Array.isArray(input.todos)
         ? input.todos
             .map(
-              (t: any) =>
-                `${t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '▶' : '○'} ${t.content}`,
+              (t: unknown) =>
+                `${todoMark(field(t, 'status'))} ${field(t, 'content')}`,
             )
             .join('  ')
         : '';
@@ -155,79 +128,4 @@ export function detailForTool(
         .join('  ');
   }
   return truncate(oneLine(d), 300);
-}
-
-export function isPidAlive(pid?: number | null) {
-  if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return (e as SysError).code === 'EPERM';
-  }
-}
-
-export function readSafe(file: string) {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch {
-    return '';
-  }
-}
-
-/** Read bytes [startOf(size), size) of a file. Returns { text, start, size }, or null on error. */
-function readSlice(
-  file: string,
-  startOf: (size: number) => number,
-): { text: string; start: number; size: number } | null {
-  let fd: number | undefined;
-  try {
-    const st = fs.statSync(file);
-    const start = startOf(st.size);
-    const len = Math.max(0, st.size - start);
-    if (!len) return { text: '', start, size: st.size };
-    const buf = Buffer.alloc(len);
-    fd = fs.openSync(file, 'r');
-    fs.readSync(fd, buf, 0, len, start);
-    return { text: buf.toString('utf8'), start, size: st.size };
-  } catch {
-    return null;
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-}
-
-/** Read up to `bytes` from the end of a file. */
-export const readTail = (file: string, bytes: number) =>
-  readSlice(file, (n) => Math.max(0, n - bytes));
-/** Read bytes [from, size) of a file. */
-export const readFrom = (file: string, from: number) =>
-  readSlice(file, () => from);
-
-/** decodeURIComponent that answers null instead of throwing on a malformed escape. */
-export const decode = (s: string): string | null => {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return null;
-  }
-};
-
-/** Claude Code encodes the project dir by replacing non-alphanumerics with '-'. */
-export function projectDirName(cwd?: string | null) {
-  return String(cwd || '').replace(/[^a-zA-Z0-9]/g, '-');
-}
-
-export function debounce<A extends unknown[]>(
-  fn: (...args: A) => void,
-  ms: number,
-) {
-  let t: ReturnType<typeof setTimeout> | undefined;
-  return (...args: A) => {
-    clearTimeout(t);
-    t = setTimeout(() => {
-      t = undefined;
-      fn(...args);
-    }, ms);
-  };
 }

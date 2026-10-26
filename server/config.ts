@@ -1,58 +1,42 @@
-import os from 'node:os';
 import path from 'node:path';
 
-export const PORT = Number(
-  process.env.PAWGENTS_OFFICE_PORT || process.env.PORT || 17777,
-);
-export const HOST = '127.0.0.1';
-export const BASE_URL = `http://${HOST}:${PORT}`;
+export { MAX_REPLY_CHARS } from '../shared/limits.ts';
+// Env-derived settings live in shared/node/env.ts (the hooks read them too); the server's tuning constants are below.
+export {
+  BACKEND,
+  BASE_URL,
+  type BackendChoice,
+  CLAUDE_BIN,
+  CLAUDE_BIN_EXPLICIT,
+  CLAUDE_DIR,
+  type Config,
+  config,
+  DATA_DIR,
+  HEADLESS_SETTINGS_FILE,
+  HOST,
+  loadConfig,
+  ORCA_BIN,
+  PERMISSION_WAIT_MS,
+  PID_FILE,
+  PORT,
+  PROJECTS_DIR,
+  RUN_DIR,
+  SESSIONS_DIR,
+  SKINS_DIR,
+  STATE_FILE,
+} from '../shared/node/env.ts';
 
-export const CLAUDE_DIR =
-  process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-export const SESSIONS_DIR = path.join(CLAUDE_DIR, 'sessions');
-export const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
-
-export const DATA_DIR =
-  process.env.PAWGENTS_OFFICE_DATA ||
-  path.join(os.homedir(), '.pawgents-office');
-export const STATE_FILE = path.join(DATA_DIR, 'state.json');
-export const PID_FILE = path.join(DATA_DIR, 'server.pid'); // written while listening; read by scripts/stop.ts
-export const SKINS_DIR = path.join(DATA_DIR, 'skins'); // uploaded sprite sheets, <id>.png
-
-// Native launcher, not orca.cmd: cmd.exe would reparse prompt text. On Linux bare `orca` is the screen reader.
-export const ORCA_BIN =
-  process.env.PAWGENTS_OFFICE_ORCA_BIN ||
-  process.env.ORCA_CLI_COMMAND ||
-  (process.platform === 'win32'
-    ? 'orca.exe'
-    : process.platform === 'linux'
-      ? 'orca-ide'
-      : 'orca');
-export const BACKEND = /^(orca|headless)$/.test(
-  process.env.PAWGENTS_OFFICE_BACKEND || '',
-)
-  ? process.env.PAWGENTS_OFFICE_BACKEND
-  : 'auto'; // which way to run sessions; auto offers whatever is available
-export const CLAUDE_BIN = process.env.PAWGENTS_OFFICE_CLAUDE_BIN || 'claude'; // headless backend's claude; override when it isn't on PATH
-export const RUN_DIR = path.join(DATA_DIR, 'run'); // per-session runner files, so a restarted server can reconnect
 export const BACKEND_PROBE_TTL_MS = 30_000; // how long a backend's availability is trusted before probing again
 export const HEADLESS_LAUNCH_WAIT_MS = 5000; // a new runner must write its run file within this
 export const HEADLESS_EARLY_EXIT_MS = 1500; // claude exiting this soon after start = bad login / flag, reported to the launcher
 export const RUNNER_CMD_TIMEOUT_MS = 3000; // a runner answers every command at once; silence means it's wedged
 export const RUNNER_RECONNECT_MS = 2000; // a dropped runner socket is retried every ... (while the runner pid lives)
 export const RUNNER_RECONNECT_TRIES = 5;
-export const HEADLESS_SETTINGS_FILE = path.join(
-  DATA_DIR,
-  'headless-settings.json',
-); // --settings for headless claude (permission hook)
-// a parked permission request answers "no decision" after this: just under the hook's own 1800 s timeout (hooks/decision.ts)
-export const PERMISSION_WAIT_MS =
-  Number(process.env.PAWGENTS_OFFICE_PERMISSION_WAIT_MS) || 1_780_000; // env: dev override to test the timeout
 export const PERMISSION_HEARTBEAT_MS = 20_000; // a space every ... keeps the hook's fetch (undici: 300 s body timeout) alive
 export const MAX_PROMPT_CHARS = 20_000;
-export const MAX_REPLY_CHARS = 200_000; // full markdown reply kept per entity (served on demand, not over SSE)
 
 export const WEB_DIR = path.resolve(import.meta.dirname, '../web');
+export const SHARED_DIR = path.resolve(import.meta.dirname, '../shared'); // served at /shared/: the browser imports it too
 
 export const SEATS_PER_DESK = 3;
 export const LOG_SIZE = 100;

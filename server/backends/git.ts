@@ -1,12 +1,11 @@
 // Worktrees without Orca: plain `git worktree` over the repos the office already knows.
 
-import { execFile } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
-import { promisify } from 'node:util';
+import { isDir } from '../infra/fs.ts';
+import { git, gitFailed } from '../infra/git.ts';
+import { normalizePath, samePath as samePathKey } from '../infra/path.ts';
 import { repoOf } from '../repo.ts';
 import type { Store } from '../store.ts';
-import { errMessage } from './protocol.ts';
 
 export interface WorktreeRow {
   id: string;
@@ -18,17 +17,10 @@ export interface WorktreeRow {
   isMain: boolean;
   name: string;
 }
-const gitErr = (e: unknown): string =>
-  String((e as { stderr?: unknown }).stderr || errMessage(e));
 
-const run = promisify(execFile);
+const ADD_TIMEOUT_MS = 60_000; // `worktree add` checks out a whole tree
 // git prints forward slashes; compare ignoring slash style, trailing slash and (on Windows) case
-const norm = (p: unknown) => {
-  const n = String(p || '')
-    .replace(/\\/g, '/')
-    .replace(/\/+$/, '');
-  return process.platform === 'win32' ? n.toLowerCase() : n;
-};
+const norm = (p: unknown) => normalizePath(p);
 
 /** Parse `git worktree list --porcelain` into launcher rows; bare and prunable entries can't host a session. */
 export function parseWorktrees(text: unknown, repoRoot: string): WorktreeRow[] {
@@ -59,6 +51,12 @@ export function parseWorktrees(text: unknown, repoRoot: string): WorktreeRow[] {
   return out;
 }
 
+/** `git worktree list --porcelain` of the repo containing `dir`, as launcher rows. */
+async function readWorktrees(dir: string) {
+  const { out } = await git(dir, ['worktree', 'list', '--porcelain']); // GIT_TIMEOUT_MS (5 s)
+  return parseWorktrees(out, dir);
+}
+
 /** Repo roots to list: the offices' repos (minus the 'default' bucket) plus live sessions' repos, if they still exist. */
 export function repoRoots(store: Store): string[] {
   const keys = new Set(
@@ -71,29 +69,11 @@ export function repoRoots(store: Store): string[] {
       const k = repoOf(s.cwd).key;
       if (k !== 'default') keys.add(k);
     }
-  return [...keys].filter((k) => {
-    try {
-      return fs.statSync(k).isDirectory();
-    } catch {
-      return false;
-    }
-  });
+  return [...keys].filter(isDir);
 }
 
 export async function listGitWorktrees(roots: string[]) {
-  const results = await Promise.allSettled(
-    roots.map(async (root: string) =>
-      parseWorktrees(
-        (
-          await run('git', ['-C', root, 'worktree', 'list', '--porcelain'], {
-            timeout: 5000,
-            windowsHide: true,
-          })
-        ).stdout,
-        root,
-      ),
-    ),
-  );
+  const results = await Promise.allSettled(roots.map(readWorktrees));
   const seen = new Set<string>(),
     all: WorktreeRow[] = [];
   for (const r of results)
@@ -111,25 +91,14 @@ export async function listGitWorktrees(roots: string[]) {
   );
 }
 
-export const samePath = (a: unknown, b: unknown) => norm(a) === norm(b);
+export const samePath = (a: unknown, b: unknown) => samePathKey(a, b);
 
 /** Worktrees of the repo containing `dir`, in git's order: the main worktree (real-case path) comes first unless bare. */
 export async function worktreesAt(dir: string) {
   try {
-    return parseWorktrees(
-      (
-        await run('git', ['-C', dir, 'worktree', 'list', '--porcelain'], {
-          timeout: 5000,
-          windowsHide: true,
-        })
-      ).stdout,
-      dir,
-    );
+    return await readWorktrees(dir);
   } catch (e) {
-    throw Object.assign(
-      new Error(gitErr(e).trim().slice(0, 300) || 'git worktree list failed'),
-      { code: 'git_failed' },
-    );
+    throw gitFailed(e, 'git worktree list failed');
   }
 }
 
@@ -148,15 +117,11 @@ export async function addWorktree({
     `${path.basename(repoRoot)}-${name}`,
   );
   try {
-    await run(
-      'git',
-      ['-C', repoRoot, 'worktree', 'add', '-b', name, dir, base],
-      { timeout: 60_000, windowsHide: true },
-    );
-  } catch (e) {
-    throw Object.assign(new Error(gitErr(e).trim().slice(0, 300)), {
-      code: 'git_failed',
+    await git(repoRoot, ['worktree', 'add', '-b', name, dir, base], {
+      timeoutMs: ADD_TIMEOUT_MS,
     });
+  } catch (e) {
+    throw gitFailed(e);
   }
   return { path: dir, branch: name };
 }

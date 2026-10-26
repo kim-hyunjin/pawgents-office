@@ -97,7 +97,7 @@ test('fileDiff: changed / untracked / committed / clean / missing, outside and n
     git(repo, 'commit', '-q', '-m', 'second change');
     d = await fileDiff(repo, a, { since: Date.now() - 60_000 });
     assert.equal(d.status, 'committed');
-    assert.equal('commit' in d && d.commit.subject, 'second change');
+    assert.equal(d.commit?.subject, 'second change');
     assert.match(d.patch, /^\+three$/m);
     d = await fileDiff(repo, a, { since: Date.now() + 3600_000 });
     assert.equal(d.status, 'clean');
@@ -164,7 +164,7 @@ test('store.setGitFiles merges git status with touched files', async () => {
   assert.equal(store.setGitFiles(s, []), true);
   assert.deepEqual(names(), ['edit.js:-*', 'read.js:-']);
   const sent = store.serializeSession(s).files;
-  assert.deepEqual(Object.keys(sent[0]).sort(), [
+  assert.deepEqual(Object.keys(sent[0] ?? {}).sort(), [
     'edited',
     'git',
     'name',

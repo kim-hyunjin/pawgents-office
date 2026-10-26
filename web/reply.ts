@@ -1,39 +1,37 @@
 // Full agent reply in a large dialog, markdown rendered. Opened from the panel's last-reply card.
 // The full text is fetched on demand (/sessions/:id/reply) — SSE only carries the short preview.
-import type { SessionSnapshot } from '../server/types.ts';
-import { api } from './api.ts';
+import type { ReplyReply, SessionSnapshot } from '../shared/api.ts';
+import { getReply } from './api.ts';
 import { renderMarkdown } from './markdown.ts';
-import { $, bindDialogClose, fmtTime } from './ui.ts';
+import { $, bindCopy, bindDialogClose, fmtTime } from './ui.ts';
 
-const dlg = $<HTMLDialogElement>('reply');
-const nameEl = $('r-name');
-const metaEl = $('r-meta');
-const body = $('r-body');
-const copyBtn = $('r-copy');
-
-const compose = $('p-compose');
-const composeHome = compose.parentNode!,
-  composeNext = compose.nextSibling;
+let dlg: HTMLDialogElement,
+  nameEl: HTMLElement,
+  metaEl: HTMLElement,
+  body: HTMLElement,
+  compose: HTMLElement;
 
 let cur: { id: string; at: number; text: string } | null = null;
 
-bindDialogClose(dlg, $('r-close'));
-dlg.addEventListener('close', () => {
-  cur = null;
-  composeHome.insertBefore(compose, composeNext); // hand the composer back to the panel
-});
-copyBtn.addEventListener('click', async () => {
-  if (!cur) return;
-  try {
-    await navigator.clipboard.writeText(cur.text);
-    copyBtn.textContent = '복사됨 ✓';
-  } catch {
-    copyBtn.textContent = '복사 실패';
-  }
-  setTimeout(() => {
-    copyBtn.textContent = '복사';
-  }, 1500);
-});
+/**
+ * Find the dialog's elements and wire them up; once, before openReply(). Also notes where the panel's composer
+ * (#p-compose) sits, so it can go back there after the dialog borrowed it: call it while the composer is still home.
+ */
+export function initReply() {
+  dlg = $<HTMLDialogElement>('reply');
+  nameEl = $('r-name');
+  metaEl = $('r-meta');
+  body = $('r-body');
+  compose = $('p-compose');
+  const composeHome = compose.parentNode!,
+    composeNext = compose.nextSibling;
+  bindDialogClose(dlg, $('r-close'));
+  dlg.addEventListener('close', () => {
+    cur = null;
+    composeHome.insertBefore(compose, composeNext); // hand the composer back to the panel
+  });
+  bindCopy($('r-copy'), () => cur?.text);
+}
 
 export function openReply(s: SessionSnapshot) {
   cur = { id: s.id, at: -1, text: '' };
@@ -53,9 +51,9 @@ export function refreshReply(s: SessionSnapshot) {
 
 async function load(s: SessionSnapshot) {
   const id = s.id;
-  let d: { text?: string; at: number } | null = null;
+  let d: ReplyReply | null = null;
   try {
-    d = await api(`/sessions/${encodeURIComponent(id)}/reply`);
+    d = await getReply(id);
   } catch {
     /* server unreachable — fall back to the preview below */
   }

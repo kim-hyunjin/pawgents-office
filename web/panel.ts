@@ -1,23 +1,30 @@
-import type { LogEntry, SessionSnapshot } from '../server/types.ts';
-import { api, closeSession, decidePermission, post, setMode } from './api.ts';
+import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
+import { isBusyState } from '../shared/model.ts';
+import {
+  closeSession,
+  decidePermission,
+  getLog,
+  sendPrompt,
+  setMode,
+} from './api.ts';
 import { openDiff, refreshDiff } from './diff.ts';
 import { openReply, refreshReply } from './reply.ts';
 import { FAMILIES, familyOf } from './sprites.ts';
 import {
+  armConfirm,
   awaitingBg,
-  BUSY,
   bgSummary,
-  EV_ICON,
   esc,
   fmtTime,
-  ICON,
   isHeadless,
+  logIcon,
   MODE_LABEL,
   quitTitle,
   STATE_COLOR,
   STATE_LABEL,
   setMsg,
   thinkingFresh,
+  toolHtml,
   toolText,
 } from './ui.ts';
 
@@ -51,9 +58,8 @@ export class Panel {
   sending = false;
   modeBusy = false;
   permKey = '';
-  quitArmed = false;
   quitting = false;
-  quitTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+  quitArm = armConfirm<true>(4000, () => this.showQuit()); // 퇴근 asks twice
 
   constructor(
     el: HTMLElement,
@@ -137,9 +143,7 @@ export class Panel {
     this.renderMeta(session);
     this.addEntries(session.log || []);
     try {
-      const d = await api<{ log?: LogEntry[] }>(
-        `/sessions/${encodeURIComponent(session.id)}/log`,
-      );
+      const d = await getLog(session.id);
       if (this.id === session.id) this.addEntries(d.log || []);
     } catch {
       /* server restarted — SSE will refill */
@@ -192,7 +196,7 @@ export class Panel {
     this.sendBtn.disabled = true;
     this.setComposeMsg('보내는 중…');
     try {
-      await post(`/sessions/${encodeURIComponent(id)}/prompt`, { text });
+      await sendPrompt(id, text);
       this.drafts.delete(id);
       if (this.id === id) {
         this.input.value = '';
@@ -238,7 +242,10 @@ export class Panel {
     try {
       const r = await setMode(id, mode);
       if (this.id === id)
-        this.setComposeMsg(`권한 모드: ${MODE_LABEL[r.mode] || r.mode}`, 'ok');
+        this.setComposeMsg(
+          `권한 모드: ${MODE_LABEL[r.mode ?? ''] || r.mode}`,
+          'ok',
+        );
     } catch (e) {
       if (this.id === id) this.setComposeMsg((e as Error).message, 'err');
     } finally {
@@ -321,16 +328,7 @@ export class Panel {
     const s = this.session;
     if (!s || s.ended || this.quitting) return;
     const force = s.state !== 'idle';
-    if (!this.quitArmed) {
-      this.quitArmed = true;
-      this.quitBtn.classList.add('armed');
-      this.quitBtn.textContent = force
-        ? `${BUSY.has(s.state) ? '작업 중' : '응답 대기'} — 강제 종료?`
-        : '정말 퇴근?';
-      this.quitBtn.title = quitTitle(s, force);
-      this.quitTimer = setTimeout(() => this.resetQuit(), 4000);
-      return;
-    }
+    if (!this.quitArm.click(true)) return;
     this.resetQuit();
     this.quitting = true;
     this.quitBtn.disabled = true;
@@ -363,9 +361,22 @@ export class Panel {
   }
 
   resetQuit() {
-    clearTimeout(this.quitTimer);
-    this.quitArmed = false;
+    this.quitArm.disarm();
+    this.showQuit();
+  }
+  /** The 퇴근 button's label: armed, it says what the second click will do to the session. */
+  showQuit() {
     if (!this.quitBtn) return;
+    const s = this.session;
+    if (s && this.quitArm.is(true)) {
+      const force = s.state !== 'idle';
+      this.quitBtn.classList.add('armed');
+      this.quitBtn.textContent = force
+        ? `${isBusyState(s.state) ? '작업 중' : '응답 대기'} — 강제 종료?`
+        : '정말 퇴근?';
+      this.quitBtn.title = quitTitle(s, force);
+      return;
+    }
     this.quitBtn.classList.remove('armed');
     this.quitBtn.textContent = '퇴근';
     this.quitBtn.title = '이 세션 종료';
@@ -403,9 +414,9 @@ export class Panel {
     const badge = q('#p-state');
     badge.textContent = STATE_LABEL[s.state] || s.state;
     badge.style.background = STATE_COLOR[s.state] || '#888';
-    const fam = FAMILIES[familyOf(s.model)];
+    const fam = FAMILIES[familyOf(s.model)] ?? FAMILIES.other; // familyOf names FAMILIES' keys
     const tool = s.currentTool
-      ? `<b>${esc(s.currentTool.name)}</b>${s.currentTool.target ? ' · ' + esc(s.currentTool.target) : ''} <span class="dim">(${fmtDur(now - s.currentTool.startedAt)})</span>${s.currentTool.detail ? `<div class="detail">${esc(s.currentTool.detail)}</div>` : ''}`
+      ? `${toolHtml(s.currentTool)} <span class="dim">(${fmtDur(now - s.currentTool.startedAt)})</span>${s.currentTool.detail ? `<div class="detail">${esc(s.currentTool.detail)}</div>` : ''}`
       : awaitingBg(s)
         ? `⏳ ${esc(bgSummary(s))}`
         : esc(STATE_LABEL[s.state] || '—');
@@ -518,19 +529,13 @@ export class Panel {
     ul.innerHTML = list
       .map((e) => {
         const done = e.ev === 'PostToolUse' || e.ev === 'PostToolUseFailure';
-        const icon = done
-          ? e.ev === 'PostToolUse'
-            ? '✓'
-            : '✗'
-          : e.tool
-            ? ICON[e.tool] || '🔧'
-            : EV_ICON[e.ev] || '•';
+        const icon = done ? (e.ev === 'PostToolUse' ? '✓' : '✗') : logIcon(e);
         const dur =
           done && e.ms
             ? ` <small>${e.ms >= 1000 ? (e.ms / 1000).toFixed(1) + 's' : e.ms + 'ms'}</small>`
             : '';
         const head =
-          esc(e.tool ? `${e.tool}${e.target ? ' · ' + e.target : ''}` : e.ev) +
+          esc(e.tool ? toolText({ name: e.tool, target: e.target }) : e.ev) +
           dur;
         const cls =
           e.ev === 'PostToolUseFailure'

@@ -1,8 +1,9 @@
-// Draws an office from its compiled layout (layout.js): floors, walls, built-in furniture. Live props (monitors,
-// the receptionist, yarn, wheel) are drawn every frame by render.js; the drawing helpers it needs are exported.
+// Draws an office from its compiled layout (layout.ts): floors, walls, built-in furniture. Live props (monitors,
+// the receptionist, yarn, wheel) are drawn every frame by render.ts; the drawing helpers it needs are exported.
 
-import type { Door, Geo, Pt, Rect, Wall } from './layout.ts';
-import { TILE, WALL_RISE } from './layout.ts';
+import type { Door, Geo, Pt, Rect, Wall } from '../shared/layout.ts';
+import { ITEM_KINDS, itemRect, TILE, WALL_RISE } from '../shared/layout.ts';
+import { cyclic } from '../shared/math.ts';
 
 /** A canvas context: the cached background is an OffscreenCanvas, props are drawn on the visible one. */
 export type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -56,7 +57,14 @@ const C = {
   coffee2: '#c0392b',
   shelf: '#7a4b2a',
   shelfDark: '#5a361d',
-  book: ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'],
+  book: [
+    '#e74c3c',
+    '#3498db',
+    '#2ecc71',
+    '#f1c40f',
+    '#9b59b6',
+    '#e67e22',
+  ] satisfies [string, ...string[]],
   plant: '#2e8b57',
   plantDark: '#206b40',
   pot: '#b5651d',
@@ -76,7 +84,15 @@ export const FLOOR: Record<string, [string, string]> = {
   play: [C.mat, C.mat2],
 };
 
-export function buildBackground(geo: Geo) {
+const backgrounds = new WeakMap<Geo, OffscreenCanvas>();
+/** An office's static background: drawn on first use, then kept as long as its compiled layout lives. */
+export function background(geo: Geo) {
+  let c = backgrounds.get(geo);
+  if (!c) backgrounds.set(geo, (c = buildBackground(geo)));
+  return c;
+}
+
+function buildBackground(geo: Geo) {
   const { W, H, MAP_W, MAP_H, door: DOOR } = geo;
   const c = new OffscreenCanvas(W, H + WALL_RISE);
   const g = c.getContext('2d')!;
@@ -100,8 +116,11 @@ export function buildBackground(geo: Geo) {
     for (let y = z.y; y < z.y + z.h; y++)
       for (let x = z.x; x < z.x + z.w; x++) tile(x, y, a, b);
   };
-  for (const r of geo.rooms) if (FLOOR[r.type]) fill(r, ...FLOOR[r.type]);
-  for (const r of geo.rugs) fill({ x: r.x, y: r.y, w: 5, h: 5 }, C.rug, C.rug2);
+  for (const r of geo.rooms) {
+    const floor = FLOOR[r.type];
+    if (floor) fill(r, ...floor);
+  }
+  for (const r of geo.rugs) fill(itemRect(r), C.rug, C.rug2);
   // walls, Stardew-style 3/4 view: the top wall shows its face (cap, wallpaper, wainscot, baseboard) and casts
   // a shadow onto the floor; side and bottom walls face away, so only their dark caps are visible.
   const top = -WALL_RISE;
@@ -129,7 +148,7 @@ export function buildBackground(geo: Geo) {
   g.fillRect(TILE, H - TILE, W - 2 * TILE, 1);
   // windows (2-tile panes) and the sign board on the top wall
   for (const wn of geo.windows)
-    for (let x = wn.x; x < wn.x + 6; x += 2) {
+    for (let x = wn.x; x < wn.x + ITEM_KINDS.window.w; x += 2) {
       g.fillStyle = C.glassFrame;
       g.fillRect(x * TILE + 1, -10, 30, 14);
       g.fillStyle = '#9ad1f5';
@@ -145,11 +164,12 @@ export function buildBackground(geo: Geo) {
       g.fillStyle = C.trim;
       g.fillRect(x * TILE, 4, 32, 1);
     }
+  const signW = ITEM_KINDS.sign.w * TILE;
   for (const s of geo.signs) {
     g.fillStyle = C.boardFrame;
-    g.fillRect(s.x * TILE, -9, 5 * TILE, 12);
+    g.fillRect(s.x * TILE, -9, signW, 12);
     g.fillStyle = C.board;
-    g.fillRect(s.x * TILE + 1, -8, 5 * TILE - 2, 10);
+    g.fillRect(s.x * TILE + 1, -8, signW - 2, 10);
   }
   // partitions: north–south tiles first, so east–west faces cover the junctions
   for (const t of geo.wallTiles) if (t.v) drawWallV(g, t, geo.doorAt(t.x, t.y));
@@ -552,11 +572,11 @@ function drawBookshelf(g: Ctx, x: number, y: number, w: number) {
   for (const [ry, rh] of [
     [3, 5],
     [9, 5],
-  ]) {
+  ] as const) {
     for (let bx = x + 2, i = (ry * 7) % C.book.length; bx < x + w - 3; i++) {
       const bw = 2 + (i % 3 === 0 ? 1 : 0),
         bh = rh - (i % 4 === 1 ? 1 : 0);
-      g.fillStyle = C.book[i % C.book.length];
+      g.fillStyle = cyclic(C.book, i);
       g.fillRect(bx, y + ry + rh - bh, bw, bh);
       bx += bw + (i % 5 === 4 ? 2 : 0);
     }

@@ -1,6 +1,6 @@
 ---
 description: 백그라운드에서 돌고 있는 pawgents-office 서버를 끕니다
-allowed-tools: Bash(node:*)
+allowed-tools: Bash(bun:*)
 ---
 !`bun "${CLAUDE_PLUGIN_ROOT}/scripts/stop.ts"`
 

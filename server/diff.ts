@@ -1,51 +1,22 @@
 // What a session did to one file, as a unified diff from git. Working tree vs HEAD first; an untracked file
 // is shown whole as added; a file already committed during the session shows that commit's change.
 
-import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { promisify } from 'node:util';
-import { GIT_TIMEOUT_MS, MAX_DIFF_BYTES, MAX_DIFF_CHARS } from './config.ts';
-import type { SysError } from './types.ts';
+import type { DiffReply } from '../shared/api.ts';
+import { codedError } from '../shared/errors.ts';
+import { MAX_DIFF_BYTES, MAX_DIFF_CHARS } from './config.ts';
+import { type GitResult, git as runGit } from './infra/git.ts';
 
-const run = promisify(execFile);
 const roots = new Map<string, string | null>(); // cwd -> worktree top level (a worktree's, not the main repo's: repo.ts answers that)
 
-class DiffError extends Error {
-  code: 'not_repo' | 'outside';
-  constructor(code: 'not_repo' | 'outside', message: string) {
-    super(message);
-    this.code = code;
-  }
-}
-
-/** git stdout; `okCodes` exit codes also answer with stdout (diff --no-index exits 1 when the files differ). */
-async function git(
-  cwd: string,
-  args: string[],
-  okCodes: number[] = [],
-): Promise<{ out: string; truncated: boolean }> {
-  try {
-    const { stdout } = await run(
-      'git',
-      ['-C', cwd, '-c', 'core.quotepath=false', ...args],
-      {
-        encoding: 'utf8',
-        timeout: GIT_TIMEOUT_MS,
-        maxBuffer: MAX_DIFF_BYTES,
-        windowsHide: true,
-      },
-    );
-    return { out: stdout, truncated: false };
-  } catch (err) {
-    const e = err as SysError;
-    if (e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER')
-      return { out: String(e.stdout || ''), truncated: true };
-    if (okCodes.includes(e.code as number))
-      return { out: String(e.stdout || ''), truncated: false };
-    throw e;
-  }
-}
+/** git stdout, cut at MAX_DIFF_BYTES (`truncated`); `okCodes` exit codes also answer with stdout. */
+const git = (cwd: string, args: string[], okCodes: number[] = []) =>
+  runGit(cwd, ['-c', 'core.quotepath=false', ...args], {
+    okCodes,
+    maxBuffer: MAX_DIFF_BYTES,
+    truncate: true,
+  });
 
 async function worktreeRoot(cwd: string) {
   if (roots.has(cwd)) return roots.get(cwd)!;
@@ -61,23 +32,22 @@ async function worktreeRoot(cwd: string) {
   return root;
 }
 
-function patchOf({ out, truncated }: { out: string; truncated: boolean }) {
+function patchOf({ out, truncated }: GitResult) {
   const patch =
     out.length > MAX_DIFF_CHARS ? out.slice(0, MAX_DIFF_CHARS) : out;
   return { patch, truncated: truncated || patch.length < out.length };
 }
 
 /**
- * @returns {Promise<{ rel: string, status: 'changed'|'untracked'|'committed'|'clean'|'missing', patch: string, truncated: boolean, commit?: { hash: string, subject: string } }>}
- * @throws {DiffError} code 'not_repo' (cwd is not in a git worktree) or 'outside' (file is not under it); git failures pass through.
+ * @throws codedError 'not_repo' (cwd is not in a git worktree) or 'outside' (file is not under it); git failures pass through.
  */
 export async function fileDiff(
   cwd: string | undefined,
   file: string,
   { since = 0 }: { since?: number } = {},
-) {
+): Promise<Omit<DiffReply, 'file'>> {
   const root = cwd ? await worktreeRoot(cwd) : null;
-  if (!root) throw new DiffError('not_repo', 'git 저장소가 아닙니다.');
+  if (!root) throw codedError('git 저장소가 아닙니다.', 'not_repo');
   const rel = path.relative(root, path.resolve(file));
   if (
     !rel ||
@@ -85,10 +55,10 @@ export async function fileDiff(
     path.isAbsolute(rel) ||
     rel.split(path.sep)[0] === '.git'
   )
-    throw new DiffError('outside', '저장소 밖의 파일입니다.');
+    throw codedError('저장소 밖의 파일입니다.', 'outside');
   const spec = rel.split(path.sep).join('/');
 
-  let diff: Awaited<ReturnType<typeof git>>;
+  let diff: GitResult;
   try {
     diff = await git(root, [
       'diff',
@@ -129,7 +99,7 @@ export async function fileDiff(
     ])
   ).out.trim();
   if (!last) return { rel: spec, status: 'clean', patch: '', truncated: false };
-  const [hash, subject = ''] = last.split('\0');
+  const [hash = '', subject = ''] = last.split('\0');
   const shown = await git(root, [
     'show',
     '--no-color',
@@ -155,10 +125,10 @@ export function parseStatus(z: string) {
   const parts = z.split('\0'),
     out: { rel: string; status: string }[] = [];
   for (let i = 0; i < parts.length; i++) {
-    const e = parts[i];
+    const e = parts[i] ?? '';
     if (e.length < 4) continue;
-    const x = e[0],
-      y = e[1],
+    const x = e.charAt(0),
+      y = e.charAt(1),
       rel = e.slice(3);
     if (x === 'R' || x === 'C') i++; // the next entry is the source path
     out.push({ rel, status: x === '?' ? '?' : y !== ' ' ? y : x });

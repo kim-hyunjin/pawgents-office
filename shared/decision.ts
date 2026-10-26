@@ -2,6 +2,8 @@
 // The plugin's own PermissionRequest hook stays `async: true` (it can't decide, so interactive sessions never wait on the
 // office). Headless claude gets a second, synchronous copy through `--settings`, marked with DECIDE_FLAG: that one
 // long-polls the office server and prints the browser's answer.
+import { commandGroup } from './hook-group.ts';
+
 export const DECIDE_FLAG = '--decide';
 export const DECISION_TIMEOUT_S = 1800; // claude kills the hook after this; the server answers "no decision" a bit earlier
 
@@ -19,8 +21,6 @@ export const decisionOutput = (
 /** `--settings` content for headless claude: one synchronous PermissionRequest hook running `command`. */
 export const headlessSettings = (command: string) => ({
   hooks: {
-    PermissionRequest: [
-      { hooks: [{ type: 'command', command, timeout: DECISION_TIMEOUT_S }] },
-    ],
+    PermissionRequest: [commandGroup(command, { timeout: DECISION_TIMEOUT_S })],
   },
 });

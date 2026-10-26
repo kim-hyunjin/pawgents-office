@@ -1,43 +1,32 @@
 // One file's git diff in a large dialog, colored by line. Opened from the panel's worked-file chips;
 // the patch comes from /sessions/:id/diff (working tree vs HEAD, or the session's last commit of it).
 
-import type { SessionSnapshot } from '../server/types.ts';
-import { api } from './api.ts';
-import { $, bindDialogClose, esc } from './ui.ts';
+import type { DiffReply, SessionSnapshot } from '../shared/api.ts';
+import { getDiff } from './api.ts';
+import { $, bindCopy, bindDialogClose, esc } from './ui.ts';
 
-const dlg = $<HTMLDialogElement>('diff');
-const nameEl = $('d-name');
-const metaEl = $('d-meta');
-const warnEl = $('d-warn');
-const body = $('d-body');
-const copyBtn = $('d-copy');
+let dlg: HTMLDialogElement,
+  nameEl: HTMLElement,
+  metaEl: HTMLElement,
+  warnEl: HTMLElement,
+  body: HTMLElement;
 
 let cur: { id: string; file: string; t: number; patch: string } | null = null;
 
-bindDialogClose(dlg, $('d-close'));
-dlg.addEventListener('close', () => {
-  cur = null;
-});
-copyBtn.addEventListener('click', async () => {
-  if (!cur) return;
-  try {
-    await navigator.clipboard.writeText(cur.patch);
-    copyBtn.textContent = '복사됨 ✓';
-  } catch {
-    copyBtn.textContent = '복사 실패';
-  }
-  setTimeout(() => {
-    copyBtn.textContent = '복사';
-  }, 1500);
-});
-
-interface DiffReply {
-  patch?: string;
-  status: string;
-  rel?: string;
-  truncated?: boolean;
-  commit?: { subject?: string; hash?: string };
+/** Find the dialog's elements and wire them up; once, before openDiff(). */
+export function initDiff() {
+  dlg = $<HTMLDialogElement>('diff');
+  nameEl = $('d-name');
+  metaEl = $('d-meta');
+  warnEl = $('d-warn');
+  body = $('d-body');
+  bindDialogClose(dlg, $('d-close'));
+  dlg.addEventListener('close', () => {
+    cur = null;
+  });
+  bindCopy($('d-copy'), () => cur?.patch);
 }
+
 const STATUS: Record<string, string> = {
   changed: 'HEAD 기준 작업 트리 변경',
   untracked: '새 파일 (아직 git에 추가되지 않음)',
@@ -54,7 +43,7 @@ export function openDiff(s: SessionSnapshot, file: string) {
   warnEl.hidden = true;
   body.innerHTML = '';
   if (!dlg.open) dlg.showModal();
-  load(s);
+  load();
 }
 
 /** The session touched the open file again (a tool finished on it): fetch the diff anew. */
@@ -63,18 +52,16 @@ export function refreshDiff(s: SessionSnapshot) {
   const t = touchedAt(s, cur.file);
   if (t > cur.t) {
     cur.t = t;
-    load(s);
+    load();
   }
 }
 
-async function load(s: SessionSnapshot) {
+async function load() {
   if (!cur) return;
   const { id, file } = cur;
   let d: DiffReply;
   try {
-    d = await api(
-      `/sessions/${encodeURIComponent(id)}/diff?file=${encodeURIComponent(file)}`,
-    );
+    d = await getDiff(id, file);
   } catch (e) {
     if (cur?.id !== id || cur.file !== file) return;
     warnEl.textContent = (e as Error).message;

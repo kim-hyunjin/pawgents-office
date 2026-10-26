@@ -1,15 +1,22 @@
 #!/usr/bin/env bun
 // Claude Code hook: forwards the stdin JSON payload to the pawgents-office server.
 // Prints NOTHING (hook stdout can be injected into Claude's context) and always exits 0.
-// Exception: with --decide (headless sessions only, see decision.ts) a PermissionRequest waits for the office's answer
+// Exception: with --decide (headless sessions only, see shared/decision.ts) a PermissionRequest waits for the office's answer
 // and prints the decision JSON; no answer prints nothing, which claude treats as "no decision" (denied).
 import fs from 'node:fs';
 import path from 'node:path';
-import { BASE_URL, DATA_DIR, MAX_REPLY_CHARS } from '../server/config.ts';
-import type { HookEvent } from '../server/types.ts';
-import { errMessage } from './_common.ts';
-import { DECIDE_FLAG, DECISION_TIMEOUT_S, decisionOutput } from './decision.ts';
-import { ensureServer } from './ensure.ts';
+import {
+  DECIDE_FLAG,
+  DECISION_TIMEOUT_S,
+  decisionOutput,
+} from '../shared/decision.ts';
+import { errMessage } from '../shared/errors.ts';
+import type { HookEvent } from '../shared/hook.ts';
+import { field, isRecord, safeJsonParse } from '../shared/json.ts';
+import { MAX_REPLY_CHARS } from '../shared/limits.ts';
+import { autostartEnabled, ensureServer } from '../shared/node/ensure.ts';
+import { DATA_DIR } from '../shared/node/env.ts';
+import { postHook } from '../shared/node/hook-client.ts';
 
 const DEBUG = process.env.PAWGENTS_OFFICE_DEBUG === '1';
 
@@ -26,20 +33,26 @@ export function log(msg: string) {
   }
 }
 
+/** One of Stop's background_tasks as claude sent it (an entry may be missing or null). */
+type RawTask = NonNullable<HookEvent['background_tasks']>[number] | null;
+
 function clip<T>(v: T, n: number): T | string {
   return typeof v === 'string' && v.length > n ? v.slice(0, n) + '…' : v;
 }
 
+/** A tool's result as text: a shell's stdout (+ stderr), else the JSON of whatever it returned. */
+function toolResponseText(r: HookEvent['tool_response']): string {
+  if (typeof r === 'string') return r;
+  if (!isRecord(r)) return '';
+  return typeof r.stdout === 'string'
+    ? r.stdout + (r.stderr ? `\n${r.stderr}` : '')
+    : JSON.stringify(r) || '';
+}
+
+/** Cut the payload down to what the office shows, so a hook never posts a huge body. Mutates and returns `ev`. */
 function shrink(ev: HookEvent) {
   if (ev.tool_response !== undefined) {
-    const r = ev.tool_response;
-    let text = '';
-    if (typeof r === 'string') text = r;
-    else if (r && typeof r === 'object')
-      text =
-        typeof r.stdout === 'string'
-          ? r.stdout + (r.stderr ? '\n' + r.stderr : '')
-          : JSON.stringify(r) || '';
+    const text = toolResponseText(ev.tool_response);
     ev.tool_response_len = text.length;
     ev.tool_response_head = text.slice(0, 400);
     delete ev.tool_response;
@@ -66,13 +79,15 @@ function shrink(ev: HookEvent) {
   }
   // Stop lists in-flight background work (shells, monitors…): "paused waiting for it", not "done".
   if (Array.isArray(ev.background_tasks)) {
-    ev.background_tasks = ev.background_tasks.slice(0, 10).map((t: any) => ({
-      id: t?.id,
-      type: t?.type,
-      status: t?.status,
-      description: clip(t?.description, 200),
-      command: clip(t?.command, 200),
-    }));
+    ev.background_tasks = ev.background_tasks
+      .slice(0, 10)
+      .map((t: RawTask) => ({
+        id: t?.id,
+        type: t?.type,
+        status: t?.status,
+        description: clip(t?.description, 200),
+        command: clip(t?.command, 200),
+      }));
   } else delete ev.background_tasks;
   for (const k of ['session_crons', 'permission_suggestions']) delete ev[k];
   return ev;
@@ -81,46 +96,37 @@ function shrink(ev: HookEvent) {
 export async function readEvent(): Promise<HookEvent | null> {
   const chunks: Buffer[] = [];
   for await (const c of process.stdin) chunks.push(c);
-  let ev: any;
+  let ev: unknown;
   try {
     ev = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
-    log('bad json');
+    log('bad json'); // not safeJsonParse: that can't tell bad JSON from a literal `null`
     return null;
   }
-  return ev && typeof ev === 'object' ? ev : null;
+  return ev && typeof ev === 'object' ? (ev as HookEvent) : null;
 }
-
-const safeParse = (text: string) => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-};
 
 /** Long-poll the server for the browser's allow/deny; prints the decision, or nothing (error, timeout, no answer). */
 async function awaitDecision(ev: HookEvent) {
   // a dead office server would mean an instant deny; revive it first (it reconnects to this session's runner on boot)
-  if (process.env.PAWGENTS_OFFICE_AUTOSTART !== '0') await ensureServer();
+  if (autostartEnabled()) await ensureServer();
   ev.await_decision = true;
   try {
-    const r = await fetch(`${BASE_URL}/hook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(ev),
-      signal: AbortSignal.timeout(DECISION_TIMEOUT_S * 1000 - 10_000), // give up before claude kills us
+    const r = await postHook(ev, {
+      timeoutMs: DECISION_TIMEOUT_S * 1000 - 10_000, // give up before claude kills us
     });
-    const d = safeParse((await r.text()).trim()); // the body is padded with heartbeat spaces
-    if (d?.decision === 'allow' || d?.decision === 'deny') {
+    const d = safeJsonParse((await r.text()).trim()); // the body is padded with heartbeat spaces (a DecisionReply)
+    const decision = field(d, 'decision'),
+      message = field(d, 'message');
+    if (decision === 'allow' || decision === 'deny') {
       const out = JSON.stringify(
         decisionOutput(
-          d.decision === 'allow',
-          typeof d.message === 'string' && d.message ? d.message : undefined,
+          decision === 'allow',
+          typeof message === 'string' && message ? message : undefined,
         ),
       );
       await new Promise((resolve) => process.stdout.write(out, resolve)); // flushed before process.exit (pipes are async on macOS)
-      log(`decide: ${d.decision} ${ev.tool_name || ''}`);
+      log(`decide: ${decision} ${ev.tool_name || ''}`);
     } else log(`decide: none ${ev.tool_name || ''}`);
   } catch (e) {
     log(`decide: none (${errMessage(e)})`);
@@ -138,12 +144,7 @@ export async function forward(
   if (decide && ev.hook_event_name === 'PermissionRequest')
     return awaitDecision(ev);
   try {
-    await fetch(`${BASE_URL}/hook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(ev),
-      signal: AbortSignal.timeout(1000),
-    });
+    await postHook(ev, { timeoutMs: 1000 });
     log(`sent ${ev.hook_event_name} ${ev.tool_name || ''}`);
   } catch (e) {
     log(`send failed: ${errMessage(e)}`);

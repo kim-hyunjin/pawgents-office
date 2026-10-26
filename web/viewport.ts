@@ -1,9 +1,10 @@
-import { clamp } from './anim.ts';
-import { WALL_RISE } from './layout.ts';
+import type { Rect } from '../shared/layout.ts';
+import { WALL_RISE } from '../shared/layout.ts';
+import { clamp } from '../shared/math.ts';
 import { $, storage } from './ui.ts';
 import { world } from './world.ts';
 
-export let S = 3; // whole-number scale the office is drawn at; a live binding office.js reads every frame
+export let S = 3; // whole-number scale the office is drawn at; a live binding office.ts reads every frame
 
 let canvas: HTMLCanvasElement,
   barEl: HTMLElement,
@@ -13,7 +14,7 @@ let canvas: HTMLCanvasElement,
   editorOpen: () => boolean;
 let PANEL_W = 0,
   PANEL_ANIM_MS = 0; // read from style.css (--panel-w / --panel-ms) so the two can't drift apart
-/** sideOpen(): the panel or the editor covers the right edge; editorOpen(): the editor (which has its own buttons). */
+/** Wire the canvas and the zoom buttons; once, before anything resizes. sideOpen(): the panel or the editor covers the right edge; editorOpen(): the editor (which has its own buttons). */
 export function initViewport(o: {
   canvas: HTMLCanvasElement;
   barEl: HTMLElement;
@@ -26,6 +27,13 @@ export function initViewport(o: {
   const css = getComputedStyle(document.documentElement);
   PANEL_W = parseInt(css.getPropertyValue('--panel-w'), 10);
   PANEL_ANIM_MS = parseInt(css.getPropertyValue('--panel-ms'), 10);
+  const z = Math.round(Number(storage.get('pawgents.zoom')));
+  zoom = z >= 1 ? Math.min(z, MAX_SCALE) : null;
+  zoomBtn = $('t-zoom');
+  $('t-zoom-out').addEventListener('click', () => setZoom(S - 1));
+  $('t-zoom-in').addEventListener('click', () => setZoom(S + 1));
+  zoomBtn.addEventListener('click', () => setZoom(null));
+  window.addEventListener('resize', resize);
 }
 // Width the open panel takes from the office. On narrow windows the panel just covers it.
 const panelRoom = () =>
@@ -36,11 +44,8 @@ const panelRoom = () =>
 // pin a zoom instead (remembered per browser); the zoom button between them goes back to fitting.
 const MIN_SCALE = 2,
   MAX_SCALE = 8;
-let zoom: number | null = null; // pinned scale, or null: fit the window
-{
-  const z = Math.round(Number(storage.get('pawgents.zoom')));
-  zoom = z >= 1 ? Math.min(z, MAX_SCALE) : null;
-}
+let zoom: number | null = null; // pinned scale, or null: fit the window (initViewport reads the saved one)
+let zoomBtn: HTMLElement;
 function fitScale() {
   if (zoom) return zoom;
   const ticker = $('ticker');
@@ -51,23 +56,17 @@ function fitScale() {
     (ticker.hidden ? 0 : ticker.offsetHeight) -
     barEl.offsetHeight;
   return clamp(
-    Math.floor(
-      Math.min(availW / world.view.geo.W, availH / world.view.geo.VIEW_H),
-    ),
+    Math.floor(Math.min(availW / world.view.W, availH / world.view.VIEW_H)),
     MIN_SCALE,
     MAX_SCALE,
   );
 }
-const zoomBtn = $('t-zoom');
 function setZoom(z: number | null) {
   zoom = z ? clamp(z, 1, MAX_SCALE) : null;
   if (zoom) storage.set('pawgents.zoom', zoom);
   else storage.remove('pawgents.zoom');
   resize();
 }
-$('t-zoom-out').addEventListener('click', () => setZoom(S - 1));
-$('t-zoom-in').addEventListener('click', () => setZoom(S + 1));
-zoomBtn.addEventListener('click', () => setZoom(null));
 function showZoom() {
   zoomBtn.textContent = `${S}×`;
   zoomBtn.classList.toggle('pinned', !!zoom);
@@ -90,8 +89,8 @@ export function resize() {
   clearTimeout(refitTimer);
   canvas.classList.remove('refit');
   S = fitScale();
-  canvas.width = Math.round(world.view.geo.W * S);
-  canvas.height = Math.round(world.view.geo.VIEW_H * S);
+  canvas.width = Math.round(world.view.W * S);
+  canvas.height = Math.round(world.view.VIEW_H * S);
   canvas.style.width = `${canvas.width}px`;
   canvas.style.height = `${canvas.height}px`;
   barEl.style.width = canvas.style.width;
@@ -110,24 +109,22 @@ export function refit() {
   const s = fitScale();
   if (s === S && !canvas.classList.contains('refit')) return;
   canvas.classList.add('refit');
-  canvas.style.width = `${Math.round(world.view.geo.W * s)}px`;
-  canvas.style.height = `${Math.round(world.view.geo.VIEW_H * s)}px`;
+  canvas.style.width = `${Math.round(world.view.W * s)}px`;
+  canvas.style.height = `${Math.round(world.view.VIEW_H * s)}px`;
   barEl.style.width = canvas.style.width;
   clearTimeout(refitTimer);
   refitTimer = setTimeout(resize, PANEL_ANIM_MS + 20);
 }
-window.addEventListener('resize', resize);
 
 /** Pointer position in office (unscaled) pixels; CSS size can differ from the backing store mid-refit. */
 export function officeXY(ev: MouseEvent): [number, number] {
   const k = canvas.width / (canvas.clientWidth || canvas.width);
   return [(ev.offsetX * k) / S, (ev.offsetY * k) / S - WALL_RISE];
 }
-/** Viewport position just under the HUD's left edge. */
-export function rosterAnchor() {
+/** Viewport position just under the HUD's left edge (`b`: the HUD button's rect, office px). */
+export function rosterAnchor(b: Rect) {
   const r = canvas.getBoundingClientRect(),
-    k = r.width / canvas.width,
-    b = world.hudBtn!;
+    k = r.width / canvas.width;
   return {
     left: r.left + b.x * S * k,
     top: r.top + (b.y + b.h + WALL_RISE + 2) * S * k,

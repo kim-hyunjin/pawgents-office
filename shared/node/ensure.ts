@@ -1,10 +1,17 @@
-// Start the pawgents-office server in the background if it isn't answering (shared by ensure-server.ts and send.ts --decide).
+// Start the pawgents-office server in the background if it isn't answering (shared by hooks/ensure-server.ts, hooks/send.ts --decide and scripts/open.ts).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { BASE_URL, DATA_DIR } from '../server/config.ts';
+import { sleep } from '../time.ts';
+import { BASE_URL, DATA_DIR } from './env.ts';
+import { SERVER_SCRIPT as SERVER } from './paths.ts';
 
-const SERVER = path.resolve(import.meta.dirname, '../server/index.ts');
+const START_POLL_MS = 200;
+const START_POLL_TRIES = 25;
+
+/** PAWGENTS_OFFICE_AUTOSTART=0 keeps hooks from starting the server. */
+export const autostartEnabled = () =>
+  process.env.PAWGENTS_OFFICE_AUTOSTART !== '0';
 
 export async function healthy() {
   try {
@@ -26,8 +33,8 @@ export async function ensureServer() {
     stdio: ['ignore', out, out],
     windowsHide: true,
   }).unref();
-  for (let i = 0; i < 25; i++) {
-    await new Promise((r) => setTimeout(r, 200));
+  for (let i = 0; i < START_POLL_TRIES; i++) {
+    await sleep(START_POLL_MS);
     if (await healthy()) return true;
   }
   return false;

@@ -2,7 +2,11 @@
 // Replays a fake Claude Code hook sequence against a running pawgents-office server,
 // so the office can be developed and demoed without a live claude session.
 //   bun scripts/demo.ts [--loop] [--speed 1] [--port 17777]
-import { PORT as DEFAULT_PORT, HOST } from '../server/config.ts';
+import type { Snapshot } from '../shared/api.ts';
+import { errMessage } from '../shared/errors.ts';
+import type { HookEvent, ToolInput } from '../shared/hook.ts';
+import { PORT as DEFAULT_PORT, HOST } from '../shared/node/env.ts';
+import { postHook } from '../shared/node/hook-client.ts';
 
 const args = process.argv.slice(2);
 const flag = (n: string, d: string | number) => {
@@ -19,8 +23,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms / SPEED));
 // Sessions that got a SessionStart but no SessionEnd yet. When the demo is stopped
 // (Ctrl+C, kill, or the terminal closing) every one of them is sent home, so the
 // office is not left with employees that will never clock out.
-type Ev = Record<string, any>; // a fake hook payload
-const active = new Map<string, Ev>(); // session_id -> base event fields
+type Ev = HookEvent & { session_id: string; hook_event_name: string }; // a fake hook payload
+type Base = Pick<
+  Ev,
+  'session_id' | 'cwd' | 'transcript_path' | 'permission_mode'
+>;
+const active = new Map<string, Base>(); // session_id -> base event fields
 let stopping = false;
 
 async function send(ev: Ev) {
@@ -34,21 +42,13 @@ async function send(ev: Ev) {
     });
   if (ev.hook_event_name === 'SessionEnd') active.delete(ev.session_id);
   try {
-    await fetch(`${BASE}/hook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(ev),
-    });
+    await postHook(ev, { baseUrl: BASE });
     const t = ev.tool_name ? ` ${ev.tool_name}` : '';
     console.log(
       `${ev.session_id.padEnd(12)} ${ev.hook_event_name}${t}${ev.agent_id ? ` (agent ${ev.agent_id})` : ''}`,
     );
   } catch (e) {
-    console.error(
-      'send failed:',
-      e instanceof Error ? e.message : e,
-      '— is the server running?',
-    );
+    console.error('send failed:', errMessage(e), '— is the server running?');
   }
 }
 
@@ -59,18 +59,22 @@ function script(
   finalText: string,
   model = 'claude-fable-5-1',
 ): [number, Ev][] {
-  const base = {
+  const base: Base = {
     session_id: sid,
     cwd,
     transcript_path: `/tmp/${sid}.jsonl`,
     permission_mode: 'default',
   };
-  const ev = (hook_event_name: string, extra: Ev = {}): Ev => ({
+  const ev = (hook_event_name: string, extra: HookEvent = {}): Ev => ({
     ...base,
     hook_event_name,
     ...extra,
   });
-  const tool = (name: string, input: Ev, extra: Ev = {}): [number, Ev][] => [
+  const tool = (
+    name: string,
+    input: ToolInput,
+    extra: HookEvent = {},
+  ): [number, Ev][] => [
     [
       400,
       ev('PreToolUse', {
@@ -257,21 +261,21 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) {
 // A previous demo that was killed hard (closed terminal, taskkill) never sent its
 // SessionEnd events; send those leftovers home before starting fresh ones.
 async function sweepLeftovers() {
-  let snap: any;
+  let snap: Partial<Snapshot>;
   try {
     snap = await (await fetch(`${BASE}/state`)).json();
   } catch {
     return;
   }
   const stale = Object.values(snap.sessions || {}).filter(
-    (s: any) => /^demo-/.test(s.id) && !s.ended,
+    (s) => /^demo-/.test(s.id) && !s.ended,
   );
   if (!stale.length) return;
   console.log(
     `sending ${stale.length} leftover demo session(s) from an earlier run home`,
   );
   await Promise.all(
-    stale.map((s: any) =>
+    stale.map((s) =>
       send({
         session_id: s.id,
         cwd: s.cwd,

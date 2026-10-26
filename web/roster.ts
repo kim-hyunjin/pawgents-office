@@ -1,10 +1,13 @@
 // Staff roster: a compact list of every working cat under the HUD — state at a glance, click a row for the
 // detail panel, or send one home (two clicks, like the panel's 퇴근 button). Toggled from the HUD's "목록" button.
-import type { SessionSnapshot } from '../server/types.ts';
+
+import type { SessionSnapshot } from '../shared/api.ts';
+import { isBusyState } from '../shared/model.ts';
 import { closeSession } from './api.ts';
+import type { Palette } from './sprites.ts';
 import { FAMILIES, familyOf, sprite } from './sprites.ts';
 import {
-  BUSY,
+  armConfirm,
   esc,
   pic,
   quitTitle,
@@ -12,11 +15,10 @@ import {
   STATE_LABEL,
   toolText,
 } from './ui.ts';
-import type { world as World } from './world.ts';
 
 const ICON_ZOOM = 2;
 
-type WorldState = typeof World;
+type Sessions = Map<string, SessionSnapshot>;
 interface Row {
   li: HTMLLIElement;
   icon: HTMLCanvasElement;
@@ -24,7 +26,7 @@ interface Row {
   badge: HTMLElement;
   line: HTMLElement;
   quit: HTMLButtonElement;
-  pal: unknown;
+  pal: Palette | null;
   session?: SessionSnapshot;
 }
 
@@ -34,25 +36,34 @@ export class Roster {
   countEl: HTMLElement;
   onPick: (id: string) => void;
   placeOf: (id: string) => string;
+  palOf: (id: string) => Palette | undefined;
   rows = new Map<string, Row>(); // id -> row elements
-  armed: string | null = null; // id whose 퇴근 button is waiting for the confirming click
-  armTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+  arm = armConfirm<string>(4000, (id) => this.refreshRow(id)); // id whose 퇴근 button waits for the confirming click
   pending = new Set<string>(); // ids with a close request in flight or sent
   failed = new Map<string, string>(); // id -> error message, shown in the row for a few seconds
-  lastWorld: WorldState | undefined = undefined;
-  /** onPick(id): open that session's detail panel. placeOf(id): where its cat is right now ('' = at its desk). */
+  lastSessions: Sessions | undefined = undefined;
+  /**
+   * onPick(id): open that session's detail panel. placeOf(id): where its cat is right now ('' = at its desk).
+   * palOf(id): its cat's look, once it has a cat on screen.
+   */
   constructor(
     el: HTMLElement,
     {
       onPick,
       placeOf,
-    }: { onPick: (id: string) => void; placeOf: (id: string) => string },
+      palOf,
+    }: {
+      onPick: (id: string) => void;
+      placeOf: (id: string) => string;
+      palOf: (id: string) => Palette | undefined;
+    },
   ) {
     this.el = el;
     this.list = el.querySelector<HTMLElement>('#rs-list')!;
     this.countEl = el.querySelector<HTMLElement>('#rs-count')!;
     this.onPick = onPick;
     this.placeOf = placeOf;
+    this.palOf = palOf;
     el.querySelector('#rs-close')!.addEventListener('click', () =>
       this.close(),
     );
@@ -60,26 +71,26 @@ export class Roster {
   get isOpen() {
     return !this.el.hidden;
   }
-  toggle(world: WorldState, anchor: { left: number; top: number }) {
+  toggle(sessions: Sessions, anchor: { left: number; top: number }) {
     if (this.isOpen) this.close();
-    else this.open(world, anchor);
+    else this.open(sessions, anchor);
   }
   /** anchor: viewport px {left, top} just under the HUD. */
-  open(world: WorldState, anchor: { left: number; top: number }) {
+  open(sessions: Sessions, anchor: { left: number; top: number }) {
     this.el.style.left = `${Math.round(anchor.left)}px`;
     this.el.style.top = `${Math.round(anchor.top)}px`;
     this.el.hidden = false;
-    this.update(world);
+    this.update(sessions);
   }
   close() {
     this.el.hidden = true;
     this.disarm();
   }
 
-  update(world: WorldState) {
-    this.lastWorld = world;
+  update(sessions: Sessions) {
+    this.lastSessions = sessions;
     if (!this.isOpen) return;
-    const live = [...world.sessions.values()]
+    const live = [...sessions.values()]
       .filter((s) => !s.ended)
       .sort(
         (a, b) =>
@@ -105,7 +116,7 @@ export class Roster {
     if (live.length && empty) empty.remove();
     live.forEach((s, i) => {
       const r = this.rows.get(s.id) || this.makeRow(s);
-      this.fill(r, s, world);
+      this.fill(r, s);
       if (this.list.children[i] !== r.li)
         this.list.insertBefore(r.li, this.list.children[i] || null);
     });
@@ -138,9 +149,9 @@ export class Roster {
     return r;
   }
 
-  fill(r: Row, s: SessionSnapshot, world: WorldState) {
+  fill(r: Row, s: SessionSnapshot) {
     r.session = s;
-    const pal = world.ents.get(s.id)?.pal;
+    const pal = this.palOf(s.id);
     if (pal && pal !== r.pal) {
       // (re)draw the icon when the cat's palette is known or changes
       r.pal = pal;
@@ -173,7 +184,7 @@ export class Roster {
       r.quit.textContent = '퇴근 중…';
       r.quit.disabled = true;
       r.quit.className = 'quit';
-    } else if (this.armed === s.id) {
+    } else if (this.arm.is(s.id)) {
       r.quit.textContent = busy ? '강제 종료?' : '정말 퇴근?';
       r.quit.disabled = false;
       r.quit.className = 'quit armed';
@@ -183,23 +194,14 @@ export class Roster {
       r.quit.className = 'quit';
     }
     r.quit.title = busy
-      ? `${BUSY.has(s.state) ? '작업 중' : '응답 대기'} — ${quitTitle(s, true)}`
+      ? `${isBusyState(s.state) ? '작업 중' : '응답 대기'} — ${quitTitle(s, true)}`
       : quitTitle(s, false);
   }
 
   /** First click arms (4s), second sends: idle → a clean end, otherwise a forced close (same rule as the panel). */
   async quit(s: SessionSnapshot | undefined) {
     if (!s || this.pending.has(s.id)) return;
-    if (this.armed !== s.id) {
-      this.disarm();
-      this.armed = s.id;
-      this.armTimer = setTimeout(() => {
-        this.disarm();
-        this.refreshRow(s.id);
-      }, 4000);
-      this.refreshRow(s.id);
-      return;
-    }
+    if (!this.arm.click(s.id)) return;
     this.disarm();
     this.pending.add(s.id);
     this.refreshRow(s.id);
@@ -221,12 +223,10 @@ export class Roster {
     this.refreshRow(s.id);
   }
   disarm() {
-    clearTimeout(this.armTimer);
-    this.armed = null;
+    this.arm.disarm();
   }
   refreshRow(id: string) {
     const r = this.rows.get(id);
-    if (r && r.session && this.lastWorld)
-      this.fill(r, r.session, this.lastWorld);
+    if (r && r.session && this.lastSessions) this.fill(r, r.session);
   }
 }
