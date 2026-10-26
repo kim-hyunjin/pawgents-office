@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { codedError, errMessage } from '../../shared/errors.ts';
+import { normalizePath, samePath as samePathKey } from '../infra/path.ts';
 import { repoOf } from '../repo.ts';
 import type { Store } from '../store.ts';
 import { isDir } from '../util.ts';
@@ -26,12 +27,7 @@ const gitFailed = (e: unknown, fallback = '') =>
 
 const run = promisify(execFile);
 // git prints forward slashes; compare ignoring slash style, trailing slash and (on Windows) case
-const norm = (p: unknown) => {
-  const n = String(p || '')
-    .replace(/\\/g, '/')
-    .replace(/\/+$/, '');
-  return process.platform === 'win32' ? n.toLowerCase() : n;
-};
+const norm = (p: unknown) => normalizePath(p);
 
 /** Parse `git worktree list --porcelain` into launcher rows; bare and prunable entries can't host a session. */
 export function parseWorktrees(text: unknown, repoRoot: string): WorktreeRow[] {
@@ -106,7 +102,7 @@ export async function listGitWorktrees(roots: string[]) {
   );
 }
 
-export const samePath = (a: unknown, b: unknown) => norm(a) === norm(b);
+export const samePath = (a: unknown, b: unknown) => samePathKey(a, b);
 
 /** Worktrees of the repo containing `dir`, in git's order: the main worktree (real-case path) comes first unless bare. */
 export async function worktreesAt(dir: string) {

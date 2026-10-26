@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { foldCase } from './infra/path.ts';
 
 interface Repo {
   key: string;
@@ -31,7 +32,7 @@ export function repoOf(cwd?: string | null) {
       const root = path.basename(dir) === '.git' ? path.dirname(dir) : dir; // bare repos have no .git
       const norm = path.resolve(root);
       r = {
-        key: process.platform === 'win32' ? norm.toLowerCase() : norm,
+        key: foldCase(norm),
         name: path.basename(norm).replace(/\.git$/, ''),
       };
     }
