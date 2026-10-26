@@ -50,7 +50,7 @@ export const skinRoutes = ({ skins }: { skins: SkinActions }): Route[] => [
   [
     'GET',
     /^\/skins\/([a-z0-9]{10})\.png$/,
-    ({ res, params: [id] }) => {
+    ({ res, params: [id = ''] }) => {
       const file = skins.imageOf(id);
       if (!file) {
         notFound(res);
@@ -67,7 +67,7 @@ export const skinRoutes = ({ skins }: { skins: SkinActions }): Route[] => [
   [
     'POST',
     /^\/skins\/([a-z0-9]{10})\/delete$/,
-    async ({ req, res, params: [id] }) => {
+    async ({ req, res, params: [id = ''] }) => {
       if (!(await readJson(req, res))) return; // body unused, but a same-origin JSON POST is the CSRF guard
       try {
         skins.remove(id);

@@ -91,7 +91,8 @@ function claimPendingAgent(s: Session, agent: Subagent) {
   );
   if (idx < 0 && s.pendingAgents.length) idx = 0;
   if (idx < 0) return;
-  const p = s.pendingAgents.splice(idx, 1)[0];
+  const [p] = s.pendingAgents.splice(idx, 1);
+  if (!p) return;
   if (!agent.description) agent.description = p.description || null;
   agent.task = p.task || null;
   agent.toolUseId = p.toolUseId;
@@ -364,7 +365,8 @@ function reduce(
   const ent = agent || s;
   const who = agent ? `[${agent.type || 'agent'}] ` : '';
 
-  const handler = Object.hasOwn(HANDLERS, name) ? HANDLERS[name] : other;
+  const handler =
+    (Object.hasOwn(HANDLERS, name) ? HANDLERS[name] : undefined) ?? other;
   handler({ store, s, ev, name, now, agentId, agent, ent, who, effects });
   // a dialog stays up while parallel tool calls start and finish: their events must not hide it
   if (s.asking && !s.ended) store.setState(s, 'waiting');

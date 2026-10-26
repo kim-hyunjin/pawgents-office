@@ -13,7 +13,7 @@ export function officeRoutes({
   offices: OfficeActions;
 }): Route[] {
   // The office routes read the body first, so 403 / 413 / 400 win over a 404 for an unknown office.
-  const officeCtx = async ({ req, res, params: [id] }: RouteCtx) => {
+  const officeCtx = async ({ req, res, params: [id = ''] }: RouteCtx) => {
     const office = store.office(id);
     const data = await readJson(req, res);
     if (!data) return null;

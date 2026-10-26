@@ -26,7 +26,7 @@ export const sessionRoutes = ({
   [
     'GET',
     /^\/sessions\/([^/]+)\/log$/,
-    ({ res, params: [id] }) => {
+    ({ res, params: [id = ''] }) => {
       const s = findSession(store, res, id);
       if (!s) return;
       json(res, 200, sessions.openLog(s) satisfies LogReply);
@@ -35,7 +35,7 @@ export const sessionRoutes = ({
   [
     'GET',
     /^\/sessions\/([^/]+)\/reply$/,
-    ({ res, url, params: [id] }) => {
+    ({ res, url, params: [id = ''] }) => {
       const s = findSession(store, res, id);
       if (!s) return;
       const agentId = url.searchParams.get('agent');
@@ -55,7 +55,7 @@ export const sessionRoutes = ({
   [
     'POST',
     /^\/sessions\/([^/]+)\/prompt$/,
-    async ({ req, res, params: [id] }) => {
+    async ({ req, res, params: [id = ''] }) => {
       const data = await readJson(req, res);
       if (!data) return;
       const s = findSession(store, res, id, { live: true, msg: SESSION_GONE });
@@ -80,7 +80,7 @@ export const sessionRoutes = ({
   [
     'POST',
     /^\/sessions\/([^/]+)\/close$/,
-    async ({ req, res, params: [id] }) => {
+    async ({ req, res, params: [id = ''] }) => {
       const data = await readJson(req, res);
       if (!data) return;
       const s = findSession(store, res, id, {
@@ -99,7 +99,7 @@ export const sessionRoutes = ({
   [
     'POST',
     /^\/sessions\/([^/]+)\/mode$/,
-    async ({ req, res, params: [id] }) => {
+    async ({ req, res, params: [id = ''] }) => {
       const data = await readJson(req, res);
       if (!data) return;
       const mode = String(data.mode ?? '');
@@ -122,7 +122,7 @@ export const sessionRoutes = ({
   [
     'POST',
     /^\/sessions\/([^/]+)\/permission$/,
-    async ({ req, res, params: [id] }) => {
+    async ({ req, res, params: [id = ''] }) => {
       const data = await readJson(req, res);
       if (!data) return;
       if (typeof data.id !== 'string' || typeof data.allow !== 'boolean') {

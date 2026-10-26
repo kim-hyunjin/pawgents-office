@@ -171,11 +171,11 @@ function probeClaude(c: ClaudeCmd): Promise<ClaudeProbe> {
       [...c.prefix, '--version'].map((a) => shellQuote(c, a)),
       { timeout: VERSION_TIMEOUT_MS, windowsHide: true, shell: c.shell },
       (e, stdout, stderr) => {
-        const v = /(\d+\.\d+\.\d+)/.exec(String(stdout));
-        if (!e && v)
+        const version = /(\d+\.\d+\.\d+)/.exec(String(stdout))?.[1];
+        if (!e && version)
           resolve({
             available: true,
-            version: v[1],
+            version,
             bin: c.prefix[0] || c.file,
           });
         else

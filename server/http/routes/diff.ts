@@ -14,7 +14,7 @@ export const diffRoutes = ({
   [
     'GET',
     /^\/sessions\/([^/]+)\/diff$/,
-    async ({ req, res, url, params: [id] }) => {
+    async ({ req, res, url, params: [id = ''] }) => {
       if (!isOwnHost(req)) {
         json(res, 403, { error: 'forbidden' });
         return;

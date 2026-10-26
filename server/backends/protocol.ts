@@ -248,7 +248,8 @@ export function versionAtLeast(v: unknown, min: string) {
   const a = /(\d+)\.(\d+)\.(\d+)/.exec(String(v ?? '')),
     b = /(\d+)\.(\d+)\.(\d+)/.exec(min);
   if (!a || !b) return false;
-  for (let i = 1; i <= 3; i++) if (+a[i] !== +b[i]) return +a[i] > +b[i];
+  for (let i = 1; i <= 3; i++)
+    if (Number(a[i]) !== Number(b[i])) return Number(a[i]) > Number(b[i]);
   return true;
 }
 

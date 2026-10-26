@@ -169,16 +169,16 @@ export async function launchHeadless(
     ),
   );
   const sessions: (string | undefined)[] = []; // undefined: gone again by the time launch returned
-  results.forEach((r, i) => {
+  dirs.forEach((dir, i) => {
+    const r = results[i]; // allSettled answers once per dir, in order
+    if (!r) return;
     if (r.status === 'fulfilled') {
       sessions.push(r.value?.id);
       logger.info(
-        `[web] launch claude (headless) in ${dirs[i]}${prompt ? ': ' + preview(prompt) : ''}`,
+        `[web] launch claude (headless) in ${dir}${prompt ? ': ' + preview(prompt) : ''}`,
       );
     } else
-      errors.push(
-        `${path.basename(dirs[i])}: ${r.reason?.message || r.reason}`,
-      );
+      errors.push(`${path.basename(dir)}: ${r.reason?.message || r.reason}`);
   });
   if (!sessions.length)
     throw failed(errors.join('\n') || '시작하지 못했습니다.');

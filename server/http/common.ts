@@ -160,9 +160,9 @@ export const ERROR_STATUS: Record<string, number> = {
 };
 /** `code` may be anything a caught error carries (a git exit code is a number): unknown ones are 502. */
 export const errorStatus = (code?: unknown) =>
-  typeof code === 'string' && Object.hasOwn(ERROR_STATUS, code)
+  (typeof code === 'string' && Object.hasOwn(ERROR_STATUS, code)
     ? ERROR_STATUS[code]
-    : 502;
+    : undefined) ?? 502;
 /** The HTTP status of a use case's refusal (app/errors.ts). */
 export const REFUSAL_STATUS: Record<Refusal, number> = {
   invalid: 400,

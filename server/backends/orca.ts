@@ -178,7 +178,7 @@ export async function listWorktrees(): Promise<OrcaWorktreeRow[]> {
     )
     .map((w) => ({
       id: w.id,
-      repoId: w.repoId || String(w.id).split('::')[0],
+      repoId: w.repoId || String(w.id).replace(/::[\s\S]*$/, ''), // `<repoId>::<path>`
       head: w.head || '',
       path: w.path,
       repo: path.basename(w.path),
@@ -218,14 +218,16 @@ async function resolveTerminal(store: Store, s: Session): Promise<Terminal> {
       !o.orcaTerminal &&
       cands.some((t) => within(o.cwd, t.worktreePath)),
   );
-  if (cands.length === 1 && !rivals.length) return cands[0];
+  const [only] = cands;
+  if (only && cands.length === 1 && !rivals.length) return only;
   const title = normTitle(s.title);
   if (title && cands.length) {
     const hits = cands.filter((t) => normTitle(t.title) === title);
     const twin = [...store.sessions.values()].some(
       (o) => o !== s && !o.ended && normTitle(o.title) === title,
     );
-    if (hits.length === 1 && !twin) return hits[0];
+    const [hit] = hits;
+    if (hit && hits.length === 1 && !twin) return hit;
   }
   throw codedError(
     cands.length
@@ -354,35 +356,32 @@ const DIALOG_FOOTER_RE = /^\s*(Esc to cancel|Enter to select)\b/i;
 
 /** The numbered option list ending the screen: { question, options: [{ n, label }] }, or null when there is none. */
 export function parseDialog(lines: string[]): Dialog | null {
+  const line = (k: number) => lines[k] ?? ''; // only called with 0 <= k < lines.length
   let end = lines.length;
   while (
     end > 0 &&
-    (!lines[end - 1].trim() || DIALOG_FOOTER_RE.test(lines[end - 1]))
+    (!line(end - 1).trim() || DIALOG_FOOTER_RE.test(line(end - 1)))
   )
     end--;
   const options: Dialog['options'] = [];
   let i = end - 1;
   for (; i >= 0; i--) {
-    const m = OPTION_RE.exec(lines[i]);
+    const m = OPTION_RE.exec(line(i));
     if (m) {
-      options.unshift({ n: Number(m[1]), label: m[2] });
-      if (m[1] === '1') {
+      const [, n = '', label = ''] = m;
+      options.unshift({ n: Number(n), label });
+      if (n === '1') {
         i--;
         break;
       }
       continue;
     }
-    if (/^\s{4,}\S/.test(lines[i])) continue; // a wrapped label or an option's description
+    if (/^\s{4,}\S/.test(line(i))) continue; // a wrapped label or an option's description
     break;
   }
-  if (
-    !options.length ||
-    options[0].n !== 1 ||
-    options.some((o, k) => o.n !== k + 1)
-  )
-    return null;
-  while (i >= 0 && !lines[i].trim()) i--;
-  return { question: i >= 0 ? lines[i].trim() : '', options };
+  if (options[0]?.n !== 1 || options.some((o, k) => o.n !== k + 1)) return null;
+  while (i >= 0 && !line(i).trim()) i--;
+  return { question: i >= 0 ? line(i).trim() : '', options };
 }
 
 /** The key that answers the dialog, or null when it has no plain Yes / No (unknown dialog: leave it to the user). */

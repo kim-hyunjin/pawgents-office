@@ -99,7 +99,7 @@ export async function fileDiff(
     ])
   ).out.trim();
   if (!last) return { rel: spec, status: 'clean', patch: '', truncated: false };
-  const [hash, subject = ''] = last.split('\0');
+  const [hash = '', subject = ''] = last.split('\0');
   const shown = await git(root, [
     'show',
     '--no-color',
@@ -125,10 +125,10 @@ export function parseStatus(z: string) {
   const parts = z.split('\0'),
     out: { rel: string; status: string }[] = [];
   for (let i = 0; i < parts.length; i++) {
-    const e = parts[i];
+    const e = parts[i] ?? '';
     if (e.length < 4) continue;
-    const x = e[0],
-      y = e[1],
+    const x = e.charAt(0),
+      y = e.charAt(1),
       rel = e.slice(3);
     if (x === 'R' || x === 'C') i++; // the next entry is the source path
     out.push({ rel, status: x === '?' ? '?' : y !== ' ' ? y : x });
