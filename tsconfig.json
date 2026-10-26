@@ -12,6 +12,7 @@
     "noImplicitOverride": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true
