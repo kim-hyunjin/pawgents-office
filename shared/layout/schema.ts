@@ -128,7 +128,9 @@ export const ROOM_TYPES: Record<string, RoomTypeDef> = {
  * Furniture. w × h is the footprint the editor moves and overlap-checks; `floor` items (rugs) lie under the rest,
  * `wall` items hang on the top wall (row 0). Seats and spots are derived in compile().
  */
-export const ITEM_KINDS: Record<string, ItemKindDef> = {
+/** Names the kinds while typing each as an ItemKindDef. */
+const kinds = <K extends string>(o: Record<K, ItemKindDef>) => o;
+const KINDS = kinds({
   deskPod: { label: '책상 (2인)', w: 4, h: 2 },
   meetingTable: { label: '회의 테이블', w: 6, h: 4 },
   reception: { label: '안내 데스크', w: 3, h: 2, max: 1 },
@@ -146,7 +148,9 @@ export const ITEM_KINDS: Record<string, ItemKindDef> = {
   plant: { label: '화분', w: 1, h: 1 },
   window: { label: '창문', w: 6, h: 1, wall: true },
   sign: { label: '간판', w: 5, h: 1, wall: true, max: 1 },
-};
+});
+/** The kinds above by name (`ITEM_KINDS.deskPod`), and any kind string looked up (maybe not one: undefined). */
+export const ITEM_KINDS: typeof KINDS & Record<string, ItemKindDef> = KINDS;
 
 /**
  * The default office: one room of each type. Meeting room, open office and library along the top; a corridor
@@ -233,14 +237,16 @@ export const DEFAULT_OFFICE: Layout = {
     },
   ],
   items: [
-    ...[
-      [9, 2],
-      [14, 2],
-      [19, 2],
-      [9, 5],
-      [14, 5],
-      [19, 5],
-    ].map(([x, y], i) => ({ id: `d${i + 1}`, kind: 'deskPod', x, y })),
+    ...(
+      [
+        [9, 2],
+        [14, 2],
+        [19, 2],
+        [9, 5],
+        [14, 5],
+        [19, 5],
+      ] satisfies [number, number][]
+    ).map(([x, y], i) => ({ id: `d${i + 1}`, kind: 'deskPod', x, y })),
     { id: 't1', kind: 'meetingTable', x: 1, y: 2 },
     { id: 'i1', kind: 'reception', x: 2, y: 11 },
     { id: 'i2', kind: 'rug', x: 10, y: 12 },
@@ -254,18 +260,20 @@ export const DEFAULT_OFFICE: Layout = {
     { id: 'i10', kind: 'box', x: 29, y: 17 },
     { id: 'i11', kind: 'wheel', x: 28, y: 14 },
     { id: 'i12', kind: 'cushion', x: 24, y: 17 },
-    ...[
-      [1, 11],
-      [7, 17],
-      [9, 17],
-      [17, 17],
-      [21, 17],
-      [30, 11],
-      [8, 7],
-      [23, 7],
-      [30, 1],
-      [1, 7],
-    ].map(([x, y], i) => ({ id: `p${i + 1}`, kind: 'plant', x, y })),
+    ...(
+      [
+        [1, 11],
+        [7, 17],
+        [9, 17],
+        [17, 17],
+        [21, 17],
+        [30, 11],
+        [8, 7],
+        [23, 7],
+        [30, 1],
+        [1, 7],
+      ] satisfies [number, number][]
+    ).map(([x, y], i) => ({ id: `p${i + 1}`, kind: 'plant', x, y })),
     { id: 'w1', kind: 'window', x: 14, y: 0 },
     { id: 'w2', kind: 'sign', x: 21, y: 0 },
   ],
@@ -307,12 +315,13 @@ export function doorFor(office: Layout, tx: number, ty: number): FrontDoor {
   const { w, h } = office;
   const x = Math.max(0, Math.min(w - 1, tx)),
     y = Math.max(0, Math.min(h - 1, ty));
-  const side = Object.entries({
-    left: x,
-    right: w - 1 - x,
-    top: y,
-    bottom: h - 1 - y,
-  }).sort((a, b) => a[1] - b[1])[0][0];
+  const dist: [string, number][] = [
+    ['left', x],
+    ['right', w - 1 - x],
+    ['top', y],
+    ['bottom', h - 1 - y],
+  ];
+  const [side] = dist.reduce((best, d) => (d[1] < best[1] ? d : best)); // the first of the closest
   return isHorizontal(side)
     ? { side, x: Math.max(1, Math.min(w - 2, x)) }
     : { side, y: Math.max(1, Math.min(h - 2, y)) };

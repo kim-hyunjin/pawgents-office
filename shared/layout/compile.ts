@@ -215,12 +215,10 @@ function spotPass(
     const row: number[] = [];
     for (let x = r.x; x < r.x + r.w; x++) if (!isBlocked(x, r.y)) row.push(x);
     const n = Math.min(3, row.length);
-    for (let i = 0; i < n; i++)
-      play.push({
-        x: row[n === 1 ? 0 : Math.round((i * (row.length - 1)) / (n - 1))],
-        y: r.y,
-        act: 'look',
-      });
+    for (let i = 0; i < n; i++) {
+      const x = row[n === 1 ? 0 : Math.round((i * (row.length - 1)) / (n - 1))];
+      if (x !== undefined) play.push({ x, y: r.y, act: 'look' }); // always: the index is within row
+    }
   }
   const lounge: Spot[] = [];
   for (const s of f.sofas)
@@ -327,6 +325,7 @@ export function compile(office: Layout) {
     /** Standing spots in the aisle beside a desk's chair. */
     nearDeskSpots(i: number): Pt[] {
       const d = desks[i];
+      if (!d) return [];
       return [
         { x: d.aisle, y: d.y },
         { x: d.aisle, y: d.y - 1 },
@@ -346,9 +345,11 @@ export function compile(office: Layout) {
       );
       const key = (x: number, y: number) => y * MAP_W + x;
       const target = key(to.x, to.y);
-      if (!(prev[target] >= 0)) return null;
+      if (!((prev[target] ?? -1) >= 0)) return null;
       const path: Pt[] = [];
-      for (let k = target; k !== key(from.x, from.y); k = prev[k])
+      const start = key(from.x, from.y);
+      // every reached tile's predecessor is reached too, back to the start (which points at itself)
+      for (let k = target; k !== start; k = prev[k] ?? start)
         path.push({ x: k % MAP_W, y: (k / MAP_W) | 0 });
       return path.reverse();
     },

@@ -52,12 +52,12 @@ export function bfs(
 ): Int32Array {
   const key = (x: number, y: number) => y * w + x;
   const prev = new Int32Array(w * h).fill(-1);
-  const q = [key(from.x, from.y)];
-  prev[q[0]] = q[0];
+  const start = key(from.x, from.y);
+  const q = [start];
+  prev[start] = start;
   const target = to ? key(to.x, to.y) : -1;
-  let head = 0;
-  while (head < q.length) {
-    const k = q[head++];
+  for (const k of q) {
+    // the queue grows while it is walked: an array iterator sees the new tail
     if (k === target) break;
     const x = k % w,
       y = (k / w) | 0;

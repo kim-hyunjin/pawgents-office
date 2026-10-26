@@ -2,7 +2,7 @@
 import { MAX_NAME_CHARS } from '../limits.ts';
 import { compile } from './compile.ts';
 import { bfs } from './grid.ts';
-import type { Layout, Pt, Rect, WallError } from './schema.ts';
+import type { Item, Layout, Pt, Rect, WallError } from './schema.ts';
 import {
   DOOR_SIDES,
   hasWalls,
@@ -18,6 +18,12 @@ import {
   ROOM_TYPES,
   ringRect,
 } from './schema.ts';
+
+/** Every unordered pair of `xs`, in order: (0,1), (0,2) … (1,2) … */
+function* pairs<T>(xs: readonly T[]): Generator<[T, T]> {
+  for (const [i, a] of xs.entries())
+    for (const b of xs.slice(i + 1)) yield [a, b];
+}
 
 /**
  * Problems that would break the office, as [{ msg, tiles: [{x,y}] }] (empty = fine). Shapes are checked first;
@@ -117,25 +123,22 @@ export function validate(office: Layout | null | undefined): WallError[] {
   const good = rooms.filter(
     (r) => ROOM_TYPES[r?.type] && [r.x, r.y, r.w, r.h].every(int),
   );
-  for (let i = 0; i < good.length; i++)
-    for (let j = i + 1; j < good.length; j++) {
-      const a = good[i],
-        b = good[j];
-      if (overlap(a, b)) {
-        err(`${a.name}과(와) ${b.name}이(가) 겹칩니다.`, both(a, b));
-        continue;
-      }
-      // a walled room's ring can't run through another room
-      for (const [x, y] of [
-        [a, b],
-        [b, a],
-      ])
-        if (hasWalls(x) && overlap(ringRect(x), y))
-          err(
-            `${x.name}의 벽이 ${y.name}을(를) 지나갑니다.`,
-            both(ringRect(x), y),
-          );
+  for (const [a, b] of pairs(good)) {
+    if (overlap(a, b)) {
+      err(`${a.name}과(와) ${b.name}이(가) 겹칩니다.`, both(a, b));
+      continue;
     }
+    // a walled room's ring can't run through another room
+    for (const [x, y] of [
+      [a, b],
+      [b, a],
+    ] as const)
+      if (hasWalls(x) && overlap(ringRect(x), y))
+        err(
+          `${x.name}의 벽이 ${y.name}을(를) 지나갑니다.`,
+          both(ringRect(x), y),
+        );
+  }
   if (!good.some((r) => r.type === 'lobby'))
     err('로비가 하나는 있어야 합니다.');
 
@@ -169,26 +172,24 @@ export function validate(office: Layout | null | undefined): WallError[] {
         cells(r).filter((c) => c.x >= 0 && c.y >= 0 && c.x < w && c.y < h),
       );
   }
-  for (const [kind, n] of Object.entries(count))
-    if (ITEM_KINDS[kind].max && n > ITEM_KINDS[kind].max)
-      err(
-        `${ITEM_KINDS[kind].label}은(는) ${ITEM_KINDS[kind].max}개까지 둘 수 있습니다.`,
-      );
+  for (const [kind, n] of Object.entries(count)) {
+    const k = ITEM_KINDS[kind]; // counted only once known
+    if (k?.max && n > k.max)
+      err(`${k.label}은(는) ${k.max}개까지 둘 수 있습니다.`);
+  }
   if (!count.deskPod) err('책상이 하나는 있어야 합니다.');
   if (errs.length) return errs;
 
   // furniture vs furniture (same layer), and vs walls
-  const solid = items.filter((it) => !ITEM_KINDS[it.kind].floor);
-  for (let i = 0; i < solid.length; i++)
-    for (let j = i + 1; j < solid.length; j++) {
-      const a = itemRect(solid[i]),
-        b = itemRect(solid[j]);
-      if (overlap(a, b))
-        err(
-          `${ITEM_KINDS[solid[i].kind].label}과(와) ${ITEM_KINDS[solid[j].kind].label}이(가) 겹칩니다.`,
-          both(a, b),
-        );
-    }
+  // from here on every item's kind is known (an unknown one returned above)
+  const label = (it: Item) => ITEM_KINDS[it.kind]?.label;
+  const solid = items.filter((it) => !ITEM_KINDS[it.kind]?.floor);
+  for (const [p, q] of pairs(solid)) {
+    const a = itemRect(p),
+      b = itemRect(q);
+    if (overlap(a, b))
+      err(`${label(p)}과(와) ${label(q)}이(가) 겹칩니다.`, both(a, b));
+  }
   const geo = compile(office);
   const wallAt = new Set(
     geo.wallTiles
@@ -196,16 +197,15 @@ export function validate(office: Layout | null | undefined): WallError[] {
       .map((t) => `${t.x},${t.y}`),
   );
   for (const it of items) {
-    if (ITEM_KINDS[it.kind].wall) {
+    if (ITEM_KINDS[it.kind]?.wall) {
       if (geo.door.side === 'top' && inRect(itemRect(it), geo.door.x, 0))
-        err(`${ITEM_KINDS[it.kind].label}이(가) 정문을 가립니다.`, [geo.door]);
+        err(`${label(it)}이(가) 정문을 가립니다.`, [geo.door]);
       continue;
     }
     const hit = cells(itemRect(it)).filter(
       (c) => wallAt.has(`${c.x},${c.y}`) || geo.isDoor(c.x, c.y),
     );
-    if (hit.length)
-      err(`${ITEM_KINDS[it.kind].label}이(가) 벽이나 문 위에 있습니다.`, hit);
+    if (hit.length) err(`${label(it)}이(가) 벽이나 문 위에 있습니다.`, hit);
   }
   if (geo.isBlocked(geo.spawn.x, geo.spawn.y))
     err('정문 앞이 막혀 있습니다.', [geo.spawn]);
@@ -217,12 +217,14 @@ export function validate(office: Layout | null | undefined): WallError[] {
   const reach = (p: Pt) =>
     !geo.isBlocked(p.x, p.y)
       ? seen(p.y * w + p.x)
-      : [
-          [1, 0],
-          [-1, 0],
-          [0, 1],
-          [0, -1],
-        ].some(([dx, dy]) => seen((p.y + dy) * w + p.x + dx));
+      : (
+          [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+          ] as const
+        ).some(([dx, dy]) => seen((p.y + dy) * w + p.x + dx));
   const cut = (label: string, spots: Pt[]) => {
     const bad = spots.filter((p) => !reach(p));
     if (bad.length) err(`정문에서 갈 수 없는 ${label}이(가) 있습니다.`, bad);
