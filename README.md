@@ -43,7 +43,8 @@ bun run demo              # Claude 없이 가짜 직원 2명으로 화면 확인
 bun run uninstall-hooks   # hook 제거 (settings.json 원복)
 bun run test          # bun test: 공유 상수·레이아웃 순수 함수, 파일 diff·헤드리스 백엔드 테스트
 bun run typecheck     # tsc --noEmit (strict)
-bun run lint          # biome lint (포맷터는 꺼 둠: 기존 코드 스타일 유지)
+bun run lint          # biome check: 린트 + 포맷 + import 정렬 검사
+bun run format        # biome check --write: 포맷과 import 정렬, 안전한 수정을 적용
 ```
 
 `bun server/index.ts`, `bun hooks/install.ts` 처럼 직접 실행해도 됩니다.

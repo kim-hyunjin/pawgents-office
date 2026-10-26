@@ -13,7 +13,8 @@
     "install-hooks": "bun hooks/install.ts",
     "uninstall-hooks": "bun hooks/uninstall.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "biome lint",
+    "lint": "biome check",
+    "format": "biome check --write",
     "test": "bun test test/"
   },
   "devDependencies": {
