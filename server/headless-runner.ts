@@ -17,6 +17,7 @@ import {
   pipePath,
   runFile,
   setModeLine,
+  shellQuote,
   userMessageLine,
 } from './backends/protocol.ts';
 import { RUN_DIR } from './config.ts';
@@ -39,8 +40,7 @@ if (!isWin)
     fs.unlinkSync(pipe);
   } catch {} // stale socket from a crashed runner
 
-// With shell:true the runtime joins argv with spaces; args are validated (no quotes), so quoting paths with spaces is enough.
-const q = (a: string) => (spec.claude.shell && /\s/.test(a) ? `"${a}"` : a);
+const q = (a: string) => shellQuote(spec.claude, a);
 const child = spawn(
   q(spec.claude.file),
   [...spec.claude.prefix, ...buildClaudeArgs(spec)].map(q),
@@ -185,6 +185,17 @@ child.on('error', (err) => {
   onGone();
 });
 
+/** claude can't take input any more: the refusal a prompt / mode command gets, or null while stdin is open. */
+function inputClosedAck(type: 'prompt' | 'mode'): Msg | null {
+  if (!exited && !stdinEnded && !child.stdin.writableEnded) return null;
+  return {
+    type: 'ack',
+    for: type,
+    ok: false,
+    error: exited ? 'claude has exited' : 'input already closed',
+  };
+}
+
 function onCommand(sock: net.Socket, cmd: ReturnType<typeof parseCommand>) {
   if (!cmd) return send(sock, { type: 'error', message: 'unknown command' });
   if (cmd.type === 'status')
@@ -195,24 +206,14 @@ function onCommand(sock: net.Socket, cmd: ReturnType<typeof parseCommand>) {
       exited,
     });
   if (cmd.type === 'prompt') {
-    if (exited || stdinEnded || child.stdin.writableEnded)
-      return send(sock, {
-        type: 'ack',
-        for: 'prompt',
-        ok: false,
-        error: exited ? 'claude has exited' : 'input already closed',
-      });
+    const refused = inputClosedAck('prompt');
+    if (refused) return send(sock, refused);
     child.stdin.write(userMessageLine(cmd.text!));
     return send(sock, { type: 'ack', for: 'prompt', ok: true });
   }
   if (cmd.type === 'mode') {
-    if (exited || stdinEnded || child.stdin.writableEnded)
-      return send(sock, {
-        type: 'ack',
-        for: 'mode',
-        ok: false,
-        error: exited ? 'claude has exited' : 'input already closed',
-      });
+    const refused = inputClosedAck('mode');
+    if (refused) return send(sock, refused);
     const id = `po-mode-${++controlSeq}`;
     control.set(id, sock);
     child.stdin.write(setModeLine(id, cmd.mode!));

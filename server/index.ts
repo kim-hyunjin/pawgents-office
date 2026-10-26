@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import type { ServerResponse } from 'node:http';
 import http from 'node:http';
 import { headless } from './backends/index.ts';
 import {
@@ -14,6 +13,7 @@ import {
   TRANSCRIPT_POLL_MS,
 } from './config.ts';
 import { syncAllFiles } from './files.ts';
+import { notFound } from './http.ts';
 import { pollRegistry } from './registry.ts';
 import { makeRoutes } from './routes.ts';
 import { Sse } from './sse.ts';
@@ -40,10 +40,6 @@ tailer.tick();
 syncAllFiles(store);
 
 const routes = makeRoutes({ store, sse });
-const notFound = (res: ServerResponse) => {
-  res.writeHead(404);
-  res.end('not found');
-};
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url!, `http://${HOST}`);

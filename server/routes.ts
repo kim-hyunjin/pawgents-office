@@ -31,7 +31,7 @@ import {
   launchClaude,
   listWorktrees,
 } from './backends/orca.ts';
-import { errMessage, PERMISSION_MODES } from './backends/protocol.ts';
+import { errMessage, MODEL_RE, PERMISSION_MODES } from './backends/protocol.ts';
 import { MAX_BODY_BYTES, MAX_PROMPT_CHARS } from './config.ts';
 import { fileDiff } from './diff.ts';
 import { scheduleFileSync } from './files.ts';
@@ -40,6 +40,7 @@ import {
   findSession,
   isOwnHost,
   json,
+  notFound,
   readBody,
   readJson,
   tooLarge,
@@ -50,8 +51,8 @@ import type { Sse } from './sse.ts';
 import { sendFile } from './static.ts';
 import type { Store } from './store.ts';
 import { BREED_KEY, CAT_FAMILIES, DEFAULT_OFFICE_ID } from './store.ts';
-import type { SysError } from './types.ts';
-import { oneLine, safeJsonParse, truncate } from './util.ts';
+import type { HookEvent, Session, SysError } from './types.ts';
+import { isDir, oneLine, safeJsonParse, truncate } from './util.ts';
 
 export interface RouteCtx {
   req: IncomingMessage;
@@ -65,18 +66,39 @@ export type Route = [
   handler: (ctx: RouteCtx) => unknown,
 ];
 
-const MODEL_RE = /^[\w.\-[\]]{1,80}$/;
-const DETACHED = {
-  error: '러너에 연결되지 않은 세션입니다. 잠시 후 다시 시도해주세요.',
-  code: 'detached',
-};
-const isDir = (p: string) => {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-};
+const BAD_REQUEST = '잘못된 요청입니다.';
+const SESSION_GONE = '세션이 없거나 종료되었습니다.';
+const UNKNOWN_MODE = '알 수 없는 권한 모드입니다.';
+const UNKNOWN_BRANCH = '기준 워크트리의 브랜치를 알 수 없습니다.';
+
+/** `name (abcd1234)`: how the server log names a session. */
+const label = (s: Session) => `${s.name} (${s.id.slice(0, 8)})`;
+/** One short line of user text for the server log. */
+const preview = (text: string) => truncate(oneLine(text), 80);
+/** The worktree a hire gets: `name` alone, or `name-1`, `name-2`, … when hiring several. */
+const hireName = (name: string, count: number, i: number) =>
+  count > 1 ? `${name}-${i}` : name;
+
+/** The backend driving `s`, or null after answering 409 (a headless session whose runner isn't connected). */
+function backendOrDetached(res: ServerResponse, s: Session) {
+  const b = forSession(s);
+  if (!b) json(res, 409, { error: headless.DETACHED_MSG, code: 'detached' });
+  return b;
+}
+
+/** `[hook] Event Tool · target  session (id) [agent id] → state` */
+function logHook(s: Session, ev: HookEvent) {
+  const ent = ev.agent_id ? s.subagents.get(String(ev.agent_id)) : s;
+  const tool = ev.tool_name
+    ? ` ${ev.tool_name}${ent?.currentTool?.target ? ' · ' + ent.currentTool.target : ''}`
+    : '';
+  const agent = ev.agent_id
+    ? ` [agent ${String(ev.agent_id).slice(0, 8)}]`
+    : '';
+  console.log(
+    `[hook] ${ev.hook_event_name}${tool}  ${label(s)}${agent} → ${ent?.state ?? s.state}`,
+  );
+}
 
 /** Orca: one hire at a time (Orca creates checkouts / tabs sequentially anyway), a failure doesn't hide the rest. */
 async function launchOrca(
@@ -96,7 +118,7 @@ async function launchOrca(
   },
 ) {
   if (!worktreeId) {
-    json(res, 400, { error: '잘못된 요청입니다.' });
+    json(res, 400, { error: BAD_REQUEST });
     return;
   }
   const base = (await listWorktrees()).find(
@@ -107,20 +129,20 @@ async function launchOrca(
     return;
   }
   if (name !== null && !base.branch && !base.head) {
-    json(res, 400, { error: '기준 워크트리의 브랜치를 알 수 없습니다.' });
+    json(res, 400, { error: UNKNOWN_BRANCH });
     return;
   }
   const started: string[] = [],
     errors: string[] = [];
   for (let i = 1; i <= count; i++) {
-    const wtName = name === null ? null : count > 1 ? `${name}-${i}` : name;
+    const wtName = name === null ? null : hireName(name, count, i);
     try {
       if (wtName)
         await createWorktreeWithClaude({ base, name: wtName, prompt, model });
       else await launchClaude({ worktreeId, prompt, model });
       started.push(wtName || base.path);
       console.log(
-        `[web] launch claude in ${wtName ? `new worktree ${wtName} (from ${base.branch || base.head})` : base.path}${prompt ? ': ' + truncate(oneLine(prompt), 80) : ''}`,
+        `[web] launch claude in ${wtName ? `new worktree ${wtName} (from ${base.branch || base.head})` : base.path}${prompt ? ': ' + preview(prompt) : ''}`,
       );
     } catch (e) {
       errors.push(`${wtName || `#${i}`}: ${errMessage(e)}`);
@@ -158,7 +180,7 @@ async function launchHeadless(
     return;
   }
   if (!PERMISSION_MODES.includes(permissionMode)) {
-    json(res, 400, { error: '알 수 없는 권한 모드입니다.' });
+    json(res, 400, { error: UNKNOWN_MODE });
     return;
   }
   const p = await headless.probe();
@@ -178,12 +200,12 @@ async function launchHeadless(
       return;
     }
     if (!sel.branch && !sel.head) {
-      json(res, 400, { error: '기준 워크트리의 브랜치를 알 수 없습니다.' });
+      json(res, 400, { error: UNKNOWN_BRANCH });
       return;
     }
     const repoRoot = ws[0]?.isMain ? ws[0].path : sel.path;
     for (let i = 1; i <= count; i++) {
-      const wtName = count > 1 ? `${name}-${i}` : name;
+      const wtName = hireName(name, count, i);
       try {
         dirs.push(
           (
@@ -209,7 +231,7 @@ async function launchHeadless(
     if (r.status === 'fulfilled') {
       sessions.push(r.value?.id);
       console.log(
-        `[web] launch claude (headless) in ${dirs[i]}${prompt ? ': ' + truncate(oneLine(prompt), 80) : ''}`,
+        `[web] launch claude (headless) in ${dirs[i]}${prompt ? ': ' + preview(prompt) : ''}`,
       );
     } else
       errors.push(
@@ -260,7 +282,7 @@ export function makeRoutes({
       count > MAX_HIRES ||
       (name !== null && !WORKTREE_NAME_RE.test(name))
     ) {
-      json(res, 400, { error: '잘못된 요청입니다.' });
+      json(res, 400, { error: BAD_REQUEST });
       return;
     }
     try {
@@ -308,18 +330,7 @@ export function makeRoutes({
         }
         const ev = safeJsonParse(body);
         const s = ev ? applyHook(store, ev) : null;
-        if (s && ev) {
-          const ent = ev.agent_id ? s.subagents.get(String(ev.agent_id)) : s;
-          const t = ev.tool_name
-            ? ` ${ev.tool_name}${ent?.currentTool?.target ? ' · ' + ent.currentTool.target : ''}`
-            : '';
-          const who = ev.agent_id
-            ? ` [agent ${String(ev.agent_id).slice(0, 8)}]`
-            : '';
-          console.log(
-            `[hook] ${ev.hook_event_name}${t}  ${s.name} (${s.id.slice(0, 8)})${who} → ${ent?.state ?? s.state}`,
-          );
-        }
+        if (s && ev) logHook(s, ev);
         // the --decide hook of a headless session: hold the request open until the browser answers (see parkPermission)
         if (
           s &&
@@ -420,7 +431,7 @@ export function makeRoutes({
         if (!data) return;
         const s = findSession(store, res, id, {
           live: true,
-          msg: '세션이 없거나 종료되었습니다.',
+          msg: SESSION_GONE,
         });
         if (!s) return;
         const text = String(data.text ?? '').trim();
@@ -430,11 +441,8 @@ export function makeRoutes({
           });
           return;
         }
-        const b = forSession(s);
-        if (!b) {
-          json(res, 409, DETACHED);
-          return;
-        }
+        const b = backendOrDetached(res, s);
+        if (!b) return;
         // Orca: a permission/question dialog would take our Enter as its default answer. Headless just queues the turn.
         if (b === orca && s.state === 'waiting') {
           json(res, 409, {
@@ -446,9 +454,7 @@ export function makeRoutes({
         }
         try {
           const r = await b.sendPrompt(store, s, text);
-          console.log(
-            `[web] prompt → ${s.name} (${s.id.slice(0, 8)}): ${truncate(oneLine(text), 80)}`,
-          );
+          console.log(`[web] prompt → ${label(s)}: ${preview(text)}`);
           store.emitSession(s);
           json(res, 200, { ok: true, accepted: r?.accepted ?? true });
         } catch (e) {
@@ -468,11 +474,8 @@ export function makeRoutes({
         });
         if (!s) return;
         const force = data.force === true,
-          b = forSession(s);
-        if (!b) {
-          json(res, 409, DETACHED);
-          return;
-        }
+          b = backendOrDetached(res, s);
+        if (!b) return;
         // `/exit` is only safe at an idle prompt; the client re-asks with force otherwise.
         if (!force && s.state !== 'idle') {
           json(res, 409, {
@@ -484,9 +487,7 @@ export function makeRoutes({
         }
         try {
           await b.closeSession(store, s, { force });
-          console.log(
-            `[web] close${force ? ' (force)' : ''} → ${s.name} (${s.id.slice(0, 8)})`,
-          );
+          console.log(`[web] close${force ? ' (force)' : ''} → ${label(s)}`);
           json(res, 200, { ok: true });
         } catch (e) {
           backendError(res, e);
@@ -501,22 +502,19 @@ export function makeRoutes({
         if (!data) return;
         const mode = String(data.mode ?? '');
         if (!PERMISSION_MODES.includes(mode)) {
-          json(res, 400, { error: '알 수 없는 권한 모드입니다.' });
+          json(res, 400, { error: UNKNOWN_MODE });
           return;
         }
         const s = findSession(store, res, id, {
           live: true,
-          msg: '세션이 없거나 종료되었습니다.',
+          msg: SESSION_GONE,
         });
         if (!s) return;
-        const b = forSession(s);
-        if (!b) {
-          json(res, 409, DETACHED);
-          return;
-        }
+        const b = backendOrDetached(res, s);
+        if (!b) return;
         try {
           await b.setMode(store, s, mode);
-          console.log(`[web] mode ${mode} → ${s.name} (${s.id.slice(0, 8)})`);
+          console.log(`[web] mode ${mode} → ${label(s)}`);
           store.emitSession(s);
           json(res, 200, { ok: true, mode: s.permissionMode });
         } catch (e) {
@@ -531,12 +529,12 @@ export function makeRoutes({
         const data = await readJson(req, res);
         if (!data) return;
         if (typeof data.id !== 'string' || typeof data.allow !== 'boolean') {
-          json(res, 400, { error: '잘못된 요청입니다.' });
+          json(res, 400, { error: BAD_REQUEST });
           return;
         }
         const s = findSession(store, res, id, {
           live: true,
-          msg: '세션이 없거나 종료되었습니다.',
+          msg: SESSION_GONE,
         });
         if (!s) return;
         if (s.backend !== 'headless') {
@@ -548,7 +546,7 @@ export function makeRoutes({
             return;
           }
           console.log(
-            `[web] permission ${data.allow ? 'allow' : 'deny'} ${s.asking?.tool || '?'} (terminal) → ${s.name} (${s.id.slice(0, 8)})`,
+            `[web] permission ${data.allow ? 'allow' : 'deny'} ${s.asking?.tool || '?'} (terminal) → ${label(s)}`,
           );
           store.emitSession(s);
           json(res, 200, { ok: true });
@@ -560,7 +558,7 @@ export function makeRoutes({
           return;
         }
         console.log(
-          `[web] permission ${data.allow ? 'allow' : 'deny'} ${p?.tool || '?'} → ${s.name} (${s.id.slice(0, 8)})`,
+          `[web] permission ${data.allow ? 'allow' : 'deny'} ${p?.tool || '?'} → ${label(s)}`,
         );
         json(res, 200, { ok: true });
       },
@@ -673,7 +671,7 @@ export function makeRoutes({
           !CAT_FAMILIES.includes(fam) ||
           (breed !== null && (!BREED_KEY.test(breed) || !store.hasBreed(breed)))
         ) {
-          json(res, 400, { error: '잘못된 요청입니다.' });
+          json(res, 400, { error: BAD_REQUEST });
           return;
         }
         store.setCat(fam, breed);
@@ -721,8 +719,7 @@ export function makeRoutes({
       ({ res, params: [id] }) => {
         const file = hasSkin(store.skins, id) ? store.skinFile(id) : null;
         if (!file || !fs.existsSync(file)) {
-          res.writeHead(404);
-          res.end('not found');
+          notFound(res);
           return;
         }
         // ids are never reused, so the image under one can be cached for good

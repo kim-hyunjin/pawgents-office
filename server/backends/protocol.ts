@@ -46,7 +46,7 @@ export const PERMISSION_MODES = [
 export const MAX_LINE_BYTES = 1024 * 1024; // one NDJSON line; anything longer is garbage or an attack, not a message
 export const PROMPTS_NONE_SINCE = '2.1.259'; // first claude that knows --permission-prompts
 const UUID_RE = /^[0-9a-f-]{36}$/i;
-const MODEL_RE = /^[\w.\-[\]]{1,80}$/;
+export const MODEL_RE = /^[\w.\-[\]]{1,80}$/;
 
 /** The session id ends up in a pipe name and a file path, so only a UUID shape is allowed. */
 export function checkSid(sid: unknown): string {
@@ -61,6 +61,10 @@ export const pipePath = (sid: unknown) =>
     : path.join(RUN_DIR, `${checkSid(sid)}.sock`);
 export const runFile = (sid: unknown) =>
   path.join(RUN_DIR, `${checkSid(sid)}.json`);
+
+/** With shell:true the runtime joins argv with spaces; args are validated (no quotes), so quoting ones with spaces is enough. */
+export const shellQuote = (c: ClaudeCmd, arg: string) =>
+  c.shell && /\s/.test(arg) ? `"${arg}"` : arg;
 
 export const encode = (msg: unknown) => JSON.stringify(msg) + '\n';
 export const newFeed = (): FeedState => ({ rem: '', skipping: false });

@@ -102,6 +102,7 @@ const newOffice = (
   repos: string[],
   layout: Layout = cloneOffice(DEFAULT_OFFICE),
 ): Office => ({ id, name, repos, layout });
+const defaultOffice = () => newOffice(DEFAULT_OFFICE_ID, '사무실', ['default']);
 
 /** Clock out a session or subagent (callers check `ended` first). */
 function markEnded(ent: Entity) {
@@ -130,7 +131,7 @@ export class Store {
   }: { stateFile?: string; skinsDir?: string } = {}) {
     this.sessions = new Map();
     this.desks = {}; // sessionId -> { desk, office, at, terminal? }
-    this.offices = [newOffice(DEFAULT_OFFICE_ID, '사무실', ['default'])]; // one per repo; repos: repo keys that work there
+    this.offices = [defaultOffice()]; // one per repo; repos: repo keys that work there
     this.cats = {}; // model family -> breed key the user picked (absent = default breed)
     this.skins = []; // uploaded sprite sheets: { id, name, cellW, cellH }, image at skinsDir/<id>.png
     this.together = null; // office id everyone works in regardless of repo, or null: each repo in its own office
@@ -201,9 +202,10 @@ export class Store {
         !Array.isArray(o.repos)
       )
         continue;
-      const layout = validate(normalize(o.layout)).length
+      const saved = normalize(o.layout);
+      const layout = validate(saved).length
         ? cloneOffice(DEFAULT_OFFICE)
-        : normalize(o.layout)!; // a broken layout falls back to the default
+        : saved!; // a broken layout falls back to the default
       offices.push(
         newOffice(
           o.id,
@@ -214,7 +216,7 @@ export class Store {
       );
     }
     if (!offices.some((o) => o.id === DEFAULT_OFFICE_ID))
-      offices.unshift(newOffice(DEFAULT_OFFICE_ID, '사무실', ['default']));
+      offices.unshift(defaultOffice());
     this.offices = offices;
     this.together = offices.some((o) => o.id === together) ? together : null;
   }
@@ -258,11 +260,15 @@ export class Store {
   setCat(fam: string, breed: string | null) {
     if (breed) this.cats[fam] = breed;
     else delete this.cats[fam];
-    this.save();
-    this.emitSettings();
+    this.commitSettings();
   }
   emitSettings() {
     this.emit('settings', { cats: this.cats, skins: this.skins });
+  }
+  /** Persist and push the cat / skin settings after a change. */
+  commitSettings() {
+    this.save();
+    this.emitSettings();
   }
   skinFile(id: string) {
     return path.join(this.skinsDir, `${id}.png`);
@@ -278,8 +284,7 @@ export class Store {
     fs.writeFileSync(this.skinFile(id), png);
     const skin: Skin = { id, name, cellW, cellH };
     this.skins.push(skin);
-    this.save();
-    this.emitSettings();
+    this.commitSettings();
     return skin;
   }
   /** Delete a skin; families drawn with it go back to their default breed. */
@@ -293,8 +298,7 @@ export class Store {
     } catch {
       /* already gone */
     }
-    this.save();
-    this.emitSettings();
+    this.commitSettings();
     return true;
   }
 
@@ -304,6 +308,11 @@ export class Store {
   }
   emitOffices() {
     this.emit('offices', { offices: this.offices, together: this.together });
+  }
+  /** Persist and push the office list after a change. */
+  commitOffices() {
+    this.save();
+    this.emitOffices();
   }
   /** The office a working directory belongs to: its repo's, created (with the default layout) the first time. */
   officeFor(cwd?: string) {
@@ -316,8 +325,7 @@ export class Store {
         [repo.key],
       );
       this.offices.push(o);
-      this.save();
-      this.emitOffices();
+      this.commitOffices();
     }
     return o.id;
   }
@@ -341,8 +349,7 @@ export class Store {
     this.together = officeId;
     for (const s of this.sessions.values())
       if (this.placeSession(s)) this.emitSession(s);
-    this.save();
-    this.emitOffices();
+    this.commitOffices();
   }
   /** Sessions in an office whose desk is gone (layout shrank) get a free one, if any. */
   reseat(officeId: string) {
@@ -358,13 +365,11 @@ export class Store {
     const o = this.office(officeId)!;
     o.layout = layout;
     this.reseat(officeId);
-    this.save();
-    this.emitOffices();
+    this.commitOffices();
   }
   renameOffice(officeId: string, name: string) {
     this.office(officeId)!.name = name;
-    this.save();
-    this.emitOffices();
+    this.commitOffices();
   }
   /** Close an office: its repos and staff move to the default office. */
   deleteOffice(officeId: string) {
@@ -379,8 +384,7 @@ export class Store {
       if (!s.ended) s.desk = this.assignDesk(s.id, DEFAULT_OFFICE_ID);
       this.emitSession(s);
     }
-    this.save();
-    this.emitOffices();
+    this.commitOffices();
   }
 
   // ---- desks ---------------------------------------------------------------

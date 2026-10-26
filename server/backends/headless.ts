@@ -27,15 +27,18 @@ import {
   RUNNER_RECONNECT_MS,
   RUNNER_RECONNECT_TRIES,
 } from '../config.ts';
+import { JSON_HEADERS } from '../http.ts';
 import type { Store } from '../store.ts';
 import type { HookEvent, Session } from '../types.ts';
 import {
+  codedError,
   detailForTool,
   isPidAlive,
   oneLine,
   projectDirName,
   readSafe,
   safeJsonParse,
+  sleep,
   summarizeToolInput,
   truncate,
 } from '../util.ts';
@@ -50,6 +53,7 @@ import {
   pipePath,
   runFile,
   runnerArgv,
+  shellQuote,
 } from './protocol.ts';
 
 const RUNNER_PATH = fileURLToPath(
@@ -57,12 +61,11 @@ const RUNNER_PATH = fileURLToPath(
 );
 const NOT_FOUND =
   'claude CLI를 찾을 수 없습니다 (PAWGENTS_OFFICE_CLAUDE_BIN 으로 경로를 지정할 수 있어요)';
-const DETACHED_MSG =
+export const DETACHED_MSG =
   '러너에 연결되지 않은 세션입니다. 잠시 후 다시 시도해주세요.';
 const isWin = process.platform === 'win32';
-const err = (message: string, code: string) =>
-  Object.assign(new Error(message), { code });
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** The session's runner isn't connected (yet, or any more). */
+const detachedError = () => codedError(DETACHED_MSG, 'detached');
 
 interface Waiter {
   resolve: (m: Msg) => void;
@@ -144,8 +147,6 @@ export function resolveClaude(): ClaudeCmd {
   } else resolved = { file: CLAUDE_BIN, prefix: [], shell: false };
   return resolved;
 }
-const quote = (c: ClaudeCmd, a: string) =>
-  c.shell && /\s/.test(a) ? `"${a}"` : a; // same rule as the runner: shell:true joins argv with spaces
 
 let probed: { at: number; result: ProbeResult } | null = null;
 /** Is claude runnable, and which version (gates --permission-prompts)? Cached for BACKEND_PROBE_TTL_MS. */
@@ -155,8 +156,8 @@ export async function probe(): Promise<ProbeResult> {
   const c = resolveClaude();
   const result = await new Promise<ProbeResult>((resolve) =>
     execFile(
-      quote(c, c.file),
-      [...c.prefix, '--version'].map((a) => quote(c, a)),
+      shellQuote(c, c.file), // same rule as the runner: shell:true joins argv with spaces
+      [...c.prefix, '--version'].map((a) => shellQuote(c, a)),
       { timeout: 5000, windowsHide: true, shell: c.shell },
       (e, stdout, stderr) => {
         const v = /(\d+\.\d+\.\d+)/.exec(String(stdout));
@@ -294,6 +295,57 @@ function rejectAll(r: Runner, e: Error) {
     }
 }
 
+/** claude's own report of a denial the office just made (or timed out): parkPermission already logged it. */
+function echoesOfficeDenial(s: Session, tool: string) {
+  const [last] = s.log.last(1);
+  return (
+    last?.ev === 'PermissionRequest' &&
+    last.tool === tool &&
+    /^→ (거부|응답 없음)$/.test(last.text ?? '') &&
+    Date.now() - last.t < 5000
+  );
+}
+
+/** Fold one runner 'event' (claude stream-json, already parsed) into the live session. Returns true if it changed. */
+function applyRunnerEvent(store: Store, s: Session, m: Msg) {
+  if (m.kind === 'init' && m.model) {
+    s.model = m.model; // exact id, over defaultModel's guess
+    return true;
+  }
+  if (m.kind === 'mode') {
+    if (s.permissionMode === m.mode) return false;
+    s.permissionMode = m.mode;
+    return true;
+  }
+  if (m.kind === 'result' && m.isError) {
+    store.log(s, {
+      ev: 'Notification',
+      text: `오류: ${m.subtype || 'error'}`,
+    });
+    if (s.state !== 'idle') store.setState(s, 'idle'); // no Stop hook follows a failed turn
+    return true;
+  }
+  if (m.kind === 'denied') {
+    // claude reports every denial; one the office just made (or timed out) is already logged by parkPermission
+    if (echoesOfficeDenial(s, m.tool || '?')) return false;
+    store.log(s, {
+      ev: 'PermissionRequest',
+      tool: m.tool || '?',
+      text: '→ 거부됨(응답 없음)',
+    });
+    return true;
+  }
+  return false;
+}
+
+/** Why a session ended, from the runner's exit message. */
+function endReason(r: Runner, m: Msg) {
+  if (r.killing) return 'killed';
+  if (!m.code) return 'process exited';
+  const tail = Array.isArray(m.stderrTail) ? m.stderrTail : [];
+  return `claude 종료 (code ${m.code}): ${truncate(oneLine(tail.at(-1) || r.lastStderr || ''), 200)}`;
+}
+
 /** Connect to a runner's socket; resolves with its hello (attached to the store unless claude is already gone). */
 function connect(
   store: Store,
@@ -318,7 +370,7 @@ function connect(
     const helloTimer = setTimeout(() => {
       if (!helloed) {
         sock.destroy();
-        reject(err('runner did not say hello', 'ETIMEDOUT'));
+        reject(codedError('runner did not say hello', 'ETIMEDOUT'));
       }
     }, RUNNER_CMD_TIMEOUT_MS);
     const onMsg = (m: Msg) => {
@@ -341,50 +393,14 @@ function connect(
           r.lastStderr = typeof m.line === 'string' ? m.line : r.lastStderr;
           return;
         }
-        if (!s || s.ended) return;
-        if (m.kind === 'init' && m.model)
-          s.model = m.model; // exact id, over defaultModel's guess
-        else if (m.kind === 'mode') {
-          if (s.permissionMode === m.mode) return;
-          s.permissionMode = m.mode;
-        } else if (m.kind === 'result' && m.isError) {
-          store.log(s, {
-            ev: 'Notification',
-            text: `오류: ${m.subtype || 'error'}`,
-          });
-          if (s.state !== 'idle') store.setState(s, 'idle'); // no Stop hook follows a failed turn
-        } else if (m.kind === 'denied') {
-          // claude reports every denial; one the office just made (or timed out) is already logged by parkPermission
-          const [last] = s.log.last(1);
-          if (
-            last?.ev === 'PermissionRequest' &&
-            last.tool === (m.tool || '?') &&
-            /^→ (거부|응답 없음)$/.test(last.text ?? '') &&
-            Date.now() - last.t < 5000
-          )
-            return;
-          store.log(s, {
-            ev: 'PermissionRequest',
-            tool: m.tool || '?',
-            text: '→ 거부됨(응답 없음)',
-          });
-        } else return;
-        store.emitSession(s);
+        if (s && !s.ended && applyRunnerEvent(store, s, m))
+          store.emitSession(s);
       } else if (m.type === 'exit') {
         gotExit = true;
         if (runners.get(sid) === r) runners.delete(sid);
-        rejectAll(r, err('claude가 종료되었습니다.', 'headless_exit'));
-        const tail = Array.isArray(m.stderrTail) ? m.stderrTail : [];
+        rejectAll(r, codedError('claude가 종료되었습니다.', 'headless_exit'));
         denyAll(sid, '세션이 종료되었습니다.'); // the hooks die with claude anyway; this clears the cards and logs it
-        endIfLive(
-          store,
-          sid,
-          r.killing
-            ? 'killed'
-            : m.code
-              ? `claude 종료 (code ${m.code}): ${truncate(oneLine(tail.at(-1) || r.lastStderr || ''), 200)}`
-              : 'process exited',
-        );
+        endIfLive(store, sid, endReason(r, m));
         onExit?.(m);
       } else if (m.type === 'ack')
         settle(r, m.for, (w) =>
@@ -392,7 +408,7 @@ function connect(
             ? w.resolve(m)
             : w.reject(
                 Object.assign(
-                  err(m.error || 'runner refused', 'headless_exit'),
+                  codedError(m.error || 'runner refused', 'headless_exit'),
                   { claudeCode: m.code },
                 ),
               ),
@@ -400,7 +416,7 @@ function connect(
       else if (m.type === 'status') settle(r, 'status', (w) => w.resolve(m));
       else if (m.type === 'error')
         settle(r, null, (w) =>
-          w.reject(err(m.message || 'runner error', 'headless_exit')),
+          w.reject(codedError(m.message || 'runner error', 'headless_exit')),
         );
     };
     sock.setEncoding('utf8');
@@ -413,9 +429,9 @@ function connect(
     });
     sock.on('close', () => {
       clearTimeout(helloTimer);
-      rejectAll(r, err(DETACHED_MSG, 'detached'));
+      rejectAll(r, detachedError());
       if (!helloed)
-        return reject(err('runner closed the connection', 'ECONNRESET'));
+        return reject(codedError('runner closed the connection', 'ECONNRESET'));
       if (runners.get(sid) === r) runners.delete(sid);
       if (gotExit || stopping) return;
       reconnect(store, sid, r.info); // runner still up (we dropped, it didn't)? try again; otherwise the session is over
@@ -440,7 +456,7 @@ async function reconnect(store: Store, sid: string, info: Msg) {
 /** Send a command and wait for the runner's answer (ack / status). */
 function command(sid: string, cmd: Msg): Promise<Msg> {
   const r = runners.get(sid);
-  if (!r) return Promise.reject(err(DETACHED_MSG, 'detached'));
+  if (!r) return Promise.reject(detachedError());
   return new Promise<Msg>((resolve, reject) => {
     const key: string = cmd.type,
       q = r.waiters.get(key) ?? [];
@@ -451,7 +467,7 @@ function command(sid: string, cmd: Msg): Promise<Msg> {
       timer: setTimeout(() => {
         const i = q.indexOf(w);
         if (i >= 0) q.splice(i, 1);
-        reject(err('러너가 응답하지 않습니다.', 'detached'));
+        reject(codedError('러너가 응답하지 않습니다.', 'detached'));
       }, RUNNER_CMD_TIMEOUT_MS),
     };
     q.push(w); // acks come back in order, so per-type FIFO pairs them up
@@ -460,7 +476,7 @@ function command(sid: string, cmd: Msg): Promise<Msg> {
     } catch {
       clearTimeout(w.timer);
       q.splice(q.indexOf(w), 1);
-      reject(err(DETACHED_MSG, 'detached'));
+      reject(detachedError());
     }
   });
 }
@@ -496,7 +512,7 @@ export async function launch(
   },
 ) {
   const p = await probe();
-  if (!p.available) throw err(p.reason, 'headless_unavailable');
+  if (!p.available) throw codedError(p.reason, 'headless_unavailable');
   const sid = randomUUID();
   const spec: RunnerSpec = {
     sid,
@@ -519,7 +535,7 @@ export async function launch(
   child.on('error', () => {}); // shows up as a missing run file below
   child.unref();
   const info = await waitRunFile(sid);
-  if (!info) throw err('러너가 시작되지 않았습니다', 'headless_exit');
+  if (!info) throw codedError('러너가 시작되지 않았습니다', 'headless_exit');
   let exited: Msg | null = null,
     wake: (() => void) | null = null;
   const hello = await connect(store, sid, info, {
@@ -528,13 +544,14 @@ export async function launch(
       wake?.();
     },
   });
-  if (hello.alive === false) throw err(exitReason(hello), 'headless_exit');
+  if (hello.alive === false)
+    throw codedError(exitReason(hello), 'headless_exit');
   if (!exited)
     await new Promise<void>((r) => {
       wake = r;
       setTimeout(r, HEADLESS_EARLY_EXIT_MS);
     }); // not logged in / bad flag: claude dies right away
-  if (exited) throw err(exitReason(exited), 'headless_exit');
+  if (exited) throw codedError(exitReason(exited), 'headless_exit');
   if (prompt) await command(sid, { type: 'prompt', text: prompt });
   return store.sessions.get(sid);
 }
@@ -554,7 +571,7 @@ export async function setMode(store: Store, s: Session, mode: string) {
     await command(s.id, { type: 'mode', mode });
   } catch (e) {
     const cc = (e as { claudeCode?: string }).claudeCode;
-    if (cc) throw err(MODE_REFUSED[cc] || errMessage(e), 'mode_refused');
+    if (cc) throw codedError(MODE_REFUSED[cc] || errMessage(e), 'mode_refused');
     throw e;
   }
   s.permissionMode = mode;
@@ -605,10 +622,7 @@ export function parkPermission(
     detail = truncate(detailForTool(tool, ev.tool_input), 200);
   const pending = parkedOf(s.id);
   s.pendingPermissions.push({ id, tool, target, detail, at: Date.now() });
-  res.writeHead(200, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-cache',
-  });
+  res.writeHead(200, JSON_HEADERS);
   res.flushHeaders();
   let done = false;
   const hb = setInterval(() => {

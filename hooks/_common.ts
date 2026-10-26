@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { errMessage } from '../server/backends/protocol.ts';
 import { CLAUDE_DIR } from '../server/config.ts';
 
 /** Settings files are user JSON: dynamic by nature. */
@@ -10,8 +11,7 @@ export type HookHandler = {
   [key: string]: any;
 };
 
-export const errMessage = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
+export { errMessage };
 
 export const EVENTS = [
   'SessionStart',

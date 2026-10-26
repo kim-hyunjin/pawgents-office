@@ -1,10 +1,11 @@
 import { scheduleFileSync } from './files.ts';
 import type { Store } from './store.ts';
 import type {
-  Asking,
+  Entity,
   EntityState,
   HookEvent,
   Session,
+  Subagent,
   ToolInput,
 } from './types.ts';
 import {
@@ -16,16 +17,18 @@ import {
   truncate,
 } from './util.ts';
 
-const TOOL_STATE: [RegExp, EntityState][] = [
-  [/^(Read|Grep|Glob|LS)$/, 'reading'],
-  [/^(Edit|Write|MultiEdit|NotebookEdit)$/, 'coding'],
-  [/^Bash$/, 'terminal'],
-  [/^(WebFetch|WebSearch)$/, 'searching'],
-  [/^(Agent|Task)$/, 'delegating'],
-  [/^AskUserQuestion$/, 'waiting'],
-];
 const EDIT_TOOLS = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
 const FILE_TOOLS = /^(Read|Edit|Write|MultiEdit|NotebookEdit)$/;
+const AGENT_TOOLS = /^(Agent|Task)$/;
+const TOOL_STATE: [RegExp, EntityState][] = [
+  [/^(Read|Grep|Glob|LS)$/, 'reading'],
+  [EDIT_TOOLS, 'coding'],
+  [/^Bash$/, 'terminal'],
+  [/^(WebFetch|WebSearch)$/, 'searching'],
+  [AGENT_TOOLS, 'delegating'],
+  [/^AskUserQuestion$/, 'waiting'],
+];
+const MAX_PENDING_AGENTS = 20;
 /** Remember the file a Read/Edit/Write… call names (the panel's "worked files", and what /diff may show). */
 function touchFile(store: Store, s: Session, tool: string, input?: ToolInput) {
   const fp =
@@ -61,6 +64,57 @@ function ask(
 function stateForTool(tool: string): EntityState {
   for (const [re, st] of TOOL_STATE) if (re.test(tool)) return st;
   return 'working';
+}
+
+/** The tool an event is about, and its short target (file name, command head…). */
+function toolOf(ev: HookEvent) {
+  const tool = String(ev.tool_name || '');
+  return { tool, target: summarizeToolInput(tool, ev.tool_input) };
+}
+
+/** Keep the final assistant message of a Stop / SubagentStop: a bubble-sized line plus the full markdown. */
+function recordReply(ent: Entity, message: unknown, now: number) {
+  const text = cleanText(message || '', 280);
+  if (text) {
+    ent.lastText = text;
+    ent.lastTextAt = now;
+    ent.replyText = replyText(message);
+  }
+  return text;
+}
+
+/** `type agentId` for the SubagentStart / SubagentStop log line. */
+const agentLabel = (agent: Subagent | null, agentId: string | null) =>
+  `${agent?.type || ''} ${agentId || ''}`.trim();
+
+/** Fill a new subagent in from the Agent tool call that most likely spawned it (same type, oldest first). */
+function claimPendingAgent(s: Session, agent: Subagent) {
+  let idx = s.pendingAgents.findIndex(
+    (p) => !p.type || !agent.type || p.type === agent.type,
+  );
+  if (idx < 0 && s.pendingAgents.length) idx = 0;
+  if (idx < 0) return;
+  const p = s.pendingAgents.splice(idx, 1)[0];
+  if (!agent.description) agent.description = p.description || null;
+  agent.task = p.task || null;
+  agent.toolUseId = p.toolUseId;
+}
+
+/** Headless sessions get each request twice (the plugin's async hook + our --decide one): true for the second copy. */
+function isRepeatedPermission(
+  s: Session,
+  tool: string,
+  target: string,
+  now: number,
+) {
+  const [last] = s.log.last(1);
+  return (
+    last?.ev === 'PermissionRequest' &&
+    last.tool === tool &&
+    last.target === target &&
+    last.text === 'permission' &&
+    now - last.t < 2000
+  );
 }
 
 /**
@@ -133,8 +187,7 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
       break;
     }
     case 'PreToolUse': {
-      const tool = String(ev.tool_name || '');
-      const target = summarizeToolInput(tool, ev.tool_input);
+      const { tool, target } = toolOf(ev);
       const detail = detailForTool(tool, ev.tool_input);
       ent.currentTool = {
         name: tool,
@@ -146,7 +199,7 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
       if (agent) agent.toolCount++;
       else s.turnTools++;
       touchFile(store, s, tool, ev.tool_input); // subagents' files count as the session's
-      if (!agent && /^(Agent|Task)$/.test(tool) && ev.tool_input) {
+      if (!agent && AGENT_TOOLS.test(tool) && ev.tool_input) {
         const inp = ev.tool_input;
         s.pendingAgents.push({
           type: inp.subagent_type || null,
@@ -155,7 +208,8 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
           toolUseId: ev.tool_use_id || null,
           at: now,
         });
-        if (s.pendingAgents.length > 20) s.pendingAgents.shift();
+        if (s.pendingAgents.length > MAX_PENDING_AGENTS)
+          s.pendingAgents.shift();
       }
       if (!agent && tool === 'AskUserQuestion')
         ask(s, { tool, target, detail, at: now });
@@ -165,8 +219,7 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
     }
     case 'PostToolUse':
     case 'PostToolUseFailure': {
-      const tool = String(ev.tool_name || '');
-      const target = summarizeToolInput(tool, ev.tool_input);
+      const { tool, target } = toolOf(ev);
       ent.currentTool = null;
       if (s.asking?.tool === tool && s.asking.target === target)
         s.asking = null; // the asked call ran (or failed): answered
@@ -193,8 +246,7 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
       break;
     }
     case 'PermissionRequest': {
-      const tool = String(ev.tool_name || '');
-      const target = summarizeToolInput(tool, ev.tool_input);
+      const { tool, target } = toolOf(ev);
       ask(s, {
         tool,
         target,
@@ -202,17 +254,7 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
         at: now,
       });
       store.setState(s, 'waiting');
-      // headless sessions get each request twice (the plugin's async hook + our --decide one): log it once
-      const [last] = s.log.last(1);
-      if (
-        !(
-          last?.ev === name &&
-          last.tool === tool &&
-          last.target === target &&
-          last.text === 'permission' &&
-          now - last.t < 2000
-        )
-      )
+      if (!isRepeatedPermission(s, tool, target, now))
         store.log(s, { ev: name, tool, target, text: 'permission' });
       break;
     }
@@ -228,7 +270,6 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
       break;
     }
     case 'Stop': {
-      const text = cleanText(ev.last_assistant_message || '', 280);
       ent.currentTool = null;
       if (!agent) s.asking = null;
       store.setState(ent, 'idle');
@@ -238,11 +279,7 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
           description: oneLine(t.description || ''),
           command: oneLine(t.command || ''),
         }));
-      if (text) {
-        ent.lastText = text;
-        ent.lastTextAt = now;
-        ent.replyText = replyText(ev.last_assistant_message);
-      }
+      const text = recordReply(ent, ev.last_assistant_message, now);
       store.log(s, { ev: name, text: who + truncate(text, 200) });
       if (!agent) scheduleFileSync(store, s);
       break;
@@ -250,42 +287,21 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
     case 'SubagentStart': {
       if (agent) {
         store.setState(agent, 'thinking');
-        // Attach the Agent tool call that most likely spawned this subagent (same type, oldest first).
-        let idx = s.pendingAgents.findIndex(
-          (p) => !p.type || !agent.type || p.type === agent.type,
-        );
-        if (idx < 0 && s.pendingAgents.length) idx = 0;
-        if (idx >= 0) {
-          const p = s.pendingAgents.splice(idx, 1)[0];
-          if (!agent.description) agent.description = p.description || null;
-          agent.task = p.task || null;
-          agent.toolUseId = p.toolUseId;
-        }
+        claimPendingAgent(s, agent);
       }
-      store.log(s, {
-        ev: name,
-        text: `${agent?.type || ''} ${agentId || ''}`.trim(),
-      });
+      store.log(s, { ev: name, text: agentLabel(agent, agentId) });
       break;
     }
     case 'SubagentStop': {
       if (agent) {
-        const text = cleanText(ev.last_assistant_message || '', 280);
-        if (text) {
-          agent.lastText = text;
-          agent.lastTextAt = now;
-          agent.replyText = replyText(ev.last_assistant_message);
-        }
+        recordReply(agent, ev.last_assistant_message, now);
         if (ev.agent_transcript_path)
           agent.transcriptPath = ev.agent_transcript_path;
         store.endSubagent(agent);
       }
       const live = [...s.subagents.values()].some((a) => !a.ended);
       if (!live && s.state === 'delegating') store.setState(s, 'thinking');
-      store.log(s, {
-        ev: name,
-        text: `${agent?.type || ''} ${agentId || ''}`.trim(),
-      });
+      store.log(s, { ev: name, text: agentLabel(agent, agentId) });
       break;
     }
     case 'SessionEnd': {

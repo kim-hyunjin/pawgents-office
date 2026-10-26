@@ -38,13 +38,17 @@ export function cleanText(v: unknown, n = 280) {
   return truncate(oneLine(s), n);
 }
 
+/** The file a tool call names (Read/Edit/Write/NotebookEdit…, or a search's `path`). */
+const toolFilePath = (input: ToolInput) =>
+  input.file_path || input.notebook_path || input.path;
+
 /** Short human target for a tool call: file name, command head, pattern... */
 export function summarizeToolInput(
   tool: string | undefined,
   input?: ToolInput | null,
 ) {
   if (!input || typeof input !== 'object') return '';
-  const fp = input.file_path || input.notebook_path || input.path;
+  const fp = toolFilePath(input);
   switch (tool) {
     case 'Read':
     case 'Edit':
@@ -88,7 +92,7 @@ export function detailForTool(
   input?: ToolInput | null,
 ) {
   if (!input || typeof input !== 'object') return '';
-  const fp = input.file_path || input.notebook_path || input.path || '';
+  const fp = toolFilePath(input) || '';
   const n = (v: unknown) => (typeof v === 'string' ? v.length : 0);
   let d = '';
   switch (tool) {
@@ -164,6 +168,21 @@ export function isPidAlive(pid?: number | null) {
     return true;
   } catch (e) {
     return (e as SysError).code === 'EPERM';
+  }
+}
+
+export const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** An Error carrying a machine-readable `code` (mapped to an HTTP status by http.ts backendStatus). */
+export const codedError = (message: string, code: string) =>
+  Object.assign(new Error(message), { code });
+
+export function isDir(p: string) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
   }
 }
 

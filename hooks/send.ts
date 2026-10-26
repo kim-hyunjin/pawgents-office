@@ -7,9 +7,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BASE_URL, DATA_DIR, MAX_REPLY_CHARS } from '../server/config.ts';
 import type { HookEvent } from '../server/types.ts';
+import { safeJsonParse } from '../server/util.ts';
 import { errMessage } from './_common.ts';
 import { DECIDE_FLAG, DECISION_TIMEOUT_S, decisionOutput } from './decision.ts';
-import { ensureServer } from './ensure.ts';
+import { autostartEnabled, ensureServer } from './ensure.ts';
 
 const DEBUG = process.env.PAWGENTS_OFFICE_DEBUG === '1';
 
@@ -30,16 +31,19 @@ function clip<T>(v: T, n: number): T | string {
   return typeof v === 'string' && v.length > n ? v.slice(0, n) + '…' : v;
 }
 
+/** A tool's result as text: a shell's stdout (+ stderr), else the JSON of whatever it returned. */
+function toolResponseText(r: HookEvent['tool_response']): string {
+  if (typeof r === 'string') return r;
+  if (!r || typeof r !== 'object') return '';
+  return typeof r.stdout === 'string'
+    ? r.stdout + (r.stderr ? '\n' + r.stderr : '')
+    : JSON.stringify(r) || '';
+}
+
+/** Cut the payload down to what the office shows, so a hook never posts a huge body. Mutates and returns `ev`. */
 function shrink(ev: HookEvent) {
   if (ev.tool_response !== undefined) {
-    const r = ev.tool_response;
-    let text = '';
-    if (typeof r === 'string') text = r;
-    else if (r && typeof r === 'object')
-      text =
-        typeof r.stdout === 'string'
-          ? r.stdout + (r.stderr ? '\n' + r.stderr : '')
-          : JSON.stringify(r) || '';
+    const text = toolResponseText(ev.tool_response);
     ev.tool_response_len = text.length;
     ev.tool_response_head = text.slice(0, 400);
     delete ev.tool_response;
@@ -91,27 +95,23 @@ export async function readEvent(): Promise<HookEvent | null> {
   return ev && typeof ev === 'object' ? ev : null;
 }
 
-const safeParse = (text: string) => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-};
+function postHook(ev: HookEvent, timeoutMs: number) {
+  return fetch(`${BASE_URL}/hook`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(ev),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
 
 /** Long-poll the server for the browser's allow/deny; prints the decision, or nothing (error, timeout, no answer). */
 async function awaitDecision(ev: HookEvent) {
   // a dead office server would mean an instant deny; revive it first (it reconnects to this session's runner on boot)
-  if (process.env.PAWGENTS_OFFICE_AUTOSTART !== '0') await ensureServer();
+  if (autostartEnabled()) await ensureServer();
   ev.await_decision = true;
   try {
-    const r = await fetch(`${BASE_URL}/hook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(ev),
-      signal: AbortSignal.timeout(DECISION_TIMEOUT_S * 1000 - 10_000), // give up before claude kills us
-    });
-    const d = safeParse((await r.text()).trim()); // the body is padded with heartbeat spaces
+    const r = await postHook(ev, DECISION_TIMEOUT_S * 1000 - 10_000); // give up before claude kills us
+    const d = safeJsonParse((await r.text()).trim()); // the body is padded with heartbeat spaces
     if (d?.decision === 'allow' || d?.decision === 'deny') {
       const out = JSON.stringify(
         decisionOutput(
@@ -138,12 +138,7 @@ export async function forward(
   if (decide && ev.hook_event_name === 'PermissionRequest')
     return awaitDecision(ev);
   try {
-    await fetch(`${BASE_URL}/hook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(ev),
-      signal: AbortSignal.timeout(1000),
-    });
+    await postHook(ev, 1000);
     log(`sent ${ev.hook_event_name} ${ev.tool_name || ''}`);
   } catch (e) {
     log(`send failed: ${errMessage(e)}`);

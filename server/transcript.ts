@@ -104,7 +104,16 @@ export class Tailer {
 
   applyLine(line: string, s: Session, ent: Entity, isMain: boolean) {
     if (!line) return false;
-    if (isMain && line.includes('"type":"ai-title"')) {
+    if (isMain) {
+      const meta = this.applyMainMeta(line, s);
+      if (meta !== null) return meta;
+    }
+    return this.applyAssistant(line, ent, isMain);
+  }
+
+  /** Session-wide lines of the main transcript (title, name, cost). null: not one of them. */
+  applyMainMeta(line: string, s: Session): boolean | null {
+    if (line.includes('"type":"ai-title"')) {
       const o = safeJsonParse(line);
       if (o?.aiTitle && s.title !== o.aiTitle) {
         s.title = oneLine(o.aiTitle);
@@ -112,7 +121,7 @@ export class Tailer {
       }
       return false;
     }
-    if (isMain && line.includes('"type":"agent-name"')) {
+    if (line.includes('"type":"agent-name"')) {
       const o = safeJsonParse(line);
       if (o?.agentName && s.name !== o.agentName) {
         s.name = oneLine(o.agentName);
@@ -121,7 +130,7 @@ export class Tailer {
       }
       return false;
     }
-    if (isMain && line.includes('"type":"cost-state"')) {
+    if (line.includes('"type":"cost-state"')) {
       const o = safeJsonParse(line);
       if (!o) return false;
       s.cost = {
@@ -132,6 +141,11 @@ export class Tailer {
       };
       return true;
     }
+    return null;
+  }
+
+  /** An assistant message: its model, latest thinking and latest text. */
+  applyAssistant(line: string, ent: Entity, isMain: boolean) {
     if (!line.includes('"type":"assistant"')) return false;
     const o = safeJsonParse(line);
     if (!o || o.type !== 'assistant') return false;

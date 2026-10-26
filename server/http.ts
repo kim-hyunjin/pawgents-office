@@ -5,6 +5,11 @@ import type { Store } from './store.ts';
 import type { Session } from './types.ts';
 import { safeJsonParse } from './util.ts';
 
+export const JSON_HEADERS = {
+  'Content-Type': 'application/json; charset=utf-8',
+  'Cache-Control': 'no-cache',
+};
+
 export function readBody(req: IncomingMessage, limit: number) {
   return new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -32,23 +37,23 @@ export function tooLarge(
   data?: unknown,
 ) {
   res.on('finish', () => req.destroy());
-  const headers: Record<string, string> = { Connection: 'close' };
-  if (data)
-    Object.assign(headers, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-cache',
-    });
-  res.writeHead(413, headers);
+  res.writeHead(
+    413,
+    data ? { Connection: 'close', ...JSON_HEADERS } : { Connection: 'close' },
+  );
   res.end(data ? JSON.stringify(data) : undefined);
 }
 
 export function json(res: ServerResponse, status: number, data: unknown) {
   const body = JSON.stringify(data);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-cache',
-  });
+  res.writeHead(status, JSON_HEADERS);
   res.end(body);
+}
+
+/** Plain-text 404 for paths (and files) we don't serve. */
+export function notFound(res: ServerResponse) {
+  res.writeHead(404);
+  res.end('not found');
 }
 
 // Endpoints that type into terminals must come from our own page: a same-origin JSON POST.
