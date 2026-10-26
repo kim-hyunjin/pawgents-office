@@ -1,11 +1,11 @@
 import type { LogEntry, LogReply, SessionSnapshot } from '../shared/api.ts';
+import { isBusyState } from '../shared/model.ts';
 import { api, closeSession, decidePermission, post, setMode } from './api.ts';
 import { openDiff, refreshDiff } from './diff.ts';
 import { openReply, refreshReply } from './reply.ts';
 import { FAMILIES, familyOf } from './sprites.ts';
 import {
   awaitingBg,
-  BUSY,
   bgSummary,
   EV_ICON,
   esc,
@@ -325,7 +325,7 @@ export class Panel {
       this.quitArmed = true;
       this.quitBtn.classList.add('armed');
       this.quitBtn.textContent = force
-        ? `${BUSY.has(s.state) ? '작업 중' : '응답 대기'} — 강제 종료?`
+        ? `${isBusyState(s.state) ? '작업 중' : '응답 대기'} — 강제 종료?`
         : '정말 퇴근?';
       this.quitBtn.title = quitTitle(s, force);
       this.quitTimer = setTimeout(() => this.resetQuit(), 4000);

@@ -9,6 +9,7 @@ import {
   normalize,
   validate,
 } from '../shared/layout.ts';
+import { isCatFamily } from '../shared/model.ts';
 import {
   DESK_MEMORY_MS,
   LOG_SIZE,
@@ -83,17 +84,6 @@ class RingBuffer implements Log {
   }
 }
 
-const BUSY_STATES = new Set<EntityState>([
-  'thinking',
-  'reading',
-  'coding',
-  'terminal',
-  'searching',
-  'delegating',
-  'working',
-]);
-export const isBusyState = (s: EntityState) => BUSY_STATES.has(s);
-export const CAT_FAMILIES = ['fable', 'opus', 'sonnet', 'haiku', 'other'];
 // a built-in breed (the list itself lives in web/sprites.js) or an uploaded skin, 'skin:<id>'
 export const BREED_KEY = /^([a-z]{2,24}|skin:[a-z0-9]{10})$/;
 export const DEFAULT_OFFICE_ID = 'default';
@@ -186,11 +176,7 @@ export class Store {
     for (const [fam, breed] of Object.entries(
       (cats || {}) as Record<string, any>,
     )) {
-      if (
-        CAT_FAMILIES.includes(fam) &&
-        BREED_KEY.test(breed) &&
-        this.hasBreed(breed)
-      )
+      if (isCatFamily(fam) && BREED_KEY.test(breed) && this.hasBreed(breed))
         this.cats[fam] = breed;
     }
   }

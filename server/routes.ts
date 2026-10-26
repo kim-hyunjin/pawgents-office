@@ -27,6 +27,7 @@ import {
   MIN_CELL,
   WORKTREE_NAME_RE,
 } from '../shared/limits.ts';
+import { isCatFamily } from '../shared/model.ts';
 import { MODEL_RE, PERMISSION_MODES } from '../shared/permission.ts';
 import {
   addWorktree,
@@ -59,7 +60,7 @@ import { hasSkin, skinError } from './skins.ts';
 import type { Sse } from './sse.ts';
 import { sendFile } from './static.ts';
 import type { Store } from './store.ts';
-import { BREED_KEY, CAT_FAMILIES, DEFAULT_OFFICE_ID } from './store.ts';
+import { BREED_KEY, DEFAULT_OFFICE_ID } from './store.ts';
 import type { HookEvent, Session, SysError } from './types.ts';
 import { isDir, oneLine, truncate } from './util.ts';
 
@@ -692,7 +693,7 @@ export function makeRoutes({
         const fam = String(data.family || ''),
           breed = data.breed == null ? null : String(data.breed);
         if (
-          !CAT_FAMILIES.includes(fam) ||
+          !isCatFamily(fam) ||
           (breed !== null && (!BREED_KEY.test(breed) || !store.hasBreed(breed)))
         ) {
           json(res, 400, { error: BAD_REQUEST });

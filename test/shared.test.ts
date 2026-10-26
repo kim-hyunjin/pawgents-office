@@ -13,8 +13,9 @@ import {
   MAX_SKIN_ROWS,
   skinGridError,
 } from '../shared/limits.ts';
+import { CAT_FAMILIES } from '../shared/model.ts';
 import { fixDoors, moveRoom, roomName } from '../web/layout-edit.ts';
-import { SKIN_ROWS } from '../web/sprites.ts';
+import { FAMILIES, SKIN_ROWS } from '../web/sprites.ts';
 
 const root = new URL('..', import.meta.url);
 const hooks = JSON.parse(
@@ -23,6 +24,10 @@ const hooks = JSON.parse(
 
 test('hooks.json registers exactly the events hooks/_common.ts installs', () => {
   assert.deepEqual(new Set(Object.keys(hooks.hooks)), new Set(EVENTS));
+});
+
+test('every model family the server accepts has a cat in the browser', () => {
+  assert.deepEqual(Object.keys(FAMILIES), [...CAT_FAMILIES]);
 });
 
 test('skin limits', () => {

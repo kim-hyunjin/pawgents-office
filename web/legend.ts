@@ -11,6 +11,7 @@ import {
   MIN_CELL,
   skinGridError,
 } from '../shared/limits.ts';
+import { CAT_FAMILIES } from '../shared/model.ts';
 import { post } from './api.ts';
 import {
   BREEDS,
@@ -142,7 +143,7 @@ function render(sessions: Sessions) {
   }
   list.append(
     row(
-      ['fable', 'opus', 'sonnet', 'haiku'].map(
+      CAT_FAMILIES.filter((f) => f !== 'other').map(
         (fam) => looks(breedOf(fam), 'assistant')[0],
       ),
       '보조 직원 (서브에이전트)',

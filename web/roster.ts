@@ -1,10 +1,11 @@
 // Staff roster: a compact list of every working cat under the HUD — state at a glance, click a row for the
 // detail panel, or send one home (two clicks, like the panel's 퇴근 button). Toggled from the HUD's "목록" button.
+
 import type { SessionSnapshot } from '../shared/api.ts';
+import { isBusyState } from '../shared/model.ts';
 import { closeSession } from './api.ts';
 import { FAMILIES, familyOf, sprite } from './sprites.ts';
 import {
-  BUSY,
   esc,
   pic,
   quitTitle,
@@ -183,7 +184,7 @@ export class Roster {
       r.quit.className = 'quit';
     }
     r.quit.title = busy
-      ? `${BUSY.has(s.state) ? '작업 중' : '응답 대기'} — ${quitTitle(s, true)}`
+      ? `${isBusyState(s.state) ? '작업 중' : '응답 대기'} — ${quitTitle(s, true)}`
       : quitTitle(s, false);
   }
 

@@ -110,15 +110,6 @@ export const STATE_COLOR: Record<string, string> = {
   waiting: '#fbbf24',
   offduty: '#6b7280',
 };
-export const BUSY = new Set([
-  'thinking',
-  'reading',
-  'coding',
-  'terminal',
-  'searching',
-  'delegating',
-  'working',
-]);
 export const MODE_LABEL: Record<string, string> = {
   plan: '계획',
   auto: '자동',
