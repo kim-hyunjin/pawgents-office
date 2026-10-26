@@ -1,7 +1,5 @@
 import fs from 'node:fs';
-import http from 'node:http';
-import type { Logger } from './app/ports.ts';
-import { type BackendRegistry, createBackends } from './backends/index.ts';
+import { createBackends } from './backends/index.ts';
 import {
   DATA_DIR,
   FILES_SYNC_MS,
@@ -14,56 +12,13 @@ import {
   TRANSCRIPT_POLL_MS,
 } from './config.ts';
 import { syncAllFiles } from './files.ts';
-import { decode, notFound } from './http/common.ts';
-import { makeRoutes } from './http/routes/index.ts';
-import { serveStatic } from './http/static.ts';
+import { createApp } from './http/app.ts';
 import { pollRegistry } from './registry.ts';
 import { Sse } from './sse.ts';
 import { Store } from './store.ts';
 import { Tailer } from './transcript.ts';
 
-/** The HTTP server over `store`: routes first, then static files. No polling, no listening: see main(). */
-export function createApp({
-  store,
-  sse,
-  backends = createBackends(store),
-  logger,
-}: {
-  store: Store;
-  sse: Sse;
-  backends?: BackendRegistry;
-  /** Where the activity log goes (the console by default). */
-  logger?: Logger;
-}) {
-  const routes = makeRoutes({ store, sse, backends, logger });
-  return http.createServer(async (req, res) => {
-    const url = new URL(req.url!, `http://${HOST}`);
-    const p = url.pathname;
-    try {
-      for (const [method, path, handler] of routes) {
-        const m =
-          req.method === method &&
-          (typeof path === 'string' ? p === path && [p] : p.match(path));
-        if (!m) continue;
-        const params = m.slice(1).map(decode);
-        if (params.includes(null)) {
-          notFound(res);
-          return;
-        } // a malformed %-escape names nothing we have
-        await handler({ req, res, url, params: params as string[] });
-        return;
-      }
-      if (req.method === 'GET' && serveStatic(p, res)) return;
-      notFound(res);
-    } catch (e) {
-      console.error('[http]', e);
-      if (!res.headersSent) {
-        res.writeHead(500);
-        res.end();
-      }
-    }
-  });
-}
+export { createApp };
 
 async function main() {
   const store = new Store();

@@ -1,5 +1,5 @@
 // The HTTP API: every route table, wired to its use cases. Anything unmatched falls through to static files
-// (GET) or 404 (see createApp in server/index.ts).
+// (GET) or 404 (see createApp in server/http/app.ts).
 import { createLaunch } from '../../app/launch.ts';
 import { consoleLogger } from '../../app/log.ts';
 import { createOfficeActions } from '../../app/offices.ts';
