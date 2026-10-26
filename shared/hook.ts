@@ -1,7 +1,7 @@
 // What hooks/send.ts posts to the server's /hook. Types only.
 
 /** A tool call's input as Claude Code sends it: dynamic JSON, shape depends on the tool. */
-export type ToolInput = Record<string, any>;
+export type ToolInput = Record<string, unknown>;
 
 /** A Claude Code hook payload (after hooks/send.ts shrank it). Only the fields the server reads are named. */
 export interface HookEvent {
@@ -40,7 +40,7 @@ export interface HookEvent {
   from_model?: string;
   to_model?: string;
   await_decision?: boolean;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /** The server's answer to a `--decide` PermissionRequest (padded with heartbeat spaces while it waits). */

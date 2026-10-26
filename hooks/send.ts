@@ -12,7 +12,7 @@ import {
 } from '../shared/decision.ts';
 import { errMessage } from '../shared/errors.ts';
 import type { HookEvent } from '../shared/hook.ts';
-import { field, safeJsonParse } from '../shared/json.ts';
+import { field, isRecord, safeJsonParse } from '../shared/json.ts';
 import { MAX_REPLY_CHARS } from '../shared/limits.ts';
 import { autostartEnabled, ensureServer } from '../shared/node/ensure.ts';
 import { DATA_DIR } from '../shared/node/env.ts';
@@ -43,9 +43,9 @@ function clip<T>(v: T, n: number): T | string {
 /** A tool's result as text: a shell's stdout (+ stderr), else the JSON of whatever it returned. */
 function toolResponseText(r: HookEvent['tool_response']): string {
   if (typeof r === 'string') return r;
-  if (!r || typeof r !== 'object') return '';
+  if (!isRecord(r)) return '';
   return typeof r.stdout === 'string'
-    ? r.stdout + (r.stderr ? '\n' + r.stderr : '')
+    ? r.stdout + (r.stderr ? `\n${r.stderr}` : '')
     : JSON.stringify(r) || '';
 }
 

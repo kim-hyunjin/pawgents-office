@@ -317,35 +317,47 @@ export const runnerArgv = (spec: RunnerSpec) => [JSON.stringify(spec)];
 export function parseRunnerArgv(
   argv: string[],
 ): Required<Omit<RunnerSpec, 'version'>> & { version: string | null } {
-  let spec: any;
+  let spec: unknown;
   try {
     spec = JSON.parse(argv?.[0] as string);
   } catch {
     throw new Error('runner spec is not JSON');
   }
-  if (!spec || typeof spec !== 'object')
-    throw new Error('runner spec is not an object');
-  checkSid(spec.sid);
-  if (typeof spec.cwd !== 'string' || !spec.cwd)
-    throw new Error('runner spec: bad cwd');
+  if (!isRecord(spec)) throw new Error('runner spec is not an object');
+  const sid = checkSid(spec.sid);
+  const cwd = spec.cwd;
+  if (typeof cwd !== 'string' || !cwd) throw new Error('runner spec: bad cwd');
   const c = spec.claude;
+  const prefix: unknown = isRecord(c) ? c.prefix : undefined;
   if (
-    !c ||
+    !isRecord(c) ||
     typeof c.file !== 'string' ||
     !c.file ||
-    !Array.isArray(c.prefix) ||
-    !c.prefix.every((p: unknown) => typeof p === 'string') ||
+    !Array.isArray(prefix) ||
+    !prefix.every((p): p is string => typeof p === 'string') ||
     typeof c.shell !== 'boolean'
   )
     throw new Error('runner spec: bad claude');
-  buildClaudeArgs(spec); // validates model, permissionMode, settingsFile
+  // the same checks and messages as buildClaudeArgs, which then checks the values themselves
+  const model = optionalString(spec.model, 'bad model'),
+    permissionMode = optionalString(spec.permissionMode, 'bad permission mode'),
+    settingsFile = optionalString(spec.settingsFile, 'bad settings file'),
+    version = typeof spec.version === 'string' ? spec.version : null;
+  buildClaudeArgs({ sid, model, permissionMode, settingsFile, version });
   return {
-    sid: spec.sid,
-    cwd: spec.cwd,
-    model: spec.model || null,
-    permissionMode: spec.permissionMode || 'default',
-    settingsFile: spec.settingsFile || null,
-    claude: { file: c.file, prefix: c.prefix, shell: c.shell },
-    version: typeof spec.version === 'string' ? spec.version : null,
+    sid,
+    cwd,
+    model,
+    permissionMode: permissionMode || 'default',
+    settingsFile,
+    claude: { file: c.file, prefix, shell: c.shell },
+    version,
   };
+}
+
+/** A spec field that may be left out (null / ''): the string, or null; anything else throws `msg`. */
+function optionalString(v: unknown, msg: string): string | null {
+  if (v == null || v === '') return null;
+  if (typeof v !== 'string') throw new Error(msg);
+  return v;
 }

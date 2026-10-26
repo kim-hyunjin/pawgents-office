@@ -3,6 +3,7 @@
 import path from 'node:path';
 import type { LaunchReply } from '../../shared/api.ts';
 import { codedError, errMessage } from '../../shared/errors.ts';
+import { field } from '../../shared/json.ts';
 import { MAX_HIRES, WORKTREE_NAME_RE } from '../../shared/limits.ts';
 import { MODEL_RE, PERMISSION_MODES } from '../../shared/permission.ts';
 import { addWorktree, samePath, worktreesAt } from '../backends/git.ts';
@@ -47,13 +48,15 @@ const BACKEND_IDS: BackendId[] = ['orca', 'headless'];
 
 /** POST /launch's JSON as a request, or null when it is malformed (400 BAD_REQUEST). Per-backend checks come later. */
 export function parseLaunchBody(
-  data: Record<string, any>,
+  data: Record<string, unknown>,
 ): LaunchRequest | null {
   const backend = String(data.backend || ''),
     prompt = String(data.prompt ?? '').trim(),
     model = String(data.model || '').trim();
   const count = Number(data.count ?? 1),
-    name = data.newWorktree ? String(data.newWorktree.name || '').trim() : null;
+    name = data.newWorktree
+      ? String(field(data.newWorktree, 'name') || '').trim()
+      : null;
   if (
     !BACKEND_IDS.includes(backend as BackendId) ||
     prompt.length > MAX_PROMPT_CHARS ||

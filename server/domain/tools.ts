@@ -1,7 +1,11 @@
 // What Claude Code's tools mean to a reader: a short target and a longer description of one tool call.
 import path from 'node:path';
+import { field } from '../../shared/json.ts';
 import { oneLine, truncate } from '../../shared/text.ts';
 import type { ToolInput } from '../types.ts';
+
+const todoMark = (status: unknown) =>
+  status === 'completed' ? '✓' : status === 'in_progress' ? '▶' : '○';
 
 /** The file a tool call names (Read/Edit/Write/NotebookEdit…, or a search's `path`). */
 const toolFilePath = (input: ToolInput) =>
@@ -102,7 +106,7 @@ export function detailForTool(
     case 'AskUserQuestion':
       d = Array.isArray(input.questions)
         ? input.questions
-            .map((q: any) => q?.question)
+            .map((q: unknown) => field(q, 'question'))
             .filter(Boolean)
             .join(' / ')
         : '';
@@ -111,8 +115,8 @@ export function detailForTool(
       d = Array.isArray(input.todos)
         ? input.todos
             .map(
-              (t: any) =>
-                `${t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '▶' : '○'} ${t.content}`,
+              (t: unknown) =>
+                `${todoMark(field(t, 'status'))} ${field(t, 'content')}`,
             )
             .join('  ')
         : '';

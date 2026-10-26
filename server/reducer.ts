@@ -257,7 +257,10 @@ const HANDLERS: Record<string, Handler> = {
     if (!agent && AGENT_TOOLS.test(tool) && ev.tool_input) {
       const inp = ev.tool_input;
       s.pendingAgents.push({
-        type: inp.subagent_type || null,
+        type:
+          typeof inp.subagent_type === 'string'
+            ? inp.subagent_type || null
+            : null,
         description: oneLine(inp.description || ''),
         task: cleanText(inp.prompt || '', 600),
         toolUseId: ev.tool_use_id || null,
