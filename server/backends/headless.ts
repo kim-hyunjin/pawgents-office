@@ -13,6 +13,7 @@ import type { DecisionReply } from '../../shared/hook.ts';
 import { safeJsonParse } from '../../shared/json.ts';
 import { SEND_SCRIPT } from '../../shared/node/paths.ts';
 import { isPidAlive } from '../../shared/node/process.ts';
+import { oneLine, truncate } from '../../shared/text.ts';
 import { sleep } from '../../shared/time.ts';
 import type { Backend, ParkedPermission } from '../app/ports.ts';
 import {
@@ -31,16 +32,10 @@ import {
   RUNNER_RECONNECT_MS,
   RUNNER_RECONNECT_TRIES,
 } from '../config.ts';
+import { detailForTool, summarizeToolInput } from '../domain/tools.ts';
 import type { Store } from '../store.ts';
 import type { HookEvent, Session } from '../types.ts';
-import {
-  detailForTool,
-  oneLine,
-  projectDirName,
-  readSafe,
-  summarizeToolInput,
-  truncate,
-} from '../util.ts';
+import { projectDirName, readSafe } from '../util.ts';
 import { listGitWorktrees, repoRoots } from './git.ts';
 import type {
   ClaudeCmd,

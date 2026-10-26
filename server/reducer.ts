@@ -1,4 +1,8 @@
 // Hook payloads → store changes. No I/O: what a hook asks of the outside world (a git status) comes back as effects.
+
+import { cleanText, oneLine, truncate } from '../shared/text.ts';
+import { replyText } from './domain/text.ts';
+import { detailForTool, summarizeToolInput } from './domain/tools.ts';
 import type { Store } from './store.ts';
 import { traitsOf } from './traits.ts';
 import type {
@@ -9,14 +13,6 @@ import type {
   Subagent,
   ToolInput,
 } from './types.ts';
-import {
-  cleanText,
-  detailForTool,
-  oneLine,
-  replyText,
-  summarizeToolInput,
-  truncate,
-} from './util.ts';
 
 const EDIT_TOOLS = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
 const FILE_TOOLS = /^(Read|Edit|Write|MultiEdit|NotebookEdit)$/;
