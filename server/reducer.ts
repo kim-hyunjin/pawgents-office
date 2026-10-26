@@ -1,5 +1,6 @@
 import { scheduleFileSync } from './files.ts';
 import type { Store } from './store.ts';
+import { traitsOf } from './traits.ts';
 import type {
   Entity,
   EntityState,
@@ -52,7 +53,7 @@ function ask(
     at,
   }: { tool: string; target: string; detail?: string | null; at: number },
 ) {
-  if (s.backend === 'headless') return;
+  if (!traitsOf(s).terminalDialogs) return;
   s.asking = {
     tool,
     target,
@@ -152,7 +153,7 @@ function apply(store: Store, ev: HookEvent | null | undefined): Session | null {
   if (
     typeof ev.orca_terminal === 'string' &&
     ev.orca_terminal &&
-    s.backend !== 'headless'
+    traitsOf(s).bindsTerminal
   )
     store.setTerminal(s, ev.orca_terminal);
 

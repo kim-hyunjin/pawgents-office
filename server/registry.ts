@@ -5,6 +5,7 @@ import { isBusyState } from '../shared/model.ts';
 import { isPidAlive } from '../shared/node/process.ts';
 import { PROJECTS_DIR, SESSIONS_DIR, STALE_TOOL_MS } from './config.ts';
 import type { Store } from './store.ts';
+import { traitsOf } from './traits.ts';
 import type { Session } from './types.ts';
 import { projectDirName, readSafe } from './util.ts';
 
@@ -23,7 +24,7 @@ export function syncWaiting(
   d: RegistryEntry,
   now = Date.now(),
 ) {
-  if (s.backend === 'headless' || s.ended) return false;
+  if (!traitsOf(s).terminalDialogs || s.ended) return false;
   if (d.status === 'waiting') {
     const label =
       typeof d.waitingFor === 'string' ? d.waitingFor.slice(0, 80) : null;
