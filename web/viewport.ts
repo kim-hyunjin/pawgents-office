@@ -1,3 +1,4 @@
+import type { Rect } from '../shared/layout.ts';
 import { WALL_RISE } from '../shared/layout.ts';
 import { clamp } from '../shared/math.ts';
 import { $, storage } from './ui.ts';
@@ -55,9 +56,7 @@ function fitScale() {
     (ticker.hidden ? 0 : ticker.offsetHeight) -
     barEl.offsetHeight;
   return clamp(
-    Math.floor(
-      Math.min(availW / world.view.geo.W, availH / world.view.geo.VIEW_H),
-    ),
+    Math.floor(Math.min(availW / world.view.W, availH / world.view.VIEW_H)),
     MIN_SCALE,
     MAX_SCALE,
   );
@@ -90,8 +89,8 @@ export function resize() {
   clearTimeout(refitTimer);
   canvas.classList.remove('refit');
   S = fitScale();
-  canvas.width = Math.round(world.view.geo.W * S);
-  canvas.height = Math.round(world.view.geo.VIEW_H * S);
+  canvas.width = Math.round(world.view.W * S);
+  canvas.height = Math.round(world.view.VIEW_H * S);
   canvas.style.width = `${canvas.width}px`;
   canvas.style.height = `${canvas.height}px`;
   barEl.style.width = canvas.style.width;
@@ -110,8 +109,8 @@ export function refit() {
   const s = fitScale();
   if (s === S && !canvas.classList.contains('refit')) return;
   canvas.classList.add('refit');
-  canvas.style.width = `${Math.round(world.view.geo.W * s)}px`;
-  canvas.style.height = `${Math.round(world.view.geo.VIEW_H * s)}px`;
+  canvas.style.width = `${Math.round(world.view.W * s)}px`;
+  canvas.style.height = `${Math.round(world.view.VIEW_H * s)}px`;
   barEl.style.width = canvas.style.width;
   clearTimeout(refitTimer);
   refitTimer = setTimeout(resize, PANEL_ANIM_MS + 20);
@@ -122,11 +121,10 @@ export function officeXY(ev: MouseEvent): [number, number] {
   const k = canvas.width / (canvas.clientWidth || canvas.width);
   return [(ev.offsetX * k) / S, (ev.offsetY * k) / S - WALL_RISE];
 }
-/** Viewport position just under the HUD's left edge. */
-export function rosterAnchor() {
+/** Viewport position just under the HUD's left edge (`b`: the HUD button's rect, office px). */
+export function rosterAnchor(b: Rect) {
   const r = canvas.getBoundingClientRect(),
-    k = r.width / canvas.width,
-    b = world.hudBtn!;
+    k = r.width / canvas.width;
   return {
     left: r.left + b.x * S * k,
     top: r.top + (b.y + b.h + WALL_RISE + 2) * S * k,

@@ -38,9 +38,10 @@ import {
   roomName,
   wallRoomsAt,
 } from './layout-edit.ts';
-import { buildBackground, FLOOR } from './tilemap.ts';
+import { FLOOR } from './tilemap.ts';
 import { $, downloadBlob, esc, setMsg } from './ui.ts';
-import type { world as World } from './world.ts';
+import type { World } from './world.ts';
+import { showDraft, startEditing, stopEditing } from './world.ts';
 
 const uid = (p: string) =>
   `${p}${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 6)}`;
@@ -77,7 +78,7 @@ type Drag =
     };
 
 export class Editor {
-  world: typeof World;
+  world: World;
   canvas: HTMLCanvasElement;
   officeXY: (ev: MouseEvent) => [number, number];
   onResize: () => void;
@@ -101,7 +102,7 @@ export class Editor {
     officeXY,
     onResize,
   }: {
-    world: typeof World;
+    world: World;
     canvas: HTMLCanvasElement;
     officeXY: (ev: MouseEvent) => [number, number];
     onResize: () => void;
@@ -130,7 +131,7 @@ export class Editor {
     this.armedDelete = false;
     this.shown = false;
     this.el.hidden = false;
-    this.world.editing = true;
+    startEditing();
     $('ed-title').textContent = office.name;
     $('ed-delete').hidden = office.id === 'default';
     const others = this.world.offices.filter((o) => o.id !== office.id);
@@ -147,8 +148,7 @@ export class Editor {
     if (!this.office) return;
     this.office = null;
     this.el.hidden = true;
-    this.world.editing = false;
-    this.world.view = { geo: this.world.geo, bg: this.world.bg };
+    stopEditing();
     this.canvas.style.cursor = 'default';
     this.onResize();
   }
@@ -166,9 +166,9 @@ export class Editor {
       d.h <= MAX_H;
     this.errs = validate(d);
     if (sizeOk) {
-      const prev = this.world.view?.geo;
+      const prev = this.world.view;
       const geo = compile(d);
-      this.world.view = { geo, bg: buildBackground(geo) };
+      showDraft(geo);
       if (!prev || prev.W !== geo.W || prev.H !== geo.H || !this.shown) {
         this.shown = true;
         this.onResize();
@@ -460,8 +460,8 @@ export class Editor {
     if (this.handleAt(t.px, t.py)) return 'nwse-resize';
     if (itemAt(this.draft, t.tx, t.ty)) return 'move';
     if (onOuterWall(this.draft, t.tx, t.ty))
-      return this.world.view.geo.door.x === t.tx &&
-        this.world.view.geo.door.y === Math.max(0, t.ty)
+      return this.world.view.door.x === t.tx &&
+        this.world.view.door.y === Math.max(0, t.ty)
         ? 'grab'
         : 'pointer';
     if (

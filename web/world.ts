@@ -6,9 +6,9 @@ import type {
 import type { Geo, Layout, Pt, Spot } from '../shared/layout.ts';
 import { compile, TILE } from '../shared/layout.ts';
 import { step } from './anim.ts';
+import type { Frame } from './render.ts';
 import type { Palette } from './sprites.ts';
 import { familyOf, hashStr, paletteFor } from './sprites.ts';
-import { buildBackground } from './tilemap.ts';
 import { awaitingBg } from './ui.ts';
 
 const PLAY_AFTER_MS =
@@ -96,8 +96,6 @@ interface EntBase {
   alpha: number;
   station: Station | null;
   fadeAt?: number;
-  headTop?: number;
-  spriteH?: number; // set by the renderer: for the speech bubble and hit testing
 }
 export interface Employee extends EntBase {
   kind: 'employee';
@@ -114,18 +112,13 @@ export interface Assistant extends EntBase {
 /** A cat on screen: a session's employee or one of its subagents' assistants. */
 export type Ent = Employee | Assistant;
 
-export interface OfficeView {
-  geo: Geo;
-  bg: OffscreenCanvas;
-}
 export interface World {
   offices: Office[];
   officeId: string | null;
   together: string | null;
   layoutJson: string;
   geo: Geo;
-  bg: OffscreenCanvas;
-  view: OfficeView;
+  view: Geo;
   editing: boolean;
   sessions: Map<string, SessionSnapshot>;
   ents: Map<string, Ent>;
@@ -140,12 +133,11 @@ export interface World {
   funSpots: Spot[];
   play: Slots;
   near: Map<string, Slots>;
-  hudBtn: { x: number; y: number; w: number; h: number } | null;
   rosterOpen: boolean;
 }
 
-// Also written elsewhere: hudBtn (render.ts, each frame), rosterOpen (office.ts), selectedKey (office.ts / panel close).
-// geo, bg, view and the slot allocators are set by applyLayout before anything reads them.
+// Also written elsewhere: rosterOpen (office.ts), selectedKey (office.ts / panel close).
+// geo, view and the slot allocators are set by applyLayout before anything reads them.
 const unset = null as never;
 export const world: World = {
   offices: [], // [{ id, name, repos, layout }] from the server, one per repo
@@ -153,8 +145,7 @@ export const world: World = {
   together: null, // office everyone works in regardless of repo (server setting), or null
   layoutJson: '', // its layout as last applied, to spot changes
   geo: unset, // compiled layout (layout.ts) of the office on screen
-  bg: unset,
-  view: unset, // what is drawn: { geo, bg } of the live office, or of the editor's draft
+  view: unset, // what is drawn: geo of the live office, or of the editor's draft
   editing: false,
   sessions: new Map(), // id -> server session object
   ents: new Map(), // key -> entity
@@ -169,17 +160,15 @@ export const world: World = {
   bullpen: unset,
   funSpots: [], // idle cats roam between these: the play area plus the lounge (sofa, coffee machine)
   play: unset,
-  hudBtn: null,
   rosterOpen: false,
   near: new Map(), // aisle -> Slots
 };
 
-/** Switch to a layout: rebuild the background and every slot, then send each cat to its (new) station. The caller resizes the canvas. */
+/** Switch to a layout: recompile it and rebuild every slot, then send each cat to its (new) station. The caller resizes the canvas. */
 export function applyLayout(office: Layout) {
   const geo = compile(office);
   world.geo = geo;
-  world.bg = buildBackground(geo);
-  if (!world.editing) world.view = { geo, bg: world.bg };
+  if (!world.editing) world.view = geo;
   world.rooms = geo.meetings.map(() => null);
   world.roomSeats = geo.meetings.map((r) => new Slots(r.seats));
   world.plan = new Slots(geo.planSpots);
@@ -200,6 +189,18 @@ export function applyLayout(office: Layout) {
     else if (e.kind === 'employee') goTo(e, sessionStation(s, e, now));
     else if (e.data && !e.data.ended) goTo(e, assistantStation(s, e.data));
   }
+}
+
+// ---- layout editor: it shows its draft instead of the live office, without cats ----
+export function startEditing() {
+  world.editing = true;
+}
+export function showDraft(geo: Geo) {
+  world.view = geo;
+}
+export function stopEditing() {
+  world.editing = false;
+  world.view = world.geo;
 }
 
 // ---- stations ------------------------------------------------------------------
@@ -501,13 +502,14 @@ export function fadeStep(wall: number, dt: number) {
 }
 
 // ---- hit test ------------------------------------------------------------------
-export function entAt(lx: number, ly: number) {
+/** The cat under a point (office px); `heads`: where the last frame drew each sprite's top (render's Frame.heads). */
+export function entAt(heads: Frame['heads'], lx: number, ly: number) {
   let best: Ent | null = null;
   for (const e of world.ents.values()) {
     const isA = e.kind === 'assistant';
     const x0 = e.x + (isA ? 4 : 3),
       x1 = e.x + (isA ? 12 : 13),
-      y0 = e.y + Math.min(isA ? 3 : 0, e.headTop ?? 0),
+      y0 = e.y + Math.min(isA ? 3 : 0, heads.get(e.key)?.top ?? 0),
       y1 = e.y + 16;
     if (lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1 && (!best || e.y > best.y))
       best = e;

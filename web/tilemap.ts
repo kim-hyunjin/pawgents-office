@@ -76,7 +76,15 @@ export const FLOOR: Record<string, [string, string]> = {
   play: [C.mat, C.mat2],
 };
 
-export function buildBackground(geo: Geo) {
+const backgrounds = new WeakMap<Geo, OffscreenCanvas>();
+/** An office's static background: drawn on first use, then kept as long as its compiled layout lives. */
+export function background(geo: Geo) {
+  let c = backgrounds.get(geo);
+  if (!c) backgrounds.set(geo, (c = buildBackground(geo)));
+  return c;
+}
+
+function buildBackground(geo: Geo) {
   const { W, H, MAP_W, MAP_H, door: DOOR } = geo;
   const c = new OffscreenCanvas(W, H + WALL_RISE);
   const g = c.getContext('2d')!;

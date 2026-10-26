@@ -22,7 +22,7 @@ export function drawEditorOverlay(
   S: number,
   ed: Editor,
 ) {
-  const geo = ed.world.view!.geo,
+  const geo = ed.world.view,
     d = ed.draft;
   ctx.save();
   ctx.setTransform(S, 0, 0, S, 0, WALL_RISE * S);

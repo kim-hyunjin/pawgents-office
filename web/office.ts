@@ -14,7 +14,7 @@ import { initLauncher, openLauncher } from './launcher.ts';
 import { initLegend, openLegend, refreshLegend } from './legend.ts';
 import { connectEvents } from './net/events.ts';
 import { Panel } from './panel.ts';
-import { HUD_BTN, render } from './render.ts';
+import { type Frame, HUD_BTN, render } from './render.ts';
 import { initReply } from './reply.ts';
 import { Roster } from './roster.ts';
 import {
@@ -350,14 +350,14 @@ const roster = new Roster($('roster'), {
   },
 });
 function toggleRoster() {
-  roster.toggle(world, rosterAnchor());
+  roster.toggle(world, rosterAnchor(lastFrame!.hud));
   world.rosterOpen = roster.isOpen;
 }
 $('rs-close').addEventListener('click', () => {
   world.rosterOpen = false;
 });
 window.addEventListener('resize', () => {
-  if (roster.isOpen) roster.open(world, rosterAnchor());
+  if (roster.isOpen) roster.open(world, rosterAnchor(lastFrame!.hud));
 });
 
 // ---- input ---------------------------------------------------------------------
@@ -392,9 +392,13 @@ function describe(e: Ent) {
   );
 }
 
-/** The HUD on the top wall is the one canvas-drawn button (its rect is written by render.ts each frame). */
+/** What the last frame drew where: the HUD button and the cats' sprite heights, for hit testing. */
+let lastFrame: Frame | null = null;
+/** The HUD on the top wall is the one canvas-drawn button. */
 const buttonAt = ([x, y]: [number, number]) =>
-  world.hudBtn && inRect(world.hudBtn, x, y) ? HUD_BTN : null;
+  lastFrame && inRect(lastFrame.hud, x, y) ? HUD_BTN : null;
+const catAt = ([x, y]: [number, number]) =>
+  lastFrame ? entAt(lastFrame.heads, x, y) : null;
 
 canvas.addEventListener('mousemove', (ev) => {
   if (editor.isOpen) {
@@ -410,7 +414,7 @@ canvas.addEventListener('mousemove', (ev) => {
     tip.hidden = true;
     return;
   }
-  const e = entAt(...xy);
+  const e = catAt(xy);
   world.hoverKey = e ? e.key : null;
   canvas.style.cursor = e ? 'pointer' : 'default';
   if (e) {
@@ -439,7 +443,7 @@ canvas.addEventListener('click', (ev) => {
     toggleRoster();
     return;
   }
-  const e = entAt(...xy);
+  const e = catAt(xy);
   if (!e) {
     deselect();
     return;
@@ -475,7 +479,7 @@ function frame(now: number) {
   // rAF time is page-relative; fadeAt and everything else use wall-clock ms
   const wall = Date.now();
   fadeStep(wall, dt);
-  render(ctx, S, world, wall);
+  lastFrame = render(ctx, S, world, wall);
   if (editor.isOpen) drawEditorOverlay(ctx, S, editor);
   requestAnimationFrame(frame);
 }

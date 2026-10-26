@@ -20,7 +20,7 @@ import {
   spriteSize,
 } from './sprites.ts';
 import type { Ctx } from './tilemap.ts';
-import { drawBox, drawReception } from './tilemap.ts';
+import { background, drawBox, drawReception } from './tilemap.ts';
 import { fmtTime } from './ui.ts';
 import type { Ent, World } from './world.ts';
 
@@ -45,20 +45,26 @@ const fpx = (k: number, S: number) => Math.max(13, k * S);
 
 const NO_ENTS = new Map<string, Ent>();
 
+/** What a frame drew that input needs until the next one: the HUD button and each cat's sprite top / height (office px). */
+export interface Frame {
+  hud: Rect;
+  heads: Map<string, { top: number; h: number }>;
+}
+
 /** Draws world.view (the live office, or the editor's draft); cats are hidden while editing. */
 export function render(
   ctx: CanvasRenderingContext2D,
   S: number,
   world: World,
   now: number,
-) {
+): Frame {
   const { hoverKey, selectedKey } = world;
-  const { bg, geo } = world.view;
+  const geo = world.view;
   const ents = world.editing ? NO_ENTS : world.ents;
   // office space starts WALL_RISE below the canvas top; the band above is the raised top wall
   ctx.setTransform(S, 0, 0, S, 0, WALL_RISE * S);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(bg, 0, -WALL_RISE);
+  ctx.drawImage(background(geo), 0, -WALL_RISE);
 
   // who is at which desk right now
   const atDesk = new Map<number, Ent['data']>();
@@ -123,16 +129,21 @@ export function render(
   for (const w of geo.wheels) drawWheel(ctx, w, seatedAt('wheel', w.id), now);
 
   const list = [...ents.values()].sort((a, b) => a.y - b.y);
+  const heads: Frame['heads'] = new Map(); // skins can be taller than a cat: the bubble and hit testing need it
   for (const e of list)
-    drawEntity(ctx, geo, e, now, e.key === selectedKey, e.key === hoverKey);
+    heads.set(
+      e.key,
+      drawEntity(ctx, geo, e, now, e.key === selectedKey, e.key === hoverKey),
+    );
 
   // screen-space text
   ctx.setTransform(1, 0, 0, 1, 0, WALL_RISE * S);
   drawSign(ctx, S, geo);
   const placed: Rect[] = [];
-  for (const e of list) drawBubble(ctx, S, e, now, placed, geo.W);
+  for (const e of list)
+    drawBubble(ctx, S, e, now, placed, geo.W, heads.get(e.key)?.h);
   ctx.setTransform(1, 0, 0, 1, 0, 0); // HUD hangs on the raised wall
-  drawHUD(ctx, S, world, now);
+  return { hud: drawHUD(ctx, S, world, now), heads };
 }
 
 // ---- furniture state ------------------------------------------------------------
@@ -474,8 +485,6 @@ function drawEntity(
         ? TILE - Math.round(w / 2)
         : Math.round((TILE - w) / 2);
   const oy = seatY - h;
-  e.headTop = oy;
-  e.spriteH = h; // for the speech bubble and hit testing (skins can be taller than a cat)
   const bob =
     !moving &&
     (anim === 'idle' || anim === 'read' || anim === 'sit') &&
@@ -529,6 +538,7 @@ function drawEntity(
       drawGlyph(g, 'check', e.x + ox - 6, e.y + oy + 1, t);
   }
   g.globalAlpha = 1;
+  return { top: oy, h };
 }
 
 // ---- text -------------------------------------------------------------------------
@@ -597,6 +607,7 @@ function drawBubble(
   now: number,
   placed: Rect[],
   W: number,
+  spriteH = 0,
 ) {
   const data = e.data;
   if (
@@ -621,7 +632,7 @@ function drawBubble(
   const bw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2;
   const bh = lines.length * lh + pad * 2;
   const isAsst = e.kind === 'assistant';
-  const lift = -Math.max(0, (e.spriteH ?? 0) - (isAsst ? 8 : 10)); // taller than a cat: raise the bubble by the difference
+  const lift = -Math.max(0, spriteH - (isAsst ? 8 : 10)); // taller than a cat: raise the bubble by the difference
   const headX = (e.x + 8) * S,
     headY = (e.y + (isAsst ? 5 : 2) - 7 + lift) * S;
   let bx = Math.round(headX - bw / 2),
@@ -690,7 +701,7 @@ function drawHUD(
   S: number,
   world: World,
   now: number,
-) {
+): Rect {
   const { sessions, connected } = world;
   let emp = 0,
     asst = 0,
@@ -722,17 +733,18 @@ function drawHUD(
   ctx.fillText(text, x0 + 7 * S, 7 * S);
   ctx.fillStyle = '#ffd166';
   ctx.fillText(toggle, x0 + 7 * S + tw + 5 * S, 7 * S);
-  world.hudBtn = { x: x0 / S, y: 2 - WALL_RISE, w: w / S, h: 10 }; // office px (the HUD hangs above the office origin)
+  const hud = { x: x0 / S, y: 2 - WALL_RISE, w: w / S, h: 10 }; // office px (the HUD hangs above the office origin)
   const clock = fmtTime(now);
   ctx.textAlign = 'right';
   const cw = ctx.measureText(clock).width + 6 * S;
-  const cx = (world.view.geo.W - TILE) * S - 2 * S;
+  const cx = (world.view.W - TILE) * S - 2 * S;
   ctx.fillStyle = 'rgba(20,22,40,0.85)';
   roundRect(ctx, cx - cw, 2 * S, cw, 10 * S, 2 * S);
   ctx.fill();
   ctx.fillStyle = '#f3f4f6';
   ctx.fillText(clock, cx - 3 * S, 7 * S);
   ctx.textAlign = 'left';
+  return hud;
 }
 
 export const HUD_BTN = '__hud__';
