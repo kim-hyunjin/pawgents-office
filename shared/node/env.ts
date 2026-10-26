@@ -43,6 +43,8 @@ export function loadConfig(
       ? backend
       : 'auto') as BackendChoice,
     CLAUDE_BIN: env.PAWGENTS_OFFICE_CLAUDE_BIN || 'claude', // headless backend's claude; override when it isn't on PATH
+    CLAUDE_BIN_EXPLICIT: Boolean(env.PAWGENTS_OFFICE_CLAUDE_BIN), // set by the user: used as given, no PATH lookup
+    ANTHROPIC_MODEL: env.ANTHROPIC_MODEL || null, // claude's own model override (headless defaultModel reads it)
     // a parked permission request answers "no decision" after this: just under the hook's own 1800 s timeout (shared/decision.ts)
     PERMISSION_WAIT_MS:
       Number(env.PAWGENTS_OFFICE_PERMISSION_WAIT_MS) || 1_780_000, // env: dev override to test the timeout
@@ -66,5 +68,6 @@ export const {
   ORCA_BIN,
   BACKEND,
   CLAUDE_BIN,
+  CLAUDE_BIN_EXPLICIT,
   PERMISSION_WAIT_MS,
 } = config;

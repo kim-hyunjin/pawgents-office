@@ -19,7 +19,9 @@ import type { Backend, ParkedPermission } from '../app/ports.ts';
 import {
   BACKEND_PROBE_TTL_MS,
   CLAUDE_BIN,
+  CLAUDE_BIN_EXPLICIT,
   CLAUDE_DIR,
+  config,
   DATA_DIR,
   HEADLESS_EARLY_EXIT_MS,
   HEADLESS_LAUNCH_WAIT_MS,
@@ -131,7 +133,7 @@ function fromShim(file: string): ClaudeCmd {
 }
 /** How to start claude: { file, prefix, shell } (not cached: the backend keeps the answer until a probe fails). */
 export function findClaude(): ClaudeCmd {
-  if (process.env.PAWGENTS_OFFICE_CLAUDE_BIN)
+  if (CLAUDE_BIN_EXPLICIT)
     return isShim(CLAUDE_BIN)
       ? fromShim(CLAUDE_BIN)
       : { file: CLAUDE_BIN, prefix: [], shell: false };
@@ -214,11 +216,11 @@ export const childEnv = (
  * The model claude picks when no --model is given: ANTHROPIC_MODEL, else the `model` of the project's local, project
  * and user settings (that order). null: claude's own account default, which only its init line reveals. stream-json
  * claude sends that line with its first turn, so without this a session hired with no first prompt has no model (a
- * '—' in the panel, and no cat family, so no skin) until it is given work.
+ * '—' in the panel, and no cat family, so no skin) until it is given work. `env`: the config by default, or a test's own.
  */
 export function defaultModel(
   cwd: string | null | undefined,
-  env: NodeJS.ProcessEnv = process.env,
+  env: { ANTHROPIC_MODEL?: string | null } = config,
   claudeDir: string = CLAUDE_DIR,
 ): string | null {
   if (env.ANTHROPIC_MODEL) return String(env.ANTHROPIC_MODEL);

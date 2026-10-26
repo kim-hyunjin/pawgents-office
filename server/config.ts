@@ -7,6 +7,7 @@ export {
   BASE_URL,
   type BackendChoice,
   CLAUDE_BIN,
+  CLAUDE_BIN_EXPLICIT,
   CLAUDE_DIR,
   type Config,
   config,
