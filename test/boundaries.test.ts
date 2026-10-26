@@ -2,7 +2,7 @@
 //   shared/       browser-safe, imports only itself (no node:, no shared/node/)
 //   shared/node/  shared/ and node:
 //   web/          shared/ (browser-safe part) only
-//   hooks/, scripts/  shared/ (and each other's own folder)
+//   hooks/, scripts/  shared/ and their own folder (not each other)
 //   server/       shared/ only besides itself — never web/ or hooks/
 
 import assert from 'node:assert/strict';
