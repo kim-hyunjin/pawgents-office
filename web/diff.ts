@@ -43,7 +43,7 @@ export function openDiff(s: SessionSnapshot, file: string) {
   warnEl.hidden = true;
   body.innerHTML = '';
   if (!dlg.open) dlg.showModal();
-  load(s);
+  load();
 }
 
 /** The session touched the open file again (a tool finished on it): fetch the diff anew. */
@@ -52,11 +52,11 @@ export function refreshDiff(s: SessionSnapshot) {
   const t = touchedAt(s, cur.file);
   if (t > cur.t) {
     cur.t = t;
-    load(s);
+    load();
   }
 }
 
-async function load(s: SessionSnapshot) {
+async function load() {
   if (!cur) return;
   const { id, file } = cur;
   let d: DiffReply;

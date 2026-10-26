@@ -122,9 +122,7 @@ function list(lines: string[], i: number) {
       }
       const ind = indentOf(l);
       if (ind > indent) {
-        body.push(
-          l.replace(/^\s+/, (ws: string) => ' '.repeat(Math.max(0, ind - col))),
-        );
+        body.push(l.replace(/^\s+/, () => ' '.repeat(Math.max(0, ind - col))));
         i++;
         continue;
       }

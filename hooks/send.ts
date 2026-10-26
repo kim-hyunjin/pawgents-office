@@ -11,7 +11,7 @@ import {
   decisionOutput,
 } from '../shared/decision.ts';
 import { errMessage } from '../shared/errors.ts';
-import type { DecisionReply, HookEvent } from '../shared/hook.ts';
+import type { HookEvent } from '../shared/hook.ts';
 import { field, safeJsonParse } from '../shared/json.ts';
 import { MAX_REPLY_CHARS } from '../shared/limits.ts';
 import { autostartEnabled, ensureServer } from '../shared/node/ensure.ts';
