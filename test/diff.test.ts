@@ -1,27 +1,53 @@
 // server/diff.ts against a throwaway git repo: every status it can answer, and the two refusals.
-import test from 'node:test';
+
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { fileDiff, changedFiles, parseStatus } from '../server/diff.ts';
+import test from 'node:test';
+import { changedFiles, fileDiff, parseStatus } from '../server/diff.ts';
 
 test('parseStatus: porcelain -z entries, worktree column first, rename source skipped', () => {
-  const z = [' M a.js', 'M  b.js', 'MM c.js', '?? d.js', ' D e.js', 'R  new.js', 'old.js', 'A  f.js', ''].join('\0');
+  const z = [
+    ' M a.js',
+    'M  b.js',
+    'MM c.js',
+    '?? d.js',
+    ' D e.js',
+    'R  new.js',
+    'old.js',
+    'A  f.js',
+    '',
+  ].join('\0');
   assert.deepEqual(parseStatus(z), [
-    { rel: 'a.js', status: 'M' }, { rel: 'b.js', status: 'M' }, { rel: 'c.js', status: 'M' }, { rel: 'd.js', status: '?' },
-    { rel: 'e.js', status: 'D' }, { rel: 'new.js', status: 'R' }, { rel: 'f.js', status: 'A' },
+    { rel: 'a.js', status: 'M' },
+    { rel: 'b.js', status: 'M' },
+    { rel: 'c.js', status: 'M' },
+    { rel: 'd.js', status: '?' },
+    { rel: 'e.js', status: 'D' },
+    { rel: 'new.js', status: 'R' },
+    { rel: 'f.js', status: 'A' },
   ]);
   assert.deepEqual(parseStatus(''), []);
 });
 
 let hasGit = true;
-try { execFileSync('git', ['--version'], { stdio: 'ignore' }); } catch { hasGit = false; }
+try {
+  execFileSync('git', ['--version'], { stdio: 'ignore' });
+} catch {
+  hasGit = false;
+}
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', ['-C', cwd, ...args], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
 
-test('fileDiff: changed / untracked / committed / clean / missing, outside and not_repo', { skip: !hasGit && 'git not installed' }, async () => {
+test('fileDiff: changed / untracked / committed / clean / missing, outside and not_repo', {
+  skip: !hasGit && 'git not installed',
+}, async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pawgents-diff-'));
   try {
     const repo = path.join(tmp, 'repo');
@@ -56,7 +82,13 @@ test('fileDiff: changed / untracked / committed / clean / missing, outside and n
 
     // git status of the worktree: the modified and the untracked file, absolute paths; none outside a repo
     const changed = await changedFiles(path.join(repo, 'sub'));
-    assert.deepEqual(changed!.map((f) => [path.relative(repo, f.path), f.status]).sort(), [['a.txt', 'M'], [path.join('sub', 'b.txt'), '?']]);
+    assert.deepEqual(
+      changed!.map((f) => [path.relative(repo, f.path), f.status]).sort(),
+      [
+        ['a.txt', 'M'],
+        [path.join('sub', 'b.txt'), '?'],
+      ],
+    );
     assert.equal(await changedFiles(tmp), null);
     assert.equal(await changedFiles(''), null);
 
@@ -70,19 +102,30 @@ test('fileDiff: changed / untracked / committed / clean / missing, outside and n
     d = await fileDiff(repo, a, { since: Date.now() + 3600_000 });
     assert.equal(d.status, 'clean');
     assert.equal(d.patch, '');
-    assert.deepEqual((await changedFiles(repo))!.map((f) => f.status), ['?']); // only b.txt is left
+    assert.deepEqual(
+      (await changedFiles(repo))!.map((f) => f.status),
+      ['?'],
+    ); // only b.txt is left
 
     // a path under the root that does not exist and was never tracked
     d = await fileDiff(repo, path.join(repo, 'gone.txt'));
     assert.equal(d.status, 'missing');
 
     // cwd inside a subdirectory still resolves the worktree root
-    d = await fileDiff(path.join(repo, 'sub'), a, { since: Date.now() - 60_000 });
+    d = await fileDiff(path.join(repo, 'sub'), a, {
+      since: Date.now() - 60_000,
+    });
     assert.equal(d.status, 'committed');
 
-    await assert.rejects(fileDiff(repo, path.join(tmp, 'elsewhere.txt')), { code: 'outside' });
-    await assert.rejects(fileDiff(repo, path.join(repo, '.git', 'config')), { code: 'outside' });
-    await assert.rejects(fileDiff(tmp, path.join(tmp, 'x.txt')), { code: 'not_repo' });
+    await assert.rejects(fileDiff(repo, path.join(tmp, 'elsewhere.txt')), {
+      code: 'outside',
+    });
+    await assert.rejects(fileDiff(repo, path.join(repo, '.git', 'config')), {
+      code: 'outside',
+    });
+    await assert.rejects(fileDiff(tmp, path.join(tmp, 'x.txt')), {
+      code: 'not_repo',
+    });
     await assert.rejects(fileDiff('', a), { code: 'not_repo' });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -91,18 +134,41 @@ test('fileDiff: changed / untracked / committed / clean / missing, outside and n
 
 test('store.setGitFiles merges git status with touched files', async () => {
   const { Store } = await import('../server/store.ts');
-  const store = new Store({ stateFile: path.join(os.tmpdir(), 'pawgents-nope', 'state.json') });
+  const store = new Store({
+    stateFile: path.join(os.tmpdir(), 'pawgents-nope', 'state.json'),
+  });
   const s = store.getOrCreateSession('s1', { cwd: process.cwd() });
   const here = (n: string) => path.join(process.cwd(), n);
-  store.touchFile(s, here('read.js'));                 // read only
+  store.touchFile(s, here('read.js')); // read only
   store.touchFile(s, here('edit.js'), { edited: true }); // edited, later committed
-  assert.equal(store.setGitFiles(s, [{ path: here('edit.js'), status: 'M' }, { path: here('shell.js'), status: '?' }]), true);
-  const names = () => [...s.files.values()].map((f) => `${f.name}:${f.git || '-'}${f.edited ? '*' : ''}`).sort();
+  assert.equal(
+    store.setGitFiles(s, [
+      { path: here('edit.js'), status: 'M' },
+      { path: here('shell.js'), status: '?' },
+    ]),
+    true,
+  );
+  const names = () =>
+    [...s.files.values()]
+      .map((f) => `${f.name}:${f.git || '-'}${f.edited ? '*' : ''}`)
+      .sort();
   assert.deepEqual(names(), ['edit.js:M*', 'read.js:-', 'shell.js:?*']);
-  assert.equal(store.setGitFiles(s, [{ path: here('edit.js'), status: 'M' }, { path: here('shell.js'), status: '?' }]), false); // unchanged
+  assert.equal(
+    store.setGitFiles(s, [
+      { path: here('edit.js'), status: 'M' },
+      { path: here('shell.js'), status: '?' },
+    ]),
+    false,
+  ); // unchanged
   // edit.js committed, shell.js reverted: the touched one stays (edited, no git mark), the shell-only one goes
   assert.equal(store.setGitFiles(s, []), true);
   assert.deepEqual(names(), ['edit.js:-*', 'read.js:-']);
   const sent = store.serializeSession(s).files;
-  assert.deepEqual(Object.keys(sent[0]).sort(), ['edited', 'git', 'name', 'path', 't']);
+  assert.deepEqual(Object.keys(sent[0]).sort(), [
+    'edited',
+    'git',
+    'name',
+    'path',
+    't',
+  ]);
 });

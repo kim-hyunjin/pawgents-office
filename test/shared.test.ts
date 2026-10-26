@@ -1,16 +1,19 @@
 // Tests for the code shared by server, hooks and browser: DOM-free modules only (limits, sprites' SKIN_ROWS, layout, layout-edit).
-import test from 'node:test';
+
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import test from 'node:test';
 import { EVENTS } from '../hooks/_common.ts';
-import { MAX_SKIN_ROWS, skinGridError, isName, isCell } from '../web/limits.ts';
+import { cloneOffice, DEFAULT_OFFICE, validate } from '../web/layout.ts';
+import { fixDoors, moveRoom, roomName } from '../web/layout-edit.ts';
+import { isCell, isName, MAX_SKIN_ROWS, skinGridError } from '../web/limits.ts';
 import { SKIN_ROWS } from '../web/sprites.ts';
-import { DEFAULT_OFFICE, cloneOffice, validate } from '../web/layout.ts';
-import { fixDoors, roomName, moveRoom } from '../web/layout-edit.ts';
 
 const root = new URL('..', import.meta.url);
-const hooks = JSON.parse(fs.readFileSync(new URL('hooks/hooks.json', root), 'utf8'));
+const hooks = JSON.parse(
+  fs.readFileSync(new URL('hooks/hooks.json', root), 'utf8'),
+);
 
 test('hooks.json registers exactly the events hooks/_common.ts installs', () => {
   assert.deepEqual(new Set(Object.keys(hooks.hooks)), new Set(EVENTS));
@@ -32,11 +35,19 @@ test('config: PAWGENTS_OFFICE_PORT wins over PORT', () => {
   const read = (extra: Record<string, string>) => {
     const env = { ...process.env, ...extra };
     if (!extra.PAWGENTS_OFFICE_PORT) delete env.PAWGENTS_OFFICE_PORT;
-    const code = "import('./server/config.ts').then(m => console.log(m.PORT, m.BASE_URL))";
-    return execFileSync(process.execPath, ['-e', code], { env, cwd: root, encoding: 'utf8' }).trim();
+    const code =
+      "import('./server/config.ts').then(m => console.log(m.PORT, m.BASE_URL))";
+    return execFileSync(process.execPath, ['-e', code], {
+      env,
+      cwd: root,
+      encoding: 'utf8',
+    }).trim();
   };
   assert.equal(read({ PORT: '18001' }), '18001 http://127.0.0.1:18001');
-  assert.equal(read({ PORT: '18001', PAWGENTS_OFFICE_PORT: '18002' }), '18002 http://127.0.0.1:18002');
+  assert.equal(
+    read({ PORT: '18001', PAWGENTS_OFFICE_PORT: '18002' }),
+    '18002 http://127.0.0.1:18002',
+  );
 });
 
 test('layout: default office validates', () => {
@@ -44,7 +55,8 @@ test('layout: default office validates', () => {
 });
 
 test('layout-edit: fixDoors, roomName, moveRoom', () => {
-  const draft = cloneOffice(DEFAULT_OFFICE), room = draft.rooms.find((r) => r.type === 'meeting')!;
+  const draft = cloneOffice(DEFAULT_OFFICE),
+    room = draft.rooms.find((r) => r.type === 'meeting')!;
   room.doors = [];
   fixDoors(draft, room);
   assert.equal(room.doors.length, 1);
@@ -55,5 +67,8 @@ test('layout-edit: fixDoors, roomName, moveRoom', () => {
   moveRoom(draft, room, -50, -50, []);
   assert.deepEqual([room.x, room.y], [1, 1]);
   moveRoom(draft, room, 999, 999, []);
-  assert.deepEqual([room.x, room.y], [draft.w - 1 - room.w, draft.h - 1 - room.h]);
+  assert.deepEqual(
+    [room.x, room.y],
+    [draft.w - 1 - room.w, draft.h - 1 - room.h],
+  );
 });

@@ -2,7 +2,15 @@ import path from 'node:path';
 import { TRANSCRIPT_TAIL_BYTES } from './config.ts';
 import type { Store } from './store.ts';
 import type { Entity, Session, Subagent } from './types.ts';
-import { readTail, readFrom, readSafe, safeJsonParse, cleanText, replyText, oneLine } from './util.ts';
+import {
+  cleanText,
+  oneLine,
+  readFrom,
+  readSafe,
+  readTail,
+  replyText,
+  safeJsonParse,
+} from './util.ts';
 
 /**
  * Tails session / subagent transcripts (append-only JSONL) to fill in
@@ -22,7 +30,8 @@ export class Tailer {
     for (const s of this.store.sessions.values()) {
       if (s.ended) continue;
       let changed = false;
-      if (s.transcriptPath) changed = this.pump(s.transcriptPath, s, s, true) || changed;
+      if (s.transcriptPath)
+        changed = this.pump(s.transcriptPath, s, s, true) || changed;
       for (const a of s.subagents.values()) {
         if (a.ended) continue;
         const file = a.transcriptPath || this.guessAgentPath(s, a);
@@ -41,13 +50,24 @@ export class Tailer {
   }
 
   readMeta(file: string, a: Subagent) {
-    const meta = safeJsonParse(readSafe(file.replace(/\.jsonl$/, '.meta.json')));
+    const meta = safeJsonParse(
+      readSafe(file.replace(/\.jsonl$/, '.meta.json')),
+    );
     if (!meta) return false;
     a.metaRead = true;
     let changed = false;
-    if (meta.description && !a.description) { a.description = oneLine(meta.description); changed = true; }
-    if (meta.agentType && !a.type) { a.type = meta.agentType; changed = true; }
-    if (meta.model && !a.model) { a.model = meta.model; changed = true; }
+    if (meta.description && !a.description) {
+      a.description = oneLine(meta.description);
+      changed = true;
+    }
+    if (meta.agentType && !a.type) {
+      a.type = meta.agentType;
+      changed = true;
+    }
+    if (meta.model && !a.model) {
+      a.model = meta.model;
+      changed = true;
+    }
     return changed;
   }
 
@@ -65,7 +85,11 @@ export class Tailer {
     } else {
       const r = readFrom(file, f.offset);
       if (!r) return false;
-      if (r.size < f.offset) { f.offset = 0; f.rem = ''; return false; } // truncated/rotated
+      if (r.size < f.offset) {
+        f.offset = 0;
+        f.rem = '';
+        return false;
+      } // truncated/rotated
       if (!r.text) return false;
       f.offset = r.size;
       text = f.rem + r.text;
@@ -73,7 +97,8 @@ export class Tailer {
     const lines = text.split('\n');
     f.rem = lines.pop() ?? '';
     let changed = false;
-    for (const line of lines) changed = this.applyLine(line, session, ent, isMain) || changed;
+    for (const line of lines)
+      changed = this.applyLine(line, session, ent, isMain) || changed;
     return changed;
   }
 
@@ -81,18 +106,30 @@ export class Tailer {
     if (!line) return false;
     if (isMain && line.includes('"type":"ai-title"')) {
       const o = safeJsonParse(line);
-      if (o?.aiTitle && s.title !== o.aiTitle) { s.title = oneLine(o.aiTitle); return true; }
+      if (o?.aiTitle && s.title !== o.aiTitle) {
+        s.title = oneLine(o.aiTitle);
+        return true;
+      }
       return false;
     }
     if (isMain && line.includes('"type":"agent-name"')) {
       const o = safeJsonParse(line);
-      if (o?.agentName && s.name !== o.agentName) { s.name = oneLine(o.agentName); s.nameSource = 'transcript'; return true; }
+      if (o?.agentName && s.name !== o.agentName) {
+        s.name = oneLine(o.agentName);
+        s.nameSource = 'transcript';
+        return true;
+      }
       return false;
     }
     if (isMain && line.includes('"type":"cost-state"')) {
       const o = safeJsonParse(line);
       if (!o) return false;
-      s.cost = { usd: Number(o.totalCostUSD) || 0, linesAdded: o.totalLinesAdded || 0, linesRemoved: o.totalLinesRemoved || 0, apiMs: o.totalAPIDuration || 0 };
+      s.cost = {
+        usd: Number(o.totalCostUSD) || 0,
+        linesAdded: o.totalLinesAdded || 0,
+        linesRemoved: o.totalLinesRemoved || 0,
+        apiMs: o.totalAPIDuration || 0,
+      };
       return true;
     }
     if (!line.includes('"type":"assistant"')) return false;
@@ -101,19 +138,35 @@ export class Tailer {
     if (isMain && o.isSidechain) return false;
     const m = o.message;
     let changed = false;
-    if (m?.model && ent.model !== m.model) { ent.model = m.model; changed = true; }
+    if (m?.model && ent.model !== m.model) {
+      ent.model = m.model;
+      changed = true;
+    }
     const blocks = Array.isArray(m?.content) ? m.content : [];
     for (const b of blocks) {
-      if (b?.type === 'thinking' && typeof b.thinking === 'string' && b.thinking.trim()) {
+      if (
+        b?.type === 'thinking' &&
+        typeof b.thinking === 'string' &&
+        b.thinking.trim()
+      ) {
         const at = Date.parse(o.timestamp) || Date.now();
-        if (at >= ent.lastThinkingAt) { ent.lastThinking = cleanText(b.thinking, 300); ent.lastThinkingAt = at; changed = true; }
+        if (at >= ent.lastThinkingAt) {
+          ent.lastThinking = cleanText(b.thinking, 300);
+          ent.lastThinkingAt = at;
+          changed = true;
+        }
         continue;
       }
       if (b?.type !== 'text' || !b.text || !b.text.trim()) continue;
       const text = cleanText(b.text, 280);
       if (!text) continue;
       const at = Date.parse(o.timestamp) || Date.now();
-      if (at >= ent.lastTextAt) { ent.lastText = text; ent.lastTextAt = at; ent.replyText = replyText(b.text); changed = true; }
+      if (at >= ent.lastTextAt) {
+        ent.lastText = text;
+        ent.lastTextAt = at;
+        ent.replyText = replyText(b.text);
+        changed = true;
+      }
     }
     return changed;
   }

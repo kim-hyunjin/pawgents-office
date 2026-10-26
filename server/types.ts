@@ -2,7 +2,16 @@
 import type { Layout } from '../web/layout.ts';
 
 export type EntityState =
-  | 'idle' | 'thinking' | 'reading' | 'coding' | 'terminal' | 'searching' | 'delegating' | 'working' | 'waiting' | 'offduty';
+  | 'idle'
+  | 'thinking'
+  | 'reading'
+  | 'coding'
+  | 'terminal'
+  | 'searching'
+  | 'delegating'
+  | 'working'
+  | 'waiting'
+  | 'offduty';
 
 export type Backend = 'headless' | 'orca';
 
@@ -27,15 +36,52 @@ export interface LogEntry {
   len?: number;
 }
 
-export interface Cost { usd: number; linesAdded: number; linesRemoved: number; apiMs: number }
-export interface BgTask { type: string; description: string; command: string }
-export interface PendingAgent { type: string | null; description: string; task: string; toolUseId: string | null; at: number }
-export interface PendingPermission { id: string; tool: string; target: string; detail: string | null; at: number }
-export interface Asking { tool: string | null; target: string | null; detail: string | null; label: string | null; at: number }
+export interface Cost {
+  usd: number;
+  linesAdded: number;
+  linesRemoved: number;
+  apiMs: number;
+}
+export interface BgTask {
+  type: string;
+  description: string;
+  command: string;
+}
+export interface PendingAgent {
+  type: string | null;
+  description: string;
+  task: string;
+  toolUseId: string | null;
+  at: number;
+}
+export interface PendingPermission {
+  id: string;
+  tool: string;
+  target: string;
+  detail: string | null;
+  at: number;
+}
+export interface Asking {
+  tool: string | null;
+  target: string | null;
+  detail: string | null;
+  label: string | null;
+  at: number;
+}
 
 /** A file a session's tools touched (`touched`) and/or git status lists (`git`: one status letter). */
-export interface FileEntry { path: string; name: string; edited: boolean; touched: boolean; git: string | null; t: number }
-export type FileSnapshot = Pick<FileEntry, 'path' | 'name' | 'edited' | 'git' | 't'>;
+export interface FileEntry {
+  path: string;
+  name: string;
+  edited: boolean;
+  touched: boolean;
+  git: string | null;
+  t: number;
+}
+export type FileSnapshot = Pick<
+  FileEntry,
+  'path' | 'name' | 'edited' | 'git' | 't'
+>;
 
 export interface Subagent {
   agentId: string;
@@ -64,7 +110,11 @@ export interface Subagent {
 }
 
 /** Bounded activity log (see RingBuffer in store.ts). */
-export interface Log { push(x: LogEntry): void; toArray(): LogEntry[]; last(k: number): LogEntry[] }
+export interface Log {
+  push(x: LogEntry): void;
+  toArray(): LogEntry[];
+  last(k: number): LogEntry[];
+}
 
 export interface Session {
   id: string;
@@ -110,20 +160,47 @@ export interface Session {
 /** A session or subagent: what `setState`, `markEnded`… work on. */
 export type Entity = Session | Subagent;
 
-export type SubagentSnapshot = Omit<Subagent, 'toolUseId' | 'replyText' | 'transcriptPath' | 'metaRead'>;
+export type SubagentSnapshot = Omit<
+  Subagent,
+  'toolUseId' | 'replyText' | 'transcriptPath' | 'metaRead'
+>;
 
 /** A session as sent to the browser (serializeSession). */
-export interface SessionSnapshot extends Omit<Session,
-  'nameSource' | 'replyText' | 'pendingAgents' | 'transcriptPath' | 'log' | 'files' | 'subagents'> {
+export interface SessionSnapshot
+  extends Omit<
+    Session,
+    | 'nameSource'
+    | 'replyText'
+    | 'pendingAgents'
+    | 'transcriptPath'
+    | 'log'
+    | 'files'
+    | 'subagents'
+  > {
   subagents: SubagentSnapshot[];
   files: FileSnapshot[];
   log: LogEntry[];
 }
 
-export interface Office { id: string; name: string; repos: string[]; layout: Layout }
-export interface Skin { id: string; name: string; cellW: number; cellH: number }
+export interface Office {
+  id: string;
+  name: string;
+  repos: string[];
+  layout: Layout;
+}
+export interface Skin {
+  id: string;
+  name: string;
+  cellW: number;
+  cellH: number;
+}
 /** Where a session sits: remembered across restarts (state.json). */
-export interface DeskMemory { desk: number; office?: string; at: number; terminal?: string }
+export interface DeskMemory {
+  desk: number;
+  office?: string;
+  at: number;
+  terminal?: string;
+}
 
 export interface Snapshot {
   now: number;
@@ -162,7 +239,13 @@ export interface HookEvent {
   session_title?: string;
   notification_type?: string;
   last_assistant_message?: string;
-  background_tasks?: { id?: string; type?: string; status?: string; description?: string; command?: string }[];
+  background_tasks?: {
+    id?: string;
+    type?: string;
+    status?: string;
+    description?: string;
+    command?: string;
+  }[];
   from_model?: string;
   to_model?: string;
   await_decision?: boolean;
@@ -172,4 +255,7 @@ export interface HookEvent {
 /** A tool call's input as Claude Code sends it: dynamic JSON, shape depends on the tool. */
 export type ToolInput = Record<string, any>;
 /** A Node error with the fields child_process / fs add. */
-export interface SysError extends Error { code?: string | number; stdout?: string }
+export interface SysError extends Error {
+  code?: string | number;
+  stdout?: string;
+}

@@ -10,11 +10,15 @@ export class Sse {
     this.timer = setInterval(() => this.raw(': ping\n\n'), SSE_HEARTBEAT_MS);
     this.timer.unref();
   }
-  add(req: IncomingMessage, res: ServerResponse, initial?: { type: string; data: unknown }) {
+  add(
+    req: IncomingMessage,
+    res: ServerResponse,
+    initial?: { type: string; data: unknown },
+  ) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
     res.write(': connected\n\n');
@@ -24,10 +28,16 @@ export class Sse {
     req.on('close', drop);
     res.on('error', drop);
   }
-  send(type: string, data: unknown) { this.raw(format(type, data)); }
+  send(type: string, data: unknown) {
+    this.raw(format(type, data));
+  }
   raw(chunk: string) {
     for (const res of this.clients) {
-      try { res.write(chunk); } catch { this.clients.delete(res); }
+      try {
+        res.write(chunk);
+      } catch {
+        this.clients.delete(res);
+      }
     }
   }
 }
