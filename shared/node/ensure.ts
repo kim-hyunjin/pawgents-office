@@ -1,10 +1,10 @@
-// Start the pawgents-office server in the background if it isn't answering (shared by ensure-server.ts and send.ts --decide).
+// Start the pawgents-office server in the background if it isn't answering (shared by hooks/ensure-server.ts and hooks/send.ts --decide).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { BASE_URL, DATA_DIR } from '../shared/node/env.ts';
-import { SERVER_SCRIPT as SERVER } from '../shared/node/paths.ts';
-import { sleep } from '../shared/time.ts';
+import { sleep } from '../time.ts';
+import { BASE_URL, DATA_DIR } from './env.ts';
+import { SERVER_SCRIPT as SERVER } from './paths.ts';
 
 const START_POLL_MS = 200;
 const START_POLL_TRIES = 25;

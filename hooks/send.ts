@@ -14,8 +14,8 @@ import { errMessage } from '../shared/errors.ts';
 import type { HookEvent } from '../shared/hook.ts';
 import { safeJsonParse } from '../shared/json.ts';
 import { MAX_REPLY_CHARS } from '../shared/limits.ts';
+import { autostartEnabled, ensureServer } from '../shared/node/ensure.ts';
 import { BASE_URL, DATA_DIR } from '../shared/node/env.ts';
-import { autostartEnabled, ensureServer } from './ensure.ts';
 
 const DEBUG = process.env.PAWGENTS_OFFICE_DEBUG === '1';
 

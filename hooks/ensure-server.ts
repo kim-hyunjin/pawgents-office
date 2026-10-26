@@ -6,8 +6,8 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { errMessage } from '../shared/errors.ts';
+import { autostartEnabled, ensureServer } from '../shared/node/ensure.ts';
 import { BASE_URL, DATA_DIR, PORT } from '../shared/node/env.ts';
-import { autostartEnabled, ensureServer } from './ensure.ts';
 import { forward, log, readEvent } from './send.ts';
 
 function openBrowser(url: string) {

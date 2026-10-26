@@ -6,7 +6,7 @@ export const SEND_SCRIPT = path.resolve(
   '../../hooks/send.ts',
 );
 
-/** The server's entry point, started in the background by hooks/ensure.ts. */
+/** The server's entry point, started in the background by shared/node/ensure.ts. */
 export const SERVER_SCRIPT = path.resolve(
   import.meta.dirname,
   '../../server/index.ts',
