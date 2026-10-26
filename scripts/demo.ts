@@ -2,7 +2,7 @@
 // Replays a fake Claude Code hook sequence against a running pawgents-office server,
 // so the office can be developed and demoed without a live claude session.
 //   bun scripts/demo.ts [--loop] [--speed 1] [--port 17777]
-import { PORT as DEFAULT_PORT, HOST } from '../server/config.ts';
+import { PORT as DEFAULT_PORT, HOST } from '../shared/node/env.ts';
 
 const args = process.argv.slice(2);
 const flag = (n: string, d: string | number) => {

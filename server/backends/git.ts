@@ -3,10 +3,10 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { codedError, errMessage } from '../../shared/errors.ts';
 import { repoOf } from '../repo.ts';
 import type { Store } from '../store.ts';
-import { codedError, isDir } from '../util.ts';
-import { errMessage } from './protocol.ts';
+import { isDir } from '../util.ts';
 
 export interface WorktreeRow {
   id: string;

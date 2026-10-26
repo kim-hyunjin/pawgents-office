@@ -1,6 +1,7 @@
 // Wire formats for the headless backend, shared by the runner, the server and tests (pure: no I/O, no state).
 // Server <-> runner speak NDJSON over a local socket; runner <-> claude speak claude's stream-json.
 import path from 'node:path';
+import { MODEL_RE, PERMISSION_MODES } from '../../shared/permission.ts';
 import { MAX_PROMPT_CHARS, RUN_DIR } from '../config.ts';
 
 export type Msg = Record<string, any>; // a decoded JSON payload (NDJSON line, claude stream-json line)
@@ -27,26 +28,9 @@ export interface ClaudeArgsSpec {
   version?: string | null;
 }
 
-/** Message / code of a caught value (errors from child_process carry stderr and code too). */
-export const errMessage = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
-export const errCode = (e: unknown): string | undefined => {
-  const c = (e as { code?: unknown } | null)?.code;
-  return typeof c === 'string' ? c : undefined;
-};
-
-export const PERMISSION_MODES = [
-  'default',
-  'acceptEdits',
-  'plan',
-  'auto',
-  'dontAsk',
-  'bypassPermissions',
-];
 export const MAX_LINE_BYTES = 1024 * 1024; // one NDJSON line; anything longer is garbage or an attack, not a message
 export const PROMPTS_NONE_SINCE = '2.1.259'; // first claude that knows --permission-prompts
 const UUID_RE = /^[0-9a-f-]{36}$/i;
-export const MODEL_RE = /^[\w.\-[\]]{1,80}$/;
 
 /** The session id ends up in a pipe name and a file path, so only a UUID shape is allowed. */
 export function checkSid(sid: unknown): string {

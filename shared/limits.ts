@@ -32,3 +32,4 @@ export function skinGridError(
     return `한 줄은 ${MAX_SKIN_COLS}칸까지예요(지금 ${cols}칸).`;
   return null;
 }
+export const MAX_REPLY_CHARS = 200_000; // full markdown reply kept per entity (served on demand, not over SSE)

@@ -5,8 +5,8 @@
 //   PAWGENTS_OFFICE_AUTOSTART=0 disables starting the server from the hook.
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { BASE_URL, DATA_DIR, PORT } from '../server/config.ts';
-import { errMessage } from './_common.ts';
+import { errMessage } from '../shared/errors.ts';
+import { BASE_URL, DATA_DIR, PORT } from '../shared/node/env.ts';
 import { autostartEnabled, ensureServer } from './ensure.ts';
 import { forward, log, readEvent } from './send.ts';
 

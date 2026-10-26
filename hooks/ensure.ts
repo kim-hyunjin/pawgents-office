@@ -2,8 +2,8 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { BASE_URL, DATA_DIR } from '../server/config.ts';
-import { sleep } from '../server/util.ts';
+import { BASE_URL, DATA_DIR } from '../shared/node/env.ts';
+import { sleep } from '../shared/time.ts';
 
 const SERVER = path.resolve(import.meta.dirname, '../server/index.ts');
 const START_POLL_MS = 200;

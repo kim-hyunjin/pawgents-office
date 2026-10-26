@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { safeJsonParse } from '../shared/json.ts';
 import type { Layout } from '../shared/layout.ts';
 import {
   cloneOffice,
@@ -40,7 +41,7 @@ import type {
   Subagent,
   SubagentSnapshot,
 } from './types.ts';
-import { debounce, safeJsonParse } from './util.ts';
+import { debounce } from './util.ts';
 
 /** What a registry file / hook knows when a session is first seen. */
 export interface SessionInit {

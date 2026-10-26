@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
+import { codedError, errMessage } from '../../shared/errors.ts';
+import { isPidAlive } from '../../shared/node/process.ts';
+import { sleep } from '../../shared/time.ts';
 import { BACKEND_PROBE_TTL_MS, ORCA_BIN } from '../config.ts';
 import type { Store } from '../store.ts';
 import type { Session } from '../types.ts';
-import { codedError, isPidAlive, sleep } from '../util.ts';
-import { errMessage } from './protocol.ts';
 
 export type OrcaResult = any; // `result` of an `orca ... --json` call: shape depends on the subcommand
 interface Terminal {

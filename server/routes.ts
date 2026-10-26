@@ -3,6 +3,8 @@
 import fs from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
+import { errMessage } from '../shared/errors.ts';
+import { safeJsonParse } from '../shared/json.ts';
 import {
   cloneOffice,
   DEFAULT_OFFICE,
@@ -18,6 +20,7 @@ import {
   MIN_CELL,
   WORKTREE_NAME_RE,
 } from '../shared/limits.ts';
+import { MODEL_RE, PERMISSION_MODES } from '../shared/permission.ts';
 import {
   addWorktree,
   listGitWorktrees,
@@ -31,7 +34,6 @@ import {
   launchClaude,
   listWorktrees,
 } from './backends/orca.ts';
-import { errMessage, MODEL_RE, PERMISSION_MODES } from './backends/protocol.ts';
 import { MAX_BODY_BYTES, MAX_PROMPT_CHARS } from './config.ts';
 import { fileDiff } from './diff.ts';
 import { scheduleFileSync } from './files.ts';
@@ -52,7 +54,7 @@ import { sendFile } from './static.ts';
 import type { Store } from './store.ts';
 import { BREED_KEY, CAT_FAMILIES, DEFAULT_OFFICE_ID } from './store.ts';
 import type { HookEvent, Session, SysError } from './types.ts';
-import { isDir, oneLine, safeJsonParse, truncate } from './util.ts';
+import { isDir, oneLine, truncate } from './util.ts';
 
 export interface RouteCtx {
   req: IncomingMessage;

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { safeJsonParse } from '../shared/json.ts';
 import { TRANSCRIPT_TAIL_BYTES } from './config.ts';
 import type { Store } from './store.ts';
 import type { Entity, Session, Subagent } from './types.ts';
@@ -9,7 +10,6 @@ import {
   readSafe,
   readTail,
   replyText,
-  safeJsonParse,
 } from './util.ts';
 
 /**

@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { safeJsonParse } from '../shared/json.ts';
+import { isPidAlive } from '../shared/node/process.ts';
 import { PROJECTS_DIR, SESSIONS_DIR, STALE_TOOL_MS } from './config.ts';
 import type { Store } from './store.ts';
 import { isBusyState } from './store.ts';
 import type { Session } from './types.ts';
-import { isPidAlive, projectDirName, readSafe, safeJsonParse } from './util.ts';
+import { projectDirName, readSafe } from './util.ts';
 
 /** One ~/.claude/sessions/<pid>.json: dynamic JSON written by Claude Code. */
 type RegistryEntry = Record<string, any>;

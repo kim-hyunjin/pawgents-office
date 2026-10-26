@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 // Stops a background pawgents-office server (one started by the plugin hook or /pawgents-office:open).
 import fs from 'node:fs';
-import { PID_FILE, PORT } from '../server/config.ts';
-import { isPidAlive } from '../server/util.ts';
+import { PID_FILE, PORT } from '../shared/node/env.ts';
+import { isPidAlive } from '../shared/node/process.ts';
 
 let pid: number | undefined;
 try {

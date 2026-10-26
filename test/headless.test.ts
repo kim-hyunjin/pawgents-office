@@ -644,7 +644,7 @@ test('decision hook: output shapes, headless settings are synchronous, the plugi
 });
 
 test('ensureSettingsFile writes the --decide hook command (into its own data dir)', async () => {
-  const { SEND_SCRIPT } = await import('../hooks/_common.ts');
+  const { SEND_SCRIPT } = await import('../shared/node/paths.ts');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pawgents-settings-'));
   try {
     // a child process: config reads PAWGENTS_OFFICE_DATA at import, and the real data dir must stay untouched

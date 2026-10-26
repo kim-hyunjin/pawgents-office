@@ -8,8 +8,12 @@ import type { ServerResponse } from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SEND_SCRIPT } from '../../hooks/_common.ts';
 import { DECIDE_FLAG, headlessSettings } from '../../shared/decision.ts';
+import { codedError, errCode, errMessage } from '../../shared/errors.ts';
+import { safeJsonParse } from '../../shared/json.ts';
+import { SEND_SCRIPT } from '../../shared/node/paths.ts';
+import { isPidAlive } from '../../shared/node/process.ts';
+import { sleep } from '../../shared/time.ts';
 import {
   BACKEND_PROBE_TTL_MS,
   CLAUDE_BIN,
@@ -31,22 +35,16 @@ import { JSON_HEADERS } from '../http.ts';
 import type { Store } from '../store.ts';
 import type { HookEvent, Session } from '../types.ts';
 import {
-  codedError,
   detailForTool,
-  isPidAlive,
   oneLine,
   projectDirName,
   readSafe,
-  safeJsonParse,
-  sleep,
   summarizeToolInput,
   truncate,
 } from '../util.ts';
 import type { ClaudeCmd, FeedState, Msg, RunnerSpec } from './protocol.ts';
 import {
   encode,
-  errCode,
-  errMessage,
   feed,
   newFeed,
   parseRunnerArgv,

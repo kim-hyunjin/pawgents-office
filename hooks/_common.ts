@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { errMessage } from '../server/backends/protocol.ts';
-import { CLAUDE_DIR } from '../server/config.ts';
+import { errMessage } from '../shared/errors.ts';
+import { CLAUDE_DIR } from '../shared/node/env.ts';
+import { SEND_SCRIPT } from '../shared/node/paths.ts';
 
 /** Settings files are user JSON: dynamic by nature. */
 export type Settings = Record<string, any>;
@@ -10,8 +11,6 @@ export type HookHandler = {
   command?: unknown;
   [key: string]: any;
 };
-
-export { errMessage };
 
 export const EVENTS = [
   'SessionStart',
@@ -28,7 +27,6 @@ export const EVENTS = [
   'PostModelSwitch',
   'PostCompact',
 ];
-export const SEND_SCRIPT = path.resolve(import.meta.dirname, 'send.ts');
 export const HOOK_COMMAND = `"${process.execPath}" "${SEND_SCRIPT}"`;
 export const SETTINGS_FILE = path.join(CLAUDE_DIR, 'settings.json');
 

@@ -3,14 +3,6 @@ import path from 'node:path';
 import { MAX_REPLY_CHARS } from './config.ts';
 import type { SysError, ToolInput } from './types.ts';
 
-export function safeJsonParse(text: string): any {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
 export function oneLine(s?: unknown) {
   return String(s ?? '')
     .replace(/\s+/g, ' ')
@@ -160,23 +152,6 @@ export function detailForTool(
   }
   return truncate(oneLine(d), 300);
 }
-
-export function isPidAlive(pid?: number | null) {
-  if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return (e as SysError).code === 'EPERM';
-  }
-}
-
-export const sleep = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/** An Error carrying a machine-readable `code` (mapped to an HTTP status by http.ts backendStatus). */
-export const codedError = (message: string, code: string) =>
-  Object.assign(new Error(message), { code });
 
 export function isDir(p: string) {
   try {
