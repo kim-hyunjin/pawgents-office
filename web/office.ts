@@ -5,7 +5,7 @@ import type {
   SubagentSnapshot,
 } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
-import { post } from './api.ts';
+import { getState, setTogether as setTogetherOn } from './api.ts';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
 import { feedFrom, renderFeed } from './feed.ts';
@@ -245,7 +245,7 @@ tabsEl.addEventListener('click', (ev) => {
 async function setTogether(officeId: string | null, btn: HTMLButtonElement) {
   btn.disabled = true;
   try {
-    await post('/settings/together', { officeId });
+    await setTogetherOn(officeId);
   } catch (e) {
     btn.title = `실패: ${(e as Error).message}`;
   } finally {
@@ -317,8 +317,7 @@ function connect() {
   es.onopen = () => {
     world.connected = true;
     if (everConnected)
-      fetch('/state')
-        .then((r) => r.json())
+      getState()
         .then(applySnapshot)
         .catch(() => {});
     everConnected = true;

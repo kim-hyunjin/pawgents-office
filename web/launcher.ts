@@ -3,12 +3,10 @@
 import type {
   Backend,
   BackendsReply,
-  LaunchReply,
   WorktreeInfo as Worktree,
-  WorktreesReply,
 } from '../shared/api.ts';
 import { MAX_HIRES, WORKTREE_NAME_RE } from '../shared/limits.ts';
-import { api, post } from './api.ts';
+import { getBackends, getWorktrees, launch } from './api.ts';
 import { $, bindDialogClose, esc, setMsg as setMsgOn, storage } from './ui.ts';
 
 const dlg = $<HTMLDialogElement>('launcher'),
@@ -58,8 +56,7 @@ async function loadWorktrees(b: Backend) {
   box.disabled = true;
   box.innerHTML = '<option value="">불러오는 중…</option>';
   try {
-    const list =
-      (await api<WorktreesReply>(`/worktrees?backend=${b}`)).worktrees || [];
+    const list = (await getWorktrees(b)).worktrees || [];
     if (seq !== loadSeq) return;
     lists[b] = list;
     if (b === 'orca') {
@@ -188,7 +185,7 @@ export async function openLauncher() {
   prompt.focus();
   let d: BackendsReply;
   try {
-    d = await api('/backends');
+    d = await getBackends();
   } catch (e) {
     setMsg((e as Error).message, 'err');
     return;
@@ -255,7 +252,7 @@ form.addEventListener('submit', async (e) => {
         : `Orca에서 ${count}명 시작하는 중…`,
   );
   try {
-    const d = await post<LaunchReply>('/launch', {
+    const d = await launch({
       backend,
       ...(hl ? { cwd, permissionMode: perm.value } : { worktreeId: sel.value }),
       newWorktree: newWt.checked ? { name } : null,

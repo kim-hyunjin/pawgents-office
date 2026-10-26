@@ -2,7 +2,7 @@
 // the patch comes from /sessions/:id/diff (working tree vs HEAD, or the session's last commit of it).
 
 import type { DiffReply, SessionSnapshot } from '../shared/api.ts';
-import { api } from './api.ts';
+import { getDiff } from './api.ts';
 import { $, bindDialogClose, esc } from './ui.ts';
 
 const dlg = $<HTMLDialogElement>('diff');
@@ -65,9 +65,7 @@ async function load(s: SessionSnapshot) {
   const { id, file } = cur;
   let d: DiffReply;
   try {
-    d = await api(
-      `/sessions/${encodeURIComponent(id)}/diff?file=${encodeURIComponent(file)}`,
-    );
+    d = await getDiff(id, file);
   } catch (e) {
     if (cur?.id !== id || cur.file !== file) return;
     warnEl.textContent = (e as Error).message;

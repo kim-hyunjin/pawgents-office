@@ -24,7 +24,7 @@ import {
 } from '../shared/layout.ts';
 import { MAX_NAME_CHARS } from '../shared/limits.ts';
 import { clamp } from '../shared/math.ts';
-import { api, post } from './api.ts';
+import { closeOffice, renameOffice, saveLayout } from './api.ts';
 import type { Contained } from './layout-edit.ts';
 import {
   contents,
@@ -801,12 +801,11 @@ export class Editor {
     this.saving = true;
     this.syncPanel();
     this.msg('저장 중…');
-    const office = this.office!,
-      id = encodeURIComponent(office.id);
+    const office = this.office!;
     try {
       const name = this.name.trim();
-      if (name !== office.name) await post(`/offices/${id}`, { name });
-      await post(`/offices/${id}/layout`, { layout: this.draft });
+      if (name !== office.name) await renameOffice(office.id, name);
+      await saveLayout(office.id, this.draft);
       this.saving = false;
       this.close(); // the server pushes the new layout to every open office
     } catch (e) {
@@ -830,10 +829,7 @@ export class Editor {
       return;
     }
     try {
-      await api(`/offices/${encodeURIComponent(this.office!.id)}`, {
-        method: 'DELETE',
-        body: {},
-      }); // the server wants a JSON body here (CSRF guard)
+      await closeOffice(this.office!.id);
       this.close();
     } catch (e) {
       this.msg(`닫기 실패: ${(e as Error).message}`, 'err');

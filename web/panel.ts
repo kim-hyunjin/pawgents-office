@@ -1,6 +1,12 @@
-import type { LogEntry, LogReply, SessionSnapshot } from '../shared/api.ts';
+import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
 import { isBusyState } from '../shared/model.ts';
-import { api, closeSession, decidePermission, post, setMode } from './api.ts';
+import {
+  closeSession,
+  decidePermission,
+  getLog,
+  sendPrompt,
+  setMode,
+} from './api.ts';
 import { openDiff, refreshDiff } from './diff.ts';
 import { openReply, refreshReply } from './reply.ts';
 import { FAMILIES, familyOf } from './sprites.ts';
@@ -137,9 +143,7 @@ export class Panel {
     this.renderMeta(session);
     this.addEntries(session.log || []);
     try {
-      const d = await api<LogReply>(
-        `/sessions/${encodeURIComponent(session.id)}/log`,
-      );
+      const d = await getLog(session.id);
       if (this.id === session.id) this.addEntries(d.log || []);
     } catch {
       /* server restarted — SSE will refill */
@@ -192,7 +196,7 @@ export class Panel {
     this.sendBtn.disabled = true;
     this.setComposeMsg('보내는 중…');
     try {
-      await post(`/sessions/${encodeURIComponent(id)}/prompt`, { text });
+      await sendPrompt(id, text);
       this.drafts.delete(id);
       if (this.id === id) {
         this.input.value = '';
@@ -238,7 +242,10 @@ export class Panel {
     try {
       const r = await setMode(id, mode);
       if (this.id === id)
-        this.setComposeMsg(`권한 모드: ${MODE_LABEL[r.mode] || r.mode}`, 'ok');
+        this.setComposeMsg(
+          `권한 모드: ${MODE_LABEL[r.mode ?? ''] || r.mode}`,
+          'ok',
+        );
     } catch (e) {
       if (this.id === id) this.setComposeMsg((e as Error).message, 'err');
     } finally {

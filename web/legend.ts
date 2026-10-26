@@ -12,7 +12,7 @@ import {
   skinGridError,
 } from '../shared/limits.ts';
 import { CAT_FAMILIES } from '../shared/model.ts';
-import { post } from './api.ts';
+import { deleteSkin, setCatChoice, uploadSkin } from './api.ts';
 import {
   BREEDS,
   breedOf,
@@ -85,10 +85,7 @@ function breedPicker(fam: string) {
   sel.addEventListener('change', async () => {
     sel.disabled = true;
     try {
-      await post('/settings/cats', {
-        family: fam,
-        breed: sel.value === def ? null : sel.value,
-      });
+      await setCatChoice(fam, sel.value === def ? null : sel.value);
     } catch (e) {
       sel.value = choiceOf(fam);
       alertRow(sel, (e as Error).message);
@@ -234,7 +231,7 @@ function skinRow(s: ReturnType<typeof skinList>[number]) {
     clearTimeout(armTimer);
     del.disabled = true;
     try {
-      await post(`/skins/${s.id}/delete`, {});
+      await deleteSkin(s.id);
     } catch (e) {
       del.disabled = false;
       alertRow(del, (e as Error).message);
@@ -354,7 +351,7 @@ function draftForm() {
   up.addEventListener('click', async () => {
     up.disabled = true;
     try {
-      await post('/skins', {
+      await uploadSkin({
         name: d.name.trim(),
         cellW: d.cellW,
         cellH: d.cellH,

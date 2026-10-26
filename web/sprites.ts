@@ -1,5 +1,6 @@
 // Programmatic pixel sprites: string art → cached OffscreenCanvas. No image assets.
 
+import { getSkinPng } from './api.ts';
 import type { Sheet } from './cats.ts';
 import { SHEETS } from './cats.ts';
 // Everyone is a cat: front-facing and seated when at a station, side-on and running when moving.
@@ -917,10 +918,8 @@ export function skinList() {
 }
 
 async function loadSkin(skin: LoadedSkin) {
-  const r = await fetch(`/skins/${skin.id}.png`);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const rows = sliceSheet(
-    await createImageBitmap(await r.blob()),
+    await createImageBitmap(await getSkinPng(skin.id)),
     skin.cellW,
     skin.cellH,
   );
