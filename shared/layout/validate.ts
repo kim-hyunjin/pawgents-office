@@ -6,9 +6,10 @@ import type { Layout, Pt, Rect, WallError } from './schema.ts';
 import {
   DOOR_SIDES,
   hasWalls,
-  horizontal,
   ITEM_KINDS,
   inRect,
+  isHorizontal,
+  isOfficeSize,
   itemRect,
   MAX_H,
   MAX_W,
@@ -29,7 +30,7 @@ export function validate(office: Layout | null | undefined): WallError[] {
   if (!office || typeof office !== 'object')
     return [{ msg: '배치 데이터가 없습니다.', tiles: [] }];
   const { w, h } = office;
-  if (!int(w) || !int(h) || w < MIN_W || h < MIN_H || w > MAX_W || h > MAX_H)
+  if (!isOfficeSize(w, h))
     return [
       {
         msg: `사무실 크기는 ${MIN_W}×${MIN_H} – ${MAX_W}×${MAX_H} 칸이어야 합니다.`,
@@ -37,12 +38,12 @@ export function validate(office: Layout | null | undefined): WallError[] {
       },
     ];
   const side = office.door?.side ?? 'bottom',
-    along = horizontal(side) ? office.door?.x : office.door?.y;
+    along = isHorizontal(side) ? office.door?.x : office.door?.y;
   if (
     !DOOR_SIDES[side] ||
     !int(along) ||
     along < 1 ||
-    along > (horizontal(side) ? w : h) - 2
+    along > (isHorizontal(side) ? w : h) - 2
   )
     err('정문 위치가 사무실 밖입니다.');
   const rooms = Array.isArray(office.rooms) ? office.rooms : [];

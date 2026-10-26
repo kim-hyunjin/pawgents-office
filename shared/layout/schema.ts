@@ -103,6 +103,14 @@ export const MIN_W = 20,
   MIN_H = 14,
   MAX_W = 64,
   MAX_H = 40;
+/** Whole tiles, within MIN_W×MIN_H – MAX_W×MAX_H. */
+export const isOfficeSize = (w: unknown, h: unknown) =>
+  Number.isInteger(w) &&
+  Number.isInteger(h) &&
+  (w as number) >= MIN_W &&
+  (h as number) >= MIN_H &&
+  (w as number) <= MAX_W &&
+  (h as number) <= MAX_H;
 
 /** Room types: floor colors live in tilemap.ts. A room's walls are glass when `glass` (default: meeting rooms). */
 export const ROOM_TYPES: Record<string, RoomTypeDef> = {
@@ -271,7 +279,9 @@ export const DOOR_SIDES: Record<string, string> = {
   left: '왼쪽',
   right: '오른쪽',
 };
-export const horizontal = (side: string) => side === 'top' || side === 'bottom';
+/** A door on the top or bottom wall (placed by `x`); left / right ones are placed by `y`. */
+export const isHorizontal = (side: string) =>
+  side === 'top' || side === 'bottom';
 /** The door's tile on the outer wall and the floor tile just inside it, where cats come in and leave. */
 export function doorTiles(office: Layout) {
   const { w, h } = office,
@@ -279,7 +289,7 @@ export function doorTiles(office: Layout) {
       office.door?.side && office.door.side in DOOR_SIDES
         ? office.door.side
         : 'bottom';
-  const at = (horizontal(side) ? office.door?.x : office.door?.y) as number;
+  const at = (isHorizontal(side) ? office.door?.x : office.door?.y) as number;
   const door = {
     side,
     x: side === 'left' ? 0 : side === 'right' ? w - 1 : at,
@@ -302,7 +312,7 @@ export function doorFor(office: Layout, tx: number, ty: number): FrontDoor {
     top: y,
     bottom: h - 1 - y,
   }).sort((a, b) => a[1] - b[1])[0][0];
-  return horizontal(side)
+  return isHorizontal(side)
     ? { side, x: Math.max(1, Math.min(w - 2, x)) }
     : { side, y: Math.max(1, Math.min(h - 2, y)) };
 }
@@ -321,7 +331,7 @@ export function normalize(o: any): Layout | null {
     v: LAYOUT_VERSION,
     w: o.w,
     h: o.h,
-    door: horizontal(side) ? { side, x: o.door?.x } : { side, y: o.door?.y },
+    door: isHorizontal(side) ? { side, x: o.door?.x } : { side, y: o.door?.y },
     rooms: Array.isArray(o.rooms)
       ? o.rooms.map((r: any) => ({
           ...pick(r, [

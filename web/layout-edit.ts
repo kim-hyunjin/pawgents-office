@@ -7,6 +7,7 @@ import {
   hasWalls,
   ITEM_KINDS,
   inRect,
+  isHorizontal,
   itemRect,
   ROOM_TYPES,
   ringRect,
@@ -143,7 +144,7 @@ export function onOuterWall(draft: Layout, tx: number, ty: number) {
 export function fixFrontDoor(draft: Layout) {
   const d = draft;
   const side = d.door?.side || 'bottom',
-    top = side === 'top' || side === 'bottom';
+    top = isHorizontal(side);
   const at = top ? d.door?.x : d.door?.y,
     len = top ? d.w : d.h;
   if (Number.isInteger(at) && Number.isInteger(len))

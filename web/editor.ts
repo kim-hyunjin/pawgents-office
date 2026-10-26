@@ -13,6 +13,8 @@ import {
   doorFor,
   hasWalls,
   ITEM_KINDS,
+  isHorizontal,
+  isOfficeSize,
   MAX_H,
   MAX_W,
   MIN_H,
@@ -159,15 +161,8 @@ export class Editor {
   /** Recompile + redraw the draft, re-validate, sync the panel. */
   refresh() {
     const d = this.draft;
-    const sizeOk =
-      Number.isInteger(d.w) &&
-      Number.isInteger(d.h) &&
-      d.w >= MIN_W &&
-      d.h >= MIN_H &&
-      d.w <= MAX_W &&
-      d.h <= MAX_H;
     this.errs = validate(d);
-    if (sizeOk) {
+    if (isOfficeSize(d.w, d.h)) {
       const prev = this.world.view;
       const geo = compile(d);
       showDraft(geo);
@@ -515,12 +510,10 @@ export class Editor {
       $<HTMLInputElement>(id).addEventListener('change', () => {
         const v = Number($<HTMLInputElement>(id).value);
         this.change((d) => {
-          if (key === 'door')
-            d.door =
-              d.door?.side === 'left' || d.door?.side === 'right'
-                ? { side: d.door.side, y: v }
-                : { side: d.door?.side || 'bottom', x: v };
-          else {
+          if (key === 'door') {
+            const side = d.door?.side || 'bottom';
+            d.door = isHorizontal(side) ? { side, x: v } : { side, y: v };
+          } else {
             d[key] = v;
             fixFrontDoor(d);
           }
@@ -531,10 +524,7 @@ export class Editor {
         // same spot along the new wall, as far as it goes
         const side = $<HTMLSelectElement>('ed-door-side').value,
           at = d.door?.x ?? d.door?.y ?? 1;
-        d.door =
-          side === 'top' || side === 'bottom'
-            ? { side, x: at }
-            : { side, y: at };
+        d.door = isHorizontal(side) ? { side, x: at } : { side, y: at };
         fixFrontDoor(d);
       }),
     );
@@ -692,15 +682,7 @@ export class Editor {
   }
   importLayout(layout: unknown, from: string) {
     const next = normalize(cloneOffice(layout));
-    if (
-      !next ||
-      !Number.isInteger(next.w) ||
-      !Number.isInteger(next.h) ||
-      next.w < MIN_W ||
-      next.h < MIN_H ||
-      next.w > MAX_W ||
-      next.h > MAX_H
-    ) {
+    if (!next || !isOfficeSize(next.w, next.h)) {
       this.msg(
         `${from} 배치는 사무실 크기가 ${MIN_W}×${MIN_H} – ${MAX_W}×${MAX_H} 칸을 벗어나요.`,
         'err',
@@ -742,8 +724,7 @@ export class Editor {
     const doorIn = $<HTMLInputElement>('ed-door');
     doorIn.min = '1';
     doorIn.max = String(
-      ((d.door?.side === 'left' || d.door?.side === 'right' ? d.h : d.w) ||
-        MIN_W) - 2,
+      ((isHorizontal(d.door?.side || 'bottom') ? d.w : d.h) || MIN_W) - 2,
     );
     // selection
     const s = this.selected(),
