@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // Registers pawgents-office hooks in ~/.claude/settings.json. Idempotent; backs up first.
 //   bun hooks/install.ts [--dry-run]
+import { commandGroup } from '../shared/hook-group.ts';
 import {
   commitSettings,
   EVENTS,
@@ -36,9 +37,7 @@ for (const event of EVENTS) {
       Array.isArray(g?.hooks) && g.hooks.some(isOurs),
   );
   if (present) continue;
-  list.push({
-    hooks: [{ type: 'command', command: HOOK_COMMAND, async: true }],
-  });
+  list.push(commandGroup(HOOK_COMMAND, { async: true }));
   added.push(event);
 }
 
