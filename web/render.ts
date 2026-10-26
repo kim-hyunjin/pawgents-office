@@ -148,6 +148,53 @@ export function render(
   return { hud: drawHUD(ctx, S, world, st, now), heads };
 }
 
+type Box = [x: number, y: number, w: number, h: number];
+/** Desk monitors by family (Family.monitor), in px from the monitor box's corner; text: [x, y, rows, max width]. */
+const MONITORS: Record<
+  string,
+  {
+    color: string;
+    frame: Box;
+    screen: Box;
+    standColor: string;
+    stand: Box;
+    text: [x: number, y: number, rows: number, maxW: number];
+  }
+> = {
+  'wide-gold': {
+    color: '#d4a017',
+    frame: [0, 1, 12, 10],
+    screen: [1, 2, 10, 8],
+    standColor: '#d4a017',
+    stand: [5, 11, 2, 2],
+    text: [2, 3, 3, 7],
+  },
+  silver: {
+    color: '#c8d0d8',
+    frame: [1, 2, 11, 9],
+    screen: [2, 3, 9, 7],
+    standColor: '#9aa3b2',
+    stand: [6, 11, 2, 2],
+    text: [3, 4, 3, 6],
+  },
+  laptop: {
+    color: '#2c2c36',
+    frame: [2, 4, 9, 6],
+    screen: [3, 5, 7, 4],
+    standColor: '#44454f', // the keyboard deck
+    stand: [1, 10, 11, 2],
+    text: [4, 6, 2, 4],
+  },
+  normal: {
+    color: '#23242e',
+    frame: [1, 2, 11, 9],
+    screen: [2, 3, 9, 7],
+    standColor: '#3a3b47',
+    stand: [6, 11, 2, 2],
+    text: [3, 4, 3, 6],
+  },
+};
+
 // ---- furniture state ------------------------------------------------------------
 /**
  * Props on a lengthwise desk (1 tile wide, 2 deep). Top tile: keyboard upright along the chair's edge, monitor beside
@@ -174,42 +221,20 @@ function drawDeskProps(
   for (let i = 0; i < 5; i++) g.fillRect(kx + 1, dy + 3 + i * 2, 1, 1);
   g.fillStyle = '#50545e';
   g.fillRect(kx, dy + 15, 3, 2);
-  // monitor
-  if (kind === 'wide-gold') {
-    g.fillStyle = '#d4a017';
-    g.fillRect(mx, dy + 1, 12, 10);
-    g.fillStyle = SCREEN[state] || SCREEN.idle;
-    g.fillRect(mx + 1, dy + 2, 10, 8);
-    g.fillStyle = '#d4a017';
-    g.fillRect(mx + 5, dy + 11, 2, 2);
-  } else if (kind === 'silver') {
-    g.fillStyle = '#c8d0d8';
-    g.fillRect(mx + 1, dy + 2, 11, 9);
-    g.fillStyle = SCREEN[state] || SCREEN.idle;
-    g.fillRect(mx + 2, dy + 3, 9, 7);
-    g.fillStyle = '#9aa3b2';
-    g.fillRect(mx + 6, dy + 11, 2, 2);
-  } else if (kind === 'laptop') {
-    g.fillStyle = '#2c2c36';
-    g.fillRect(mx + 2, dy + 4, 9, 6);
-    g.fillStyle = SCREEN[state] || SCREEN.idle;
-    g.fillRect(mx + 3, dy + 5, 7, 4);
-    g.fillStyle = '#44454f';
-    g.fillRect(mx + 1, dy + 10, 11, 2);
-  } else {
-    g.fillStyle = '#23242e';
-    g.fillRect(mx + 1, dy + 2, 11, 9);
-    g.fillStyle = SCREEN[state] || SCREEN.idle;
-    g.fillRect(mx + 2, dy + 3, 9, 7);
-    g.fillStyle = '#3a3b47';
-    g.fillRect(mx + 6, dy + 11, 2, 2);
-  }
-  const sx =
-    kind === 'wide-gold' ? mx + 2 : kind === 'laptop' ? mx + 4 : mx + 3;
-  const sy =
-    kind === 'wide-gold' ? dy + 3 : kind === 'laptop' ? dy + 6 : dy + 4;
-  const rowsN = kind === 'laptop' ? 2 : 3;
-  const maxW = kind === 'laptop' ? 4 : kind === 'wide-gold' ? 7 : 6;
+  // monitor: frame, screen (colored by state), stand
+  const m = MONITORS[kind] || MONITORS.normal;
+  const box = (c: string, [x, y, w, h]: Box) => {
+    g.fillStyle = c;
+    g.fillRect(mx + x, dy + y, w, h);
+  };
+  box(m.color, m.frame);
+  box(SCREEN[state] || SCREEN.idle, m.screen);
+  box(m.standColor, m.stand);
+  // text lines on the screen start at (sx, sy): rowsN rows, at most maxW px wide
+  const sx = mx + m.text[0],
+    sy = dy + m.text[1],
+    rowsN = m.text[2],
+    maxW = m.text[3];
   if (state === 'coding' || state === 'terminal' || state === 'working') {
     g.fillStyle =
       state === 'coding'
@@ -431,6 +456,20 @@ const SEAT_Y: Record<string, number> = {
   wheel: 13,
 };
 
+// ms per animation frame (typing has its own: faster in an auto mode); everything else 450
+const FRAME_MS: Record<string, number> = {
+  walk: 90,
+  bat: 260,
+  scratch: 240,
+  write: 500,
+};
+/** Sprite x within its tile: centered, except paws against the post on the next tile, or centered in the 2-tile wheel. */
+function offsetX(act: string | null | undefined, w: number) {
+  if (act === 'scratch') return TILE + 5 - w;
+  if (act === 'wheel') return TILE - Math.round(w / 2);
+  return Math.round((TILE - w) / 2);
+}
+
 // ---- entities ------------------------------------------------------------------
 function drawEntity(
   g: Ctx,
@@ -448,29 +487,12 @@ function drawEntity(
   const act = st?.kind === 'play' ? st.act : null;
   const anim = act ? PLAY_ANIM[act] : animFor(state, moving, stationKind);
   const auto = !!emp && AUTO_MODES.has(emp.permissionMode!);
-  const rate =
-    anim === 'walk'
-      ? 90
-      : anim === 'type'
-        ? auto
-          ? 100
-          : 160
-        : anim === 'bat'
-          ? 260
-          : act === 'scratch'
-            ? 240
-            : anim === 'write'
-              ? 500
-              : 450;
+  const rate = anim === 'type' ? (auto ? 100 : 160) : (FRAME_MS[anim] ?? 450);
   const frame = Math.floor((t + e.seed) / rate);
   // pacing follows the base animation; seats facing away from the viewer swap in back-view frames, desk chairs profile ones
-  const look = !st
-    ? anim
-    : st.back
-      ? backAnim(e.pal, anim)
-      : st.face
-        ? sideAnim(e.pal, anim)
-        : anim;
+  let look = anim;
+  if (st?.back) look = backAnim(e.pal, anim);
+  else if (st?.face) look = sideAnim(e.pal, anim);
   const img = sprite(e.pal, look, frame);
   const { w, h } = spriteSize(img); // world size: uploaded skins are scaled to a cat's height
   const flip =
@@ -479,13 +501,7 @@ function drawEntity(
   const isAsst = e.kind === 'assistant';
   // centered on the tile, feet on the shadow line, unless it sits on something (SEAT_Y)
   const seatY = SEAT_Y[act || stationKind || ''] ?? 14;
-  // horizontally centered, except: paws against the post on the next tile, or centered in the 2-tile wheel
-  const ox =
-    act === 'scratch'
-      ? TILE + 5 - w
-      : act === 'wheel'
-        ? TILE - Math.round(w / 2)
-        : Math.round((TILE - w) / 2);
+  const ox = offsetX(act, w);
   const oy = seatY - h;
   const bob =
     !moving &&
