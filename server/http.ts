@@ -168,3 +168,8 @@ export const sendError = (res: ServerResponse, e: unknown) => {
     e instanceof AppError ? REFUSAL_STATUS[e.refusal] : errorStatus(code);
   json(res, status, { error: message || String(e), code });
 };
+/** Answer a use case's refusal (AppError) with sendError; anything else is a bug and propagates (500). */
+export const sendRefusal = (res: ServerResponse, e: unknown) => {
+  if (!(e instanceof AppError)) throw e;
+  sendError(res, e);
+};

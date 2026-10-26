@@ -10,12 +10,10 @@ import type { HeadlessBackend } from '../backends/headless.ts';
 import type { OrcaBackend } from '../backends/orca.ts';
 import { MAX_PROMPT_CHARS } from '../config.ts';
 import { isDir } from '../util.ts';
-import { failed, invalid } from './errors.ts';
+import { BAD_REQUEST, failed, invalid, UNKNOWN_MODE } from './errors.ts';
 import { preview } from './log.ts';
 import type { BackendId, Logger } from './ports.ts';
 
-export const BAD_REQUEST = '잘못된 요청입니다.';
-export const UNKNOWN_MODE = '알 수 없는 권한 모드입니다.';
 const UNKNOWN_BRANCH = '기준 워크트리의 브랜치를 알 수 없습니다.';
 
 interface Hire {

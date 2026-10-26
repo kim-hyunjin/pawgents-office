@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import http from 'node:http';
+import type { Logger } from './app/ports.ts';
 import { type BackendRegistry, createBackends } from './backends/index.ts';
 import {
   DATA_DIR,
@@ -13,9 +14,9 @@ import {
   TRANSCRIPT_POLL_MS,
 } from './config.ts';
 import { syncAllFiles } from './files.ts';
+import { makeRoutes } from './http/routes/index.ts';
 import { notFound } from './http.ts';
 import { pollRegistry } from './registry.ts';
-import { makeRoutes } from './routes.ts';
 import { Sse } from './sse.ts';
 import { serveStatic } from './static.ts';
 import { Store } from './store.ts';
@@ -27,12 +28,15 @@ export function createApp({
   store,
   sse,
   backends = createBackends(store),
+  logger,
 }: {
   store: Store;
   sse: Sse;
   backends?: BackendRegistry;
+  /** Where the activity log goes (the console by default). */
+  logger?: Logger;
 }) {
-  const routes = makeRoutes({ store, sse, backends });
+  const routes = makeRoutes({ store, sse, backends, logger });
   return http.createServer(async (req, res) => {
     const url = new URL(req.url!, `http://${HOST}`);
     const p = url.pathname;

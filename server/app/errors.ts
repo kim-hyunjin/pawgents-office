@@ -1,6 +1,10 @@
 // A use case saying no, without knowing HTTP: why (`refusal`) and, for the browser to branch on, a `code`.
 // server/http.ts turns it into a status; errors from the backends carry their own codes (shared/errors.ts).
 
+/** The messages several requests answer with. */
+export const BAD_REQUEST = '잘못된 요청입니다.';
+export const UNKNOWN_MODE = '알 수 없는 권한 모드입니다.';
+
 export type Refusal = 'invalid' | 'not_found' | 'conflict' | 'failed';
 
 export class AppError extends Error {
