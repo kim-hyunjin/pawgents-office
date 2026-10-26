@@ -1,6 +1,6 @@
 ---
 description: pawgents-office 서버를 (꺼져 있으면) 띄우고 브라우저로 사무실을 엽니다
-allowed-tools: Bash(node:*)
+allowed-tools: Bash(bun:*)
 ---
 !`bun "${CLAUDE_PLUGIN_ROOT}/hooks/ensure-server.ts" --open`
 
