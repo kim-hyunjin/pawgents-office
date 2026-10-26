@@ -45,9 +45,9 @@ export class Slots {
     const free: number[] = [];
     for (let i = 0; i < this.spots.length; i++)
       if (!this.owner.has(i)) free.push(i);
-    if (!free.length) return this.of.get(key) ?? -1;
-    this.release(key);
     const i = free[Math.floor(Math.random() * free.length)];
+    if (i === undefined) return this.of.get(key) ?? -1; // none free
+    this.release(key);
     this.owner.set(i, key);
     this.of.set(key, i);
     return i;
@@ -207,7 +207,9 @@ const NO_SLOTS = new Slots([]);
 const nearSlots = (desk: number | null) => {
   if (desk === null || !world.geo.desks[desk]) return NO_SLOTS; // no desk (overflow): assistants stand in the lobby
   const spots = world.geo.nearDeskSpots(desk);
-  const key = `${spots[0].x}:${spots[0].y}`;
+  const [aisle] = spots; // a desk has its spots (checked above)
+  if (!aisle) return NO_SLOTS;
+  const key = `${aisle.x}:${aisle.y}`;
   let s = world.near.get(key);
   if (!s) {
     s = new Slots(spots);
@@ -220,9 +222,10 @@ const sameStation = (a: Station | null, b: Station) =>
 
 function releaseRoom(sid: string) {
   const r = world.rooms.indexOf(sid);
-  if (r >= 0) {
+  const room = world.geo.meetings[r];
+  if (room) {
     world.rooms[r] = null;
-    world.roomSeats[r] = new Slots(world.geo.meetings[r].seats);
+    world.roomSeats[r] = new Slots(room.seats);
   }
 }
 
@@ -247,20 +250,21 @@ function sessionStation(s: SessionSnapshot, e: Employee, now: number): Station {
       r = world.rooms.indexOf(null);
       if (r >= 0) world.rooms[r] = s.id;
     }
-    if (r >= 0) {
+    const room = geo.meetings[r]; // world.rooms has one entry per meeting room
+    if (room) {
       world.plan.release(s.id);
       world.library.release(s.id);
       world.play.release(s.id);
-      return { kind: 'meeting', room: r, ...geo.meetings[r].head };
+      return { kind: 'meeting', room: r, ...room.head };
     }
   } else releaseRoom(s.id);
   const busyWithSubs = live.length > 0; // rooms full: stay at the desk with the assistants around
   if (s.permissionMode === 'plan') {
-    const i = world.plan.take(s.id);
-    if (i >= 0) {
+    const spot = geo.planSpots[world.plan.take(s.id)]; // world.plan hands out planSpots' indexes (-1: none free)
+    if (spot) {
       world.library.release(s.id);
       world.play.release(s.id);
-      return { kind: 'plan', ...geo.planSpots[i] };
+      return { kind: 'plan', ...spot };
     }
   } else world.plan.release(s.id);
   if (s.state === 'searching') e.lastSearch = now;
@@ -269,10 +273,10 @@ function sessionStation(s: SessionSnapshot, e: Employee, now: number): Station {
     now - e.lastSearch < LIBRARY_LINGER_MS &&
     s.state !== 'idle'
   ) {
-    const i = world.library.take(s.id);
-    if (i >= 0) {
+    const spot = geo.librarySpots[world.library.take(s.id)];
+    if (spot) {
       world.play.release(s.id);
-      return { kind: 'library', ...geo.librarySpots[i] };
+      return { kind: 'library', ...spot };
     }
   } else world.library.release(s.id);
   const idleFor = s.state === 'idle' ? now - s.stateSince : 0;
@@ -280,14 +284,11 @@ function sessionStation(s: SessionSnapshot, e: Employee, now: number): Station {
   if (!busyWithSubs && !awaitingBg(s) && idleFor > PLAY_AFTER_MS) {
     if (!world.play.has(s.id) || now >= (e.playUntil ?? Infinity)) {
       // time to wander to another spot
-      const i = world.play.takeRandom(s.id);
-      if (i >= 0) e.playUntil = now + dwellMs(world.funSpots[i].act);
+      const spot = world.funSpots[world.play.takeRandom(s.id)];
+      if (spot) e.playUntil = now + dwellMs(spot.act);
     }
-    const i = world.play.of.get(s.id);
-    if (i !== undefined) {
-      const p = world.funSpots[i];
-      return { kind: p.act === 'lounge' ? 'lounge' : 'play', ...p };
-    }
+    const p = world.funSpots[world.play.of.get(s.id) ?? -1];
+    if (p) return { kind: p.act === 'lounge' ? 'lounge' : 'play', ...p };
   } else world.play.release(s.id);
   const d = geo.desks[s.desk ?? -1];
   if (d) {
@@ -295,8 +296,12 @@ function sessionStation(s: SessionSnapshot, e: Employee, now: number): Station {
     return { kind: 'desk', desk: s.desk, ...d.chair };
   }
   const i = world.bullpen.take(`s:${s.id}`);
-  return { kind: 'bullpen', ...geo.bullpenSpots[Math.max(0, i)] };
+  return { kind: 'bullpen', ...bullpenSpot(i) };
 }
+
+/** Bullpen spot `i`, or the first one when every spot is taken (-1). Never empty: compile() falls back to the spawn tile. */
+const bullpenSpot = (i: number): Pt =>
+  world.geo.bullpenSpots[Math.max(0, i)] ?? world.geo.spawn;
 
 /** Where should this subagent's assistant be? null = stay and fade. */
 function assistantStation(s: SessionSnapshot, a: SubagentSnapshot): Station {
@@ -305,24 +310,28 @@ function assistantStation(s: SessionSnapshot, a: SubagentSnapshot): Station {
   if (r >= 0) {
     nearSlots(s.desk).release(key);
     world.bullpen.release(`a:${key}`);
-    const i = world.roomSeats[r].take(key);
-    const room = world.geo.meetings[r];
-    if (i >= 0) return { kind: 'meeting', room: r, ...room.seats[i] };
-    return {
-      kind: 'meeting',
-      room: r,
-      x: room.x + room.w - 1,
-      y: room.y + (hashStr(key) % room.h),
-    };
+    const seats = world.roomSeats[r],
+      room = world.geo.meetings[r];
+    if (seats && room) {
+      const seat = room.seats[seats.take(key)];
+      if (seat) return { kind: 'meeting', room: r, ...seat };
+      return {
+        kind: 'meeting',
+        room: r,
+        x: room.x + room.w - 1,
+        y: room.y + (hashStr(key) % room.h),
+      };
+    }
   }
   for (const rs of world.roomSeats) rs.release(key);
-  const i = nearSlots(s.desk).take(key);
-  if (i >= 0) {
+  const i = nearSlots(s.desk).take(key); // NO_SLOTS (no desk) never gives one
+  const near = s.desk === null ? undefined : world.geo.nearDeskSpots(s.desk)[i];
+  if (near) {
     world.bullpen.release(`a:${key}`);
-    return { kind: 'near', ...world.geo.nearDeskSpots(s.desk!)[i] };
+    return { kind: 'near', ...near };
   }
   const b = world.bullpen.take(`a:${key}`);
-  return { kind: 'bullpen', ...world.geo.bullpenSpots[Math.max(0, b)] };
+  return { kind: 'bullpen', ...bullpenSpot(b) };
 }
 
 function releaseAll(e: Ent) {
