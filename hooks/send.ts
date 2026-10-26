@@ -11,7 +11,7 @@ import {
   decisionOutput,
 } from '../shared/decision.ts';
 import { errMessage } from '../shared/errors.ts';
-import type { HookEvent } from '../shared/hook.ts';
+import type { DecisionReply, HookEvent } from '../shared/hook.ts';
 import { safeJsonParse } from '../shared/json.ts';
 import { MAX_REPLY_CHARS } from '../shared/limits.ts';
 import { autostartEnabled, ensureServer } from '../shared/node/ensure.ts';
@@ -32,6 +32,9 @@ export function log(msg: string) {
     /* ignore */
   }
 }
+
+/** One of Stop's background_tasks as claude sent it (an entry may be missing or null). */
+type RawTask = NonNullable<HookEvent['background_tasks']>[number] | null;
 
 function clip<T>(v: T, n: number): T | string {
   return typeof v === 'string' && v.length > n ? v.slice(0, n) + '…' : v;
@@ -76,13 +79,15 @@ function shrink(ev: HookEvent) {
   }
   // Stop lists in-flight background work (shells, monitors…): "paused waiting for it", not "done".
   if (Array.isArray(ev.background_tasks)) {
-    ev.background_tasks = ev.background_tasks.slice(0, 10).map((t: any) => ({
-      id: t?.id,
-      type: t?.type,
-      status: t?.status,
-      description: clip(t?.description, 200),
-      command: clip(t?.command, 200),
-    }));
+    ev.background_tasks = ev.background_tasks
+      .slice(0, 10)
+      .map((t: RawTask) => ({
+        id: t?.id,
+        type: t?.type,
+        status: t?.status,
+        description: clip(t?.description, 200),
+        command: clip(t?.command, 200),
+      }));
   } else delete ev.background_tasks;
   for (const k of ['session_crons', 'permission_suggestions']) delete ev[k];
   return ev;
@@ -91,14 +96,14 @@ function shrink(ev: HookEvent) {
 export async function readEvent(): Promise<HookEvent | null> {
   const chunks: Buffer[] = [];
   for await (const c of process.stdin) chunks.push(c);
-  let ev: any;
+  let ev: unknown;
   try {
     ev = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
-    log('bad json');
+    log('bad json'); // not safeJsonParse: that can't tell bad JSON from a literal `null`
     return null;
   }
-  return ev && typeof ev === 'object' ? ev : null;
+  return ev && typeof ev === 'object' ? (ev as HookEvent) : null;
 }
 
 /** Long-poll the server for the browser's allow/deny; prints the decision, or nothing (error, timeout, no answer). */
@@ -110,7 +115,7 @@ async function awaitDecision(ev: HookEvent) {
     const r = await postHook(ev, {
       timeoutMs: DECISION_TIMEOUT_S * 1000 - 10_000, // give up before claude kills us
     });
-    const d = safeJsonParse((await r.text()).trim()); // the body is padded with heartbeat spaces
+    const d: DecisionReply | null = safeJsonParse((await r.text()).trim()); // the body is padded with heartbeat spaces
     if (d?.decision === 'allow' || d?.decision === 'deny') {
       const out = JSON.stringify(
         decisionOutput(
