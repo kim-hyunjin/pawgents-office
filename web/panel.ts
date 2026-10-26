@@ -13,17 +13,17 @@ import { FAMILIES, familyOf } from './sprites.ts';
 import {
   awaitingBg,
   bgSummary,
-  EV_ICON,
   esc,
   fmtTime,
-  ICON,
   isHeadless,
+  logIcon,
   MODE_LABEL,
   quitTitle,
   STATE_COLOR,
   STATE_LABEL,
   setMsg,
   thinkingFresh,
+  toolHtml,
   toolText,
 } from './ui.ts';
 
@@ -412,7 +412,7 @@ export class Panel {
     badge.style.background = STATE_COLOR[s.state] || '#888';
     const fam = FAMILIES[familyOf(s.model)];
     const tool = s.currentTool
-      ? `<b>${esc(s.currentTool.name)}</b>${s.currentTool.target ? ' · ' + esc(s.currentTool.target) : ''} <span class="dim">(${fmtDur(now - s.currentTool.startedAt)})</span>${s.currentTool.detail ? `<div class="detail">${esc(s.currentTool.detail)}</div>` : ''}`
+      ? `${toolHtml(s.currentTool)} <span class="dim">(${fmtDur(now - s.currentTool.startedAt)})</span>${s.currentTool.detail ? `<div class="detail">${esc(s.currentTool.detail)}</div>` : ''}`
       : awaitingBg(s)
         ? `⏳ ${esc(bgSummary(s))}`
         : esc(STATE_LABEL[s.state] || '—');
@@ -525,19 +525,13 @@ export class Panel {
     ul.innerHTML = list
       .map((e) => {
         const done = e.ev === 'PostToolUse' || e.ev === 'PostToolUseFailure';
-        const icon = done
-          ? e.ev === 'PostToolUse'
-            ? '✓'
-            : '✗'
-          : e.tool
-            ? ICON[e.tool] || '🔧'
-            : EV_ICON[e.ev] || '•';
+        const icon = done ? (e.ev === 'PostToolUse' ? '✓' : '✗') : logIcon(e);
         const dur =
           done && e.ms
             ? ` <small>${e.ms >= 1000 ? (e.ms / 1000).toFixed(1) + 's' : e.ms + 'ms'}</small>`
             : '';
         const head =
-          esc(e.tool ? `${e.tool}${e.target ? ' · ' + e.target : ''}` : e.ev) +
+          esc(e.tool ? toolText({ name: e.tool, target: e.target }) : e.ev) +
           dur;
         const cls =
           e.ev === 'PostToolUseFailure'

@@ -1,7 +1,7 @@
 import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
 import type { Change } from './state.ts';
 import { app } from './state.ts';
-import { EV_ICON, esc, fmtTime, ICON } from './ui.ts';
+import { esc, fmtTime, logIcon, toolHtml } from './ui.ts';
 
 // ---- activity ticker (sessions of the office on screen) ---------------------------
 const FEED_EVENTS = new Set([
@@ -77,10 +77,10 @@ export function renderFeed(live?: boolean) {
   ul.innerHTML = items
     .map((it) => {
       const e = it.e;
-      const icon = e.tool ? ICON[e.tool] || '🔧' : EV_ICON[e.ev] || '•';
+      const icon = logIcon(e);
       let what: string;
       if (e.tool)
-        what = `<b>${esc(e.tool)}</b>${e.target ? ' · ' + esc(e.target) : ''}${e.detail ? ` <span class="dim">— ${esc(e.detail)}</span>` : ''}`;
+        what = `${toolHtml({ name: e.tool, target: e.target })}${e.detail ? ` <span class="dim">— ${esc(e.detail)}</span>` : ''}`;
       else if (e.ev === 'UserPromptSubmit')
         what = `<span class="dim">지시:</span> ${esc(e.text || '')}`;
       else if (e.ev === 'Stop')

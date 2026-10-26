@@ -5,6 +5,7 @@ import type {
   Backend,
   CurrentTool,
   EntityState,
+  LogEntry,
   SessionSnapshot,
 } from '../shared/api.ts';
 import type { Sprite } from './sprites.ts';
@@ -140,7 +141,7 @@ export const MODE_LABEL: Record<string, string> = {
   acceptEdits: '편집 승인',
   default: '기본',
 };
-export const ICON: Record<string, string> = {
+const ICON: Record<string, string> = {
   Read: '📖',
   Grep: '🔍',
   Glob: '🔍',
@@ -158,7 +159,7 @@ export const ICON: Record<string, string> = {
   Skill: '🧩',
   TodoWrite: '📝',
 };
-export const EV_ICON: Record<string, string> = {
+const EV_ICON: Record<string, string> = {
   SessionStart: '🚪',
   SessionEnd: '🚪',
   UserPromptSubmit: '🗣️',
@@ -172,6 +173,12 @@ export const EV_ICON: Record<string, string> = {
   PostModelSwitch: '🔁',
 };
 
+/** A log line's icon: its tool's (🔧 for one we don't know), else its event's. */
+export const logIcon = (e: Pick<LogEntry, 'tool' | 'ev'>) =>
+  e.tool ? ICON[e.tool] || '🔧' : EV_ICON[e.ev] || '•';
+/** "<b>Edit</b> · office.ts": a tool call as HTML, its name in bold (both parts escaped). */
+export const toolHtml = (t: { name: string; target?: string | null }) =>
+  `<b>${esc(t.name)}</b>${t.target ? ' · ' + esc(t.target) : ''}`;
 /** "Edit · office.ts": a tool call as one line of plain text (callers escape it for HTML). */
 export const toolText = (
   t: Pick<CurrentTool, 'name'> & { target?: string | null },

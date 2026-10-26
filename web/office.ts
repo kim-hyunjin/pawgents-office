@@ -46,6 +46,7 @@ import {
   STATE_LABEL,
   storage,
   thinkingFresh,
+  toolHtml,
 } from './ui.ts';
 import {
   initViewport,
@@ -357,7 +358,7 @@ function describe(e: Ent) {
   const where = placeOf(e);
   const toolLine = (d: SessionSnapshot | SubagentSnapshot) =>
     d.currentTool
-      ? `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span> · <b>${esc(d.currentTool.name)}</b>${d.currentTool.target ? ' · ' + esc(d.currentTool.target) : ''}${d.currentTool.detail ? `<div class="detail">${esc(d.currentTool.detail)}</div>` : ''}`
+      ? `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span> · ${toolHtml(d.currentTool)}${d.currentTool.detail ? `<div class="detail">${esc(d.currentTool.detail)}</div>` : ''}`
       : `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span>`;
   const think = (d: SessionSnapshot | SubagentSnapshot) =>
     thinkingFresh(d, Date.now()) && d.state !== 'idle'
