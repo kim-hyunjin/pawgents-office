@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Removes pawgents-office hooks from ~/.claude/settings.json, leaving everything else intact.
-import type { HookHandler, Settings } from './_common.ts';
+import type { HookGroup, HookHandler, Settings } from './_common.ts';
 import {
   commitSettings,
   isOurs,
@@ -12,23 +12,25 @@ import {
 export function removeOurHooks(settings: Settings) {
   let removed = 0;
   if (settings.hooks && typeof settings.hooks === 'object') {
-    for (const [event, groups] of Object.entries(settings.hooks)) {
+    const hooks = settings.hooks as Record<string, unknown>;
+    for (const [event, groups] of Object.entries(hooks)) {
       if (!Array.isArray(groups)) continue;
       const kept: unknown[] = [];
-      for (const g of groups) {
+      for (const g of groups as (HookGroup | null)[]) {
         if (!g || !Array.isArray(g.hooks)) {
           kept.push(g);
           continue;
         }
         const before = g.hooks.length;
-        g.hooks = g.hooks.filter((h: HookHandler) => !isOurs(h));
-        removed += before - g.hooks.length;
-        if (g.hooks.length) kept.push(g);
+        const left = g.hooks.filter((h: HookHandler) => !isOurs(h));
+        g.hooks = left;
+        removed += before - left.length;
+        if (left.length) kept.push(g);
       }
-      if (kept.length) settings.hooks[event] = kept;
-      else delete settings.hooks[event];
+      if (kept.length) hooks[event] = kept;
+      else delete hooks[event];
     }
-    if (!Object.keys(settings.hooks).length) delete settings.hooks;
+    if (!Object.keys(hooks).length) delete settings.hooks;
   }
   return removed;
 }

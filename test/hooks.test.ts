@@ -13,6 +13,8 @@ import { commandGroup } from '../shared/hook-group.ts';
 
 const ours = () => commandGroup(HOOK_COMMAND, { async: true });
 const foreign = { hooks: [{ type: 'command', command: 'echo other' }] };
+/** settings.hooks after addOurHooks made it an object. */
+const hooksOf = (s: Settings) => s.hooks as Record<string, unknown>;
 
 test('commandGroup writes type and command first, then the options', () => {
   assert.equal(
@@ -28,8 +30,8 @@ test('addOurHooks adds one async group per event, once', () => {
   const settings: Settings = { model: 'opus' };
   assert.deepEqual(addOurHooks(settings), { added: EVENTS, skipped: [] });
   assert.equal(settings.model, 'opus');
-  assert.deepEqual(Object.keys(settings.hooks), EVENTS);
-  for (const e of EVENTS) assert.deepEqual(settings.hooks[e], [ours()]);
+  assert.deepEqual(Object.keys(hooksOf(settings)), EVENTS);
+  for (const e of EVENTS) assert.deepEqual(hooksOf(settings)[e], [ours()]);
   const again = structuredClone(settings);
   assert.deepEqual(addOurHooks(again), { added: [], skipped: [] });
   assert.deepEqual(again, settings);
@@ -43,9 +45,10 @@ test('addOurHooks keeps other hooks and skips what it cannot edit', () => {
   assert.deepEqual(r?.skipped, ['SessionEnd']);
   assert.ok(!r?.added.includes('PreToolUse'));
   assert.ok(r?.added.includes('Stop'));
-  assert.deepEqual(settings.hooks.Stop, [foreign, ours()]);
-  assert.deepEqual(settings.hooks.PreToolUse, [foreign, ours()]);
-  assert.deepEqual(settings.hooks.SessionEnd, {});
+  const hooks = hooksOf(settings);
+  assert.deepEqual(hooks.Stop, [foreign, ours()]);
+  assert.deepEqual(hooks.PreToolUse, [foreign, ours()]);
+  assert.deepEqual(hooks.SessionEnd, {});
 });
 
 test('addOurHooks refuses a hooks value that is not an object', () => {

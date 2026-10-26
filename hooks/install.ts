@@ -6,6 +6,7 @@ import {
   commitSettings,
   EVENTS,
   HOOK_COMMAND,
+  type HookGroup,
   isOurs,
   loadSettingsOrExit,
   SETTINGS_FILE,
@@ -22,20 +23,20 @@ export function addOurHooks(settings: Settings, command = HOOK_COMMAND) {
     (typeof settings.hooks !== 'object' || Array.isArray(settings.hooks))
   )
     return null;
-  settings.hooks ??= {};
+  const hooks = (settings.hooks ??= {}) as Record<string, unknown>;
   const added: string[] = [];
   const skipped: string[] = [];
   for (const event of EVENTS) {
-    const groups = settings.hooks[event];
+    const groups = hooks[event];
     if (groups !== undefined && !Array.isArray(groups)) {
       skipped.push(event);
       continue;
     }
-    const list = groups ?? (settings.hooks[event] = []);
-    const present = list.some(
-      (g: { hooks?: unknown } | null) =>
-        Array.isArray(g?.hooks) && g.hooks.some(isOurs),
-    );
+    const list: unknown[] = groups ?? (hooks[event] = []);
+    const present = list.some((g) => {
+      const handlers = (g as HookGroup | null)?.hooks;
+      return Array.isArray(handlers) && handlers.some(isOurs);
+    });
     if (present) continue;
     list.push(commandGroup(command, { async: true }));
     added.push(event);

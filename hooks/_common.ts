@@ -4,12 +4,14 @@ import { errMessage } from '../shared/errors.ts';
 import { CLAUDE_DIR } from '../shared/node/env.ts';
 import { SEND_SCRIPT } from '../shared/node/paths.ts';
 
-/** Settings files are user JSON: dynamic by nature. */
-export type Settings = Record<string, any>;
+/** Settings files are user JSON: anything may be in them, `hooks` included, so it is checked before use. */
+export type Settings = { hooks?: unknown; [key: string]: unknown };
+/** One entry of settings.hooks[event]; besides `hooks` it may carry a matcher and the like. */
+export type HookGroup = { hooks?: unknown; [key: string]: unknown };
 export type HookHandler = {
-  type?: string;
+  type?: unknown;
   command?: unknown;
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 export const EVENTS = [
