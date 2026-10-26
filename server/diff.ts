@@ -6,19 +6,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { DiffReply } from '../shared/api.ts';
+import { codedError } from '../shared/errors.ts';
 import { GIT_TIMEOUT_MS, MAX_DIFF_BYTES, MAX_DIFF_CHARS } from './config.ts';
 import type { SysError } from './types.ts';
 
 const run = promisify(execFile);
 const roots = new Map<string, string | null>(); // cwd -> worktree top level (a worktree's, not the main repo's: repo.ts answers that)
-
-class DiffError extends Error {
-  code: 'not_repo' | 'outside';
-  constructor(code: 'not_repo' | 'outside', message: string) {
-    super(message);
-    this.code = code;
-  }
-}
 
 /** git stdout; `okCodes` exit codes also answer with stdout (diff --no-index exits 1 when the files differ). */
 async function git(
@@ -69,7 +62,7 @@ function patchOf({ out, truncated }: { out: string; truncated: boolean }) {
 }
 
 /**
- * @throws {DiffError} code 'not_repo' (cwd is not in a git worktree) or 'outside' (file is not under it); git failures pass through.
+ * @throws codedError 'not_repo' (cwd is not in a git worktree) or 'outside' (file is not under it); git failures pass through.
  */
 export async function fileDiff(
   cwd: string | undefined,
@@ -77,7 +70,7 @@ export async function fileDiff(
   { since = 0 }: { since?: number } = {},
 ): Promise<Omit<DiffReply, 'file'>> {
   const root = cwd ? await worktreeRoot(cwd) : null;
-  if (!root) throw new DiffError('not_repo', 'git 저장소가 아닙니다.');
+  if (!root) throw codedError('git 저장소가 아닙니다.', 'not_repo');
   const rel = path.relative(root, path.resolve(file));
   if (
     !rel ||
@@ -85,7 +78,7 @@ export async function fileDiff(
     path.isAbsolute(rel) ||
     rel.split(path.sep)[0] === '.git'
   )
-    throw new DiffError('outside', '저장소 밖의 파일입니다.');
+    throw codedError('저장소 밖의 파일입니다.', 'outside');
   const spec = rel.split(path.sep).join('/');
 
   let diff: Awaited<ReturnType<typeof git>>;

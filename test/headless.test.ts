@@ -580,7 +580,7 @@ test('childEnv drops the parent claude/Orca session vars and points hooks at thi
 });
 
 test('backend errors map to HTTP statuses', async () => {
-  const { backendStatus, backendError } = await import('../server/http.ts');
+  const { errorStatus, sendError } = await import('../server/http.ts');
   for (const c of [
     'terminal_not_found',
     'not_claude',
@@ -588,11 +588,15 @@ test('backend errors map to HTTP statuses', async () => {
     'detached',
     'headless_unavailable',
     'git_failed',
+    'not_repo',
   ])
-    assert.equal(backendStatus(c), 409, c);
-  assert.equal(backendStatus('ENOENT'), 502);
-  assert.equal(backendStatus('orca_failed'), 502);
-  assert.equal(backendStatus(undefined), 502);
+    assert.equal(errorStatus(c), 409, c);
+  assert.equal(errorStatus('outside'), 400);
+  assert.equal(errorStatus('ENOENT'), 502);
+  assert.equal(errorStatus('orca_failed'), 502);
+  assert.equal(errorStatus(128), 502); // a git exit code
+  assert.equal(errorStatus('constructor'), 502);
+  assert.equal(errorStatus(undefined), 502);
   const res = {
     status: 0,
     body: null as unknown,
@@ -603,7 +607,7 @@ test('backend errors map to HTTP statuses', async () => {
       this.body = JSON.parse(body);
     },
   };
-  backendError(
+  sendError(
     res as unknown as ServerResponse,
     Object.assign(new Error('gone'), { code: 'detached' }),
   );

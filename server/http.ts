@@ -130,8 +130,9 @@ export function findSession(
   return s;
 }
 
-// Backend failures the user can act on (wrong tab, claude died, runner not attached, git refused) are 409; the rest is upstream trouble.
-export const BACKEND_ERROR_STATUS: Record<string, number> = {
+// The HTTP status of a codedError(). Failures the user can act on (wrong tab, claude died, runner not attached, git
+// refused, not a repo) are 409, a file outside the repo is 400; the rest is upstream trouble (502).
+export const ERROR_STATUS: Record<string, number> = {
   terminal_not_found: 409,
   not_claude: 409,
   headless_exit: 409,
@@ -143,11 +144,17 @@ export const BACKEND_ERROR_STATUS: Record<string, number> = {
   waiting: 409,
   stale: 409,
   dialog_unknown: 409,
+  not_repo: 409,
+  outside: 400,
   ENOENT: 502,
 };
-export const backendStatus = (code?: string) =>
-  BACKEND_ERROR_STATUS[code as string] ?? 502;
-export const backendError = (res: ServerResponse, e: unknown) => {
-  const { code, message } = (e ?? {}) as { code?: string; message?: string };
-  json(res, backendStatus(code), { error: message || String(e), code });
+/** `code` may be anything a caught error carries (a git exit code is a number): unknown ones are 502. */
+export const errorStatus = (code?: unknown) =>
+  typeof code === 'string' && Object.hasOwn(ERROR_STATUS, code)
+    ? ERROR_STATUS[code]
+    : 502;
+/** Answer a caught error as `{ error, code }` with its errorStatus. */
+export const sendError = (res: ServerResponse, e: unknown) => {
+  const { code, message } = (e ?? {}) as { code?: unknown; message?: string };
+  json(res, errorStatus(code), { error: message || String(e), code });
 };

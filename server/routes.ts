@@ -39,7 +39,6 @@ import { MAX_BODY_BYTES, MAX_PROMPT_CHARS } from './config.ts';
 import { fileDiff } from './diff.ts';
 import { scheduleFileSync } from './files.ts';
 import {
-  backendError,
   findSession,
   holdForDecision,
   isOwnHost,
@@ -47,6 +46,7 @@ import {
   notFound,
   readBody,
   readJson,
+  sendError,
   tooLarge,
 } from './http.ts';
 import { applyHook } from './reducer.ts';
@@ -55,7 +55,7 @@ import type { Sse } from './sse.ts';
 import { sendFile } from './static.ts';
 import type { Store } from './store.ts';
 import { BREED_KEY, DEFAULT_OFFICE_ID } from './store.ts';
-import type { HookEvent, Session, SysError } from './types.ts';
+import type { HookEvent, Session } from './types.ts';
 import { isDir, oneLine, truncate } from './util.ts';
 
 export interface RouteCtx {
@@ -94,7 +94,7 @@ function backendOrDetached(
   try {
     return backends.driverOf(s);
   } catch (e) {
-    backendError(res, e);
+    sendError(res, e);
     return null;
   }
 }
@@ -336,7 +336,7 @@ export function makeRoutes({
               : String(data.permissionMode),
         });
     } catch (e) {
-      backendError(res, e);
+      sendError(res, e);
     }
   };
 
@@ -449,12 +449,7 @@ export function makeRoutes({
           });
           json(res, 200, { file: f.path, ...d } satisfies DiffReply);
         } catch (e) {
-          const { code, message } = e as SysError;
-          json(
-            res,
-            code === 'not_repo' ? 409 : code === 'outside' ? 400 : 502,
-            { error: message, code },
-          );
+          sendError(res, e); // not_repo 409, outside 400, a git failure 502
         }
       },
     ],
@@ -488,7 +483,7 @@ export function makeRoutes({
           store.emitSession(s);
           json(res, 200, { ok: true, accepted: r?.accepted ?? true });
         } catch (e) {
-          backendError(res, e);
+          sendError(res, e);
         }
       },
     ],
@@ -520,7 +515,7 @@ export function makeRoutes({
           console.log(`[web] close${force ? ' (force)' : ''} → ${label(s)}`);
           json(res, 200, { ok: true });
         } catch (e) {
-          backendError(res, e);
+          sendError(res, e);
         }
       },
     ],
@@ -548,7 +543,7 @@ export function makeRoutes({
           store.emitSession(s);
           json(res, 200, { ok: true, mode: s.permissionMode });
         } catch (e) {
-          backendError(res, e);
+          sendError(res, e);
         }
       },
     ],
@@ -574,7 +569,7 @@ export function makeRoutes({
             .ownerOf(s)
             .answerPermission(s, data.id, data.allow);
         } catch (e) {
-          backendError(res, e);
+          sendError(res, e);
           return;
         }
         console.log(
@@ -597,7 +592,7 @@ export function makeRoutes({
             } satisfies WorktreesReply);
           else json(res, 400, { error: '알 수 없는 백엔드입니다.' });
         } catch (e) {
-          backendError(res, e);
+          sendError(res, e);
         }
       },
     ],

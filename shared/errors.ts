@@ -10,6 +10,6 @@ export const errCode = (e: unknown): string | undefined => {
   return typeof c === 'string' ? c : undefined;
 };
 
-/** An Error carrying a machine-readable `code` (mapped to an HTTP status by server/http.ts backendStatus). */
+/** An Error carrying a machine-readable `code` (mapped to an HTTP status by server/http.ts errorStatus). */
 export const codedError = (message: string, code: string) =>
   Object.assign(new Error(message), { code });
