@@ -87,7 +87,7 @@ export function sliceSheet(bmp: ImageBitmap, cw: number, ch: number) {
     x1 = -1,
     y1 = -1;
   const cells: Record<string, [number, number][]> = {};
-  for (let r = 0; r < nrows; r++) {
+  for (const [r, anim] of SKIN_ROWS.slice(0, nrows).entries()) {
     for (let col = 0; col < cols; col++) {
       let any = false;
       for (let y = 0; y < ch; y++)
@@ -100,7 +100,7 @@ export function sliceSheet(bmp: ImageBitmap, cw: number, ch: number) {
           y1 = Math.max(y1, y);
         }
       if (!any) break;
-      (cells[SKIN_ROWS[r]] ||= []).push([col, r]);
+      (cells[anim] ||= []).push([col, r]);
     }
   }
   const w = x1 - x0 + 1,
@@ -132,9 +132,17 @@ export function skinFrames(
   anim: string,
 ): Sprite[] {
   const m = /^(back|side):(.+)$/.exec(anim);
-  if (m) return rows[m[1]] || skinFrames(rows, m[2]);
-  if (rows[anim]) return rows[anim];
-  if (anim === 'bat')
-    return [rows.idle[0], rows.wait?.[0] || rows.idle[1] || rows.idle[0]]; // paw down, paw up
+  if (m) {
+    const [, facing = '', pose = ''] = m;
+    return rows[facing] || skinFrames(rows, pose);
+  }
+  const own = rows[anim];
+  if (own) return own;
+  if (anim === 'bat') {
+    const idle = rows.idle ?? []; // a skin has its idle row (it is the sheet's first)
+    return [idle[0], rows.wait?.[0] || idle[1] || idle[0]].filter(
+      (f): f is Sprite => !!f,
+    ); // paw down, paw up
+  }
   return skinFrames(rows, SKIN_FALLBACK[anim] || 'idle');
 }

@@ -576,7 +576,7 @@ export const BREEDS: Record<string, Breed> = {
 
 // Model family → default breed, roughly by how often the breed tops "smartest cat" lists
 // (Abyssinian, Siamese first; Russian Blue mid-list; the placid Persian rarely appears). The user can pick others.
-export const FAMILIES: Record<string, Family> = {
+export const FAMILIES: Record<string, Family> & { other: Family } = {
   fable: {
     label: 'Fable',
     title: '수석',

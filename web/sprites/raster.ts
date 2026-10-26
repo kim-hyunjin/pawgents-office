@@ -21,13 +21,14 @@ function shapeRows(
 ) {
   if (!shape || (!shape.ears && !shape.build && !shape.spots)) return rows;
   let r = rows.slice();
-  if (shape.ears === 'big') r.unshift(r[0]);
-  else if (shape.ears === 'tufted') r.unshift(r[0].replace(/O/g, 'S'));
+  const top = r[0] ?? ''; // frames are never empty
+  if (shape.ears === 'big') r.unshift(top);
+  else if (shape.ears === 'tufted') r.unshift(top.replace(/O/g, 'S'));
   else if (shape.ears === 'small') r.shift();
   else if (shape.ears === 'fold') r.splice(0, 2);
   const body = Math.floor(r.length * 0.6);
   if (shape.build === 'slim' || shape.build === 'large')
-    r.splice(body, 0, r[body]);
+    r.splice(body, 0, r[body] ?? ''); // body < r.length
   if (shape.build === 'cobby') r.splice(body, 1);
   if (shape.build === 'short') r.splice(r.length - 3, 1); // a row of leg (the paws stay)
   if (shape.build === 'cobby' || shape.build === 'large') {
@@ -64,14 +65,14 @@ export function sprite(pal: Palette, anim: string, frame: number): Sprite {
   const key = `${pal.kind}|${pal.breed || pal.fam}|${pal.variant}|${anim}|${frame % frames.length}`;
   let c = cache.get(key);
   if (c) return c;
-  const rows = shapeRows(frames[frame % frames.length], pal.shape, anim);
+  const rows = shapeRows(frames[frame % frames.length] ?? [], pal.shape, anim);
   const w = Math.max(...rows.map((r) => r.length));
   const h = rows.length;
   c = new OffscreenCanvas(w, h);
   const g = c.getContext('2d')!;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < rows[y].length; x++) {
-      const color = pal[rows[y][x] as keyof Coat | 'W' | 'L' | 'D'];
+  for (const [y, row] of rows.entries()) {
+    for (let x = 0; x < row.length; x++) {
+      const color = pal[row.charAt(x) as keyof Coat | 'W' | 'L' | 'D'];
       if (!color) continue; // '.' and absent features (e.g. no ruff on short-haired breeds)
       g.fillStyle = color;
       g.fillRect(x, y, 1, 1);
@@ -145,18 +146,25 @@ export function sideAnim(pal: Palette, anim: string) {
 
 function skinSprite(pal: Palette, anim: string, frame: number): Sprite {
   const rows = skins.get(pal.skin!)?.rows;
-  if (!rows)
-    return sprite(
-      breedPalette(FAMILIES[pal.fam || 'other'].breed, 0, pal.kind, pal.fam),
+  const asCat = () =>
+    sprite(
+      breedPalette(
+        (FAMILIES[pal.fam || 'other'] ?? FAMILIES.other).breed,
+        0,
+        pal.kind,
+        pal.fam,
+      ),
       anim,
       frame,
-    ); // deleted, until re-picked
+    );
+  if (!rows) return asCat(); // deleted, until re-picked
   const frames = skinFrames(rows, anim),
     i = frame % frames.length;
   const key = `skin|${pal.skin}|${pal.kind}|${anim}|${i}`;
   let c = cache.get(key);
   if (c) return c;
   const src = frames[i];
+  if (!src) return asCat(); // a skin always has frames for every pose (skinFrames falls back to idle)
   c = new OffscreenCanvas(src.width, src.height) as Sprite;
   c.getContext('2d')!.drawImage(src, 0, 0);
   c.scale = skinScale(src.height, pal.kind);
@@ -174,11 +182,11 @@ export function spriteSize(img: Sprite | HTMLCanvasElement | ImageBitmap) {
 export function skinTemplate() {
   const C = 24,
     pal = breedPalette('koshort', 0);
-  const cols = Math.max(...SKIN_ROWS.map((a) => E[a].length));
+  const cols = Math.max(...SKIN_ROWS.map((a) => E[a]?.length ?? 0)); // E has every SKIN_ROWS pose
   const c = new OffscreenCanvas(C * cols, C * SKIN_ROWS.length),
     g = c.getContext('2d')!;
   for (const [r, anim] of SKIN_ROWS.entries()) {
-    for (const i of E[anim].keys()) {
+    for (const i of (E[anim] ?? []).keys()) {
       const img = sprite(pal, anim, i);
       g.drawImage(
         img,

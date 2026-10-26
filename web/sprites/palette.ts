@@ -18,12 +18,17 @@ export function setBreedChoices(map?: Record<string, string> | null) {
 }
 /** What the user picked for a family (a skin may still be loading), or the default breed. */
 export function choiceOf(fam: string) {
-  return chosen[fam] || FAMILIES[fam].breed;
+  return chosen[fam] || defaultBreed(fam);
 }
+/** A family's own breed (familyOf names only known families; anything else is drawn like 'other'). */
+const defaultBreed = (fam: string) => (FAMILIES[fam] ?? FAMILIES.other).breed;
 /** The breed a model family's cats are drawn as: the user's pick if it's a known breed or a loaded skin, else the default. */
 export function breedOf(fam: string) {
   const k = chosen[fam];
-  return BREEDS[k] || skins.get(skinId(k)!)?.rows ? k : FAMILIES[fam].breed;
+  const sid = skinId(k);
+  return k && (BREEDS[k] || (sid !== null && skins.get(sid)?.rows))
+    ? k
+    : defaultBreed(fam);
 }
 const skinId = (k: unknown) =>
   typeof k === 'string' && k.startsWith('skin:') ? k.slice(5) : null;
@@ -60,13 +65,14 @@ export function breedPalette(
 ): Palette {
   const sid = skinId(breed);
   if (sid) return { fam, breed, skin: sid, variant: 0, kind };
+  const b = BREEDS[breed]; // callers pass a known breed (breedOf checks the user's pick)
   return {
     fam,
     breed,
     variant,
     kind,
-    shape: BREEDS[breed].shape,
-    ...BREEDS[breed].coats[variant],
+    shape: b?.shape,
+    ...b?.coats[variant],
     W: '#fdfdfd',
     L: '#c8d0d8',
     D: '#111',

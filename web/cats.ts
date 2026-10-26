@@ -187,13 +187,27 @@ const MARKER = ['DO', 'PO', 'FO', 'FO', 'FO', 'O.'];
 const HANDSET = ['DD', 'DO', 'DD'];
 const BOOK = ['OOOOOOOOOOOO', 'PWWLWWOWWLWP', 'OWLLWWOWLLWO', 'OOOOOOOOOOOO'];
 
-/** One sheet: animation name → frames, each a list of string-art rows. */
-export type Sheet = Record<string, string[][]>;
+/** One sheet: animation name → frames, each a list of string-art rows. Every sheet has `idle`, the fallback pose. */
+export type Sheet = { idle: string[][] } & Record<string, string[][]>;
 
+/** a[i] with b[i], as long as both have one. */
+function zip<A, B>(a: A[], b: B[]): [A, B][] {
+  const out: [A, B][] = [];
+  const rest = b.values();
+  for (const x of a) {
+    const y = rest.next();
+    if (y.done) break;
+    out.push([x, y.value]);
+  }
+  return out;
+}
+
+const SIT = PAWS_DOWN(front()); // idle's first frame, and bat's
+const PAW_UP = paint(PAWS_DOWN(front()), RAISED, 15, 3); // wait's first frame, and bat's
 const E: Sheet = {
-  idle: [PAWS_DOWN(front()), PAWS_DOWN(front(TAIL_FLICK))],
-  walk: WALK_LEGS.map((legs, i) =>
-    paint([...WALK_TOP, ...legs], WALK_TAIL[i], 0, 2, true),
+  idle: [SIT, PAWS_DOWN(front(TAIL_FLICK))],
+  walk: zip(WALK_LEGS, WALK_TAIL).map(([legs, tail]) =>
+    paint([...WALK_TOP, ...legs], tail, 0, 2, true),
   ),
   type: [pawsUp(front(), 'left'), pawsUp(front(), 'right')],
   read: [
@@ -205,10 +219,7 @@ const E: Sheet = {
       12,
     ),
   ],
-  wait: [
-    paint(PAWS_DOWN(front()), RAISED, 15, 3),
-    paint(PAWS_DOWN(front()), RAISED, 15, 2),
-  ],
+  wait: [PAW_UP, paint(PAWS_DOWN(front()), RAISED, 15, 2)],
   phone: [paint(paint(PAWS_DOWN(front()), HANDSET, 0, 5), ['P'], 1, 8)],
   write: [
     paint(PAWS_DOWN(front()), MARKER, 15, 2),
@@ -243,7 +254,7 @@ const E: Sheet = {
     ),
   ],
 };
-E.bat = [E.idle[0], E.wait[0]]; // paw down, paw up: batting at a toy
+E.bat = [SIT, PAW_UP]; // paw down, paw up: batting at a toy
 E.scratch = [
   SCRATCH,
   SCRATCH.map((r, i) =>
@@ -360,7 +371,7 @@ const R = {
   wait: [paint(ROBOT_ARMLESS, WAVE, 15, 6), paint(ROBOT_ARMLESS, WAVE, 15, 5)], // waving at someone coming in
 };
 
-export const SHEETS: Record<string, Sheet> = {
+export const SHEETS: Record<string, Sheet> & { employee: Sheet } = {
   employee: E,
   assistant: A,
   robot: R,
