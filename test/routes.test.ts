@@ -31,6 +31,7 @@ after(() => server.close());
 interface Reply {
   status: number;
   body: string;
+  // biome-ignore lint/suspicious/noExplicitAny: replies are read field by field in the pinned assertions below
   json: () => any;
 }
 function request(

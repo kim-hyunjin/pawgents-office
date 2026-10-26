@@ -36,8 +36,8 @@ import { holdForDecision } from '../server/http/common.ts';
 import type { Store } from '../server/store.ts';
 import type { HookEvent, LogEntry, Session } from '../server/types.ts';
 
-/** A decoded line as the tests read it: any field, unchecked. */
-type Msg = Record<string, any>;
+/** A decoded line as the tests read it: any field, each checked by the assertion that reads it. */
+type Msg = Record<string, unknown>;
 
 const fixture = [
   'worktree C:/Users/x/repo',
@@ -494,8 +494,9 @@ test('runner: hello, prompt -> ack + result, status, close -> exit 0, run file r
     );
     assert.equal(res.isError, false);
     assert.equal(res.costUsd, 0.001);
+    const recent = hello.recent as Msg[]; // what the runner saw before we connected
     assert.ok(
-      [...hello.recent, ...msgs.filter((m) => m.type === 'event')].some(
+      [...recent, ...msgs.filter((m) => m.type === 'event')].some(
         (e: Msg) => e.kind === 'init' && e.sessionId === sid,
       ),
     ); // init may predate our connection: then it's in hello.recent
@@ -829,7 +830,7 @@ test('send.ts --decide: prints the office decision, nothing when there is none',
   const http = await import('node:http');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pawgents-decide-'));
   let answer = '{}',
-    got: any = null;
+    got: Msg = {};
   const srv = http.createServer((req, res) => {
     let b = '';
     req

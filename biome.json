@@ -40,7 +40,7 @@
       },
       "suspicious": {
         "noAssignInExpressions": "off",
-        "noExplicitAny": "warn"
+        "noExplicitAny": "error"
       }
     }
   },

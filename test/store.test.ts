@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { applyHook } from '../server/reducer.ts';
 import { Store } from '../server/store.ts';
-import type { HookEvent } from '../server/types.ts';
+import type { HookEvent, SessionSnapshot } from '../server/types.ts';
 
 function tmpStore() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pawgents-store-'));
@@ -83,8 +83,8 @@ test('store: a broken or missing state file loads defaults, bad entries are drop
 
 test('store: every session change reaches listeners as a serialized snapshot', () => {
   const { dir, store } = tmpStore();
-  const seen: [string, any][] = [];
-  store.on((type, data) => seen.push([type, data]));
+  const seen: [string, SessionSnapshot][] = [];
+  store.on((type, data) => seen.push([type, data as SessionSnapshot])); // only 'session' events are read below
   applyHook(store, {
     session_id: 's1',
     cwd: dir,
