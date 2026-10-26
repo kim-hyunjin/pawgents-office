@@ -97,13 +97,13 @@ const DASH = '╌'.repeat(60);
 const BASH_SCREEN = [
   '● some earlier answer', '────────────────────────────────────────', ' Bash command', ' Tip: auto mode handles these prompts for you — choose "switch to auto mode" below',
   ' Write capture-b to scratchpad file', DASH, ' │ echo capture-b > C:/x/scratchpad/cap-b.txt', DASH,
-  ' Do you want to proceed?', ' ❯ 1. Yes', '   2. Yes, and always allow access to C:\Users\hjkim\AppData\Local\Temp\claude\scratchpad',
+  ' Do you want to proceed?', ' ❯ 1. Yes', '   2. Yes, and always allow access to C:UsershjkimAppDataLocalTempclaudescratchpad',
   '      from this project', '   3. Yes, and switch to auto mode · auto mode handles these prompts for you', '   4. No', ' Esc to cancel · Tab to amend',
 ];
 const WRITE_SCREEN = [
-  ' Create file', ' ..\..\AppData\Local\Temp\scratchpad\cap-w.txt', DASH, '  1 hello', DASH, ' Do you want to create cap-w.txt?', ' ❯ 1. Yes',
+  ' Create file', ' ....AppDataLocalTempscratchpadcap-w.txt', DASH, '  1 hello', DASH, ' Do you want to create cap-w.txt?', ' ❯ 1. Yes',
   '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session; Yes, and always allow access to',
-  '      C:\Users\hjkim\AppData\Local\Temp\scratchpad for this session (shift+tab)', '   3. No', ' Esc to cancel · Tab to amend',
+  '      C:UsershjkimAppDataLocalTempscratchpad for this session (shift+tab)', '   3. No', ' Esc to cancel · Tab to amend',
 ];
 const FETCH_SCREEN = [
   ' Fetch · from the web-fetch agent', ' Claude wants to fetch content from example.com', DASH, ' url: https://example.com/', ' │ prompt: What is the title?', DASH,

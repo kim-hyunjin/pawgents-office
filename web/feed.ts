@@ -40,7 +40,7 @@ export function renderFeed(live?: boolean) {
   ul.innerHTML = items.map((it) => {
     const e = it.e;
     const icon = e.tool ? (ICON[e.tool] || '🔧') : (EV_ICON[e.ev] || '•');
-    let what;
+    let what: string;
     if (e.tool) what = `<b>${esc(e.tool)}</b>${e.target ? ' · ' + esc(e.target) : ''}${e.detail ? ` <span class="dim">— ${esc(e.detail)}</span>` : ''}`;
     else if (e.ev === 'UserPromptSubmit') what = `<span class="dim">지시:</span> ${esc(e.text || '')}`;
     else if (e.ev === 'Stop') what = `<span class="dim">답변:</span> ${esc(e.text || '')}`;

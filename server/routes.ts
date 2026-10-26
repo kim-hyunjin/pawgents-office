@@ -25,7 +25,7 @@ import type { SysError } from './types.ts';
 export interface RouteCtx { req: IncomingMessage; res: ServerResponse; url: URL; params: string[] }
 export type Route = [method: string, path: string | RegExp, handler: (ctx: RouteCtx) => unknown];
 
-const MODEL_RE = /^[\w.\-\[\]]{1,80}$/;
+const MODEL_RE = /^[\w.\-[\]]{1,80}$/;
 const DETACHED = { error: '러너에 연결되지 않은 세션입니다. 잠시 후 다시 시도해주세요.', code: 'detached' };
 const isDir = (p: string) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
 

@@ -53,7 +53,7 @@ export async function fileDiff(cwd: string | undefined, file: string, { since = 
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || rel.split(path.sep)[0] === '.git') throw new DiffError('outside', '저장소 밖의 파일입니다.');
   const spec = rel.split(path.sep).join('/');
 
-  let diff;
+  let diff: Awaited<ReturnType<typeof git>>;
   try { diff = await git(root, ['diff', 'HEAD', '--no-color', '--no-ext-diff', '--', spec]); }
   catch { diff = await git(root, ['diff', '--no-color', '--no-ext-diff', '--', spec]); } // no commits yet: against the index
   if (diff.out) return { rel: spec, status: 'changed', ...patchOf(diff) };

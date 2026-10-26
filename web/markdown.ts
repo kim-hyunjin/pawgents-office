@@ -138,6 +138,7 @@ function inline(text: unknown): string {
     .replace(/(^|[^*\w])\*(?=\S)([^*]*?\S)\*(?!\*)/g, '$1<em>$2</em>')
     .replace(/(^|[^_\w])_(?=\S)([^_]*?\S)_(?![_\w])/g, '$1<em>$2</em>')
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<del>$1</del>');
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL brackets the placeholders `hold` stashed
   return s.replace(/\u0000(\d+)\u0000/g, (_, n) => slots[Number(n)]);
 }
 

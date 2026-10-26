@@ -17,7 +17,7 @@ export const PERMISSION_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'dont
 export const MAX_LINE_BYTES = 1024 * 1024; // one NDJSON line; anything longer is garbage or an attack, not a message
 export const PROMPTS_NONE_SINCE = '2.1.259'; // first claude that knows --permission-prompts
 const UUID_RE = /^[0-9a-f-]{36}$/i;
-const MODEL_RE = /^[\w.\-\[\]]{1,80}$/;
+const MODEL_RE = /^[\w.\-[\]]{1,80}$/;
 
 /** The session id ends up in a pipe name and a file path, so only a UUID shape is allowed. */
 export function checkSid(sid: unknown): string {

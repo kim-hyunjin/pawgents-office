@@ -313,7 +313,7 @@ function drawBubble(ctx: CanvasRenderingContext2D, S: number, e: Ent, now: numbe
   ctx.beginPath(); ctx.moveTo(tx - 2 * S, by + bh); ctx.lineTo(tx + 2 * S, by + bh); ctx.lineTo(tx, by + bh + 3 * S); ctx.closePath(); ctx.fill();
   ctx.strokeStyle = '#2a2d45'; ctx.beginPath(); ctx.moveTo(tx - 2 * S, by + bh); ctx.lineTo(tx, by + bh + 3 * S); ctx.lineTo(tx + 2 * S, by + bh); ctx.stroke();
   ctx.fillStyle = '#1f2233'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
-  lines.forEach((l, i) => ctx.fillText(l, bx + pad, by + pad + i * lh));
+  for (const [i, l] of lines.entries()) ctx.fillText(l, bx + pad, by + pad + i * lh);
   ctx.globalAlpha = 1;
 }
 

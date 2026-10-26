@@ -360,10 +360,12 @@ export function skinTemplate() {
   const C = 24, pal = breedPalette('koshort', 0);
   const cols = Math.max(...SKIN_ROWS.map((a) => E[a].length));
   const c = new OffscreenCanvas(C * cols, C * SKIN_ROWS.length), g = c.getContext('2d')!;
-  SKIN_ROWS.forEach((anim, r) => E[anim].forEach((_, i) => {
-    const img = sprite(pal, anim, i);
-    g.drawImage(img, i * C + Math.floor((C - img.width) / 2), r * C + C - img.height);
-  }));
+  for (const [r, anim] of SKIN_ROWS.entries()) {
+    for (const i of E[anim].keys()) {
+      const img = sprite(pal, anim, i);
+      g.drawImage(img, i * C + Math.floor((C - img.width) / 2), r * C + C - img.height);
+    }
+  }
   return c.convertToBlob({ type: 'image/png' });
 }
 

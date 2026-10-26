@@ -13,9 +13,11 @@
     "install-hooks": "bun hooks/install.ts",
     "uninstall-hooks": "bun hooks/uninstall.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "biome lint",
     "test": "bun test test/"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.3",
     "@types/bun": "^1.4.4",
     "typescript": "^7.0.2"
   }
