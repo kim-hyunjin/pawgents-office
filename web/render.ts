@@ -7,6 +7,7 @@ import type {
   Rect,
 } from '../shared/layout.ts';
 import { ITEM_KINDS, TILE, WALL_RISE } from '../shared/layout.ts';
+import { cyclic } from '../shared/math.ts';
 import {
   animFor,
   backAnim,
@@ -27,7 +28,7 @@ import type { Ent, World } from './world.ts';
 
 const FONT =
   '"Galmuri11", "DotumChe", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif';
-const SCREEN: Record<string, string> = {
+const SCREEN: Record<string, string> & { idle: string } = {
   idle: '#1b1b24',
   offduty: '#1b1b24',
   thinking: '#263047',
@@ -150,17 +151,15 @@ export function render(
 
 type Box = [x: number, y: number, w: number, h: number];
 /** Desk monitors by family (Family.monitor), in px from the monitor box's corner; text: [x, y, rows, max width]. */
-const MONITORS: Record<
-  string,
-  {
-    color: string;
-    frame: Box;
-    screen: Box;
-    standColor: string;
-    stand: Box;
-    text: [x: number, y: number, rows: number, maxW: number];
-  }
-> = {
+interface Monitor {
+  color: string;
+  frame: Box;
+  screen: Box;
+  standColor: string;
+  stand: Box;
+  text: [x: number, y: number, rows: number, maxW: number];
+}
+const MONITORS: Record<string, Monitor> & { normal: Monitor } = {
   'wide-gold': {
     color: '#d4a017',
     frame: [0, 1, 12, 10],
@@ -243,14 +242,9 @@ function drawDeskProps(
           ? '#5dff7a'
           : '#8a94a6';
     const sc = Math.floor(t / (AUTO_MODES.has(mode!) ? 200 : 350)) % 3;
-    const widths = [6, 4, 7, 3, 5];
+    const widths: [number, ...number[]] = [6, 4, 7, 3, 5];
     for (let i = 0; i < rowsN; i++)
-      g.fillRect(
-        sx,
-        sy + i * 2,
-        Math.min(maxW, widths[(i + sc) % widths.length]),
-        1,
-      );
+      g.fillRect(sx, sy + i * 2, Math.min(maxW, cyclic(widths, i + sc)), 1);
   } else if (state === 'searching') {
     g.fillStyle = '#9bd3ff';
     g.fillRect(sx, sy + 1, Math.min(maxW, 5), 1);
@@ -485,7 +479,7 @@ function drawEntity(
   const st = e.phase === 'seated' ? e.station : null;
   const stationKind = st?.kind ?? null;
   const act = st?.kind === 'play' ? st.act : null;
-  const anim = act ? PLAY_ANIM[act] : animFor(state, moving, stationKind);
+  const anim = (act && PLAY_ANIM[act]) || animFor(state, moving, stationKind); // every play spot's act is in PLAY_ANIM
   const auto = !!emp && AUTO_MODES.has(emp.permissionMode!);
   const rate = anim === 'type' ? (auto ? 100 : 160) : (FRAME_MS[anim] ?? 450);
   const frame = Math.floor((t + e.seed) / rate);
@@ -596,7 +590,7 @@ function wrapText(
   let line: string | null = '',
     lastSpace = -1;
   for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
+    const ch = text.charAt(i);
     const cand: string = line + ch;
     if (ctx.measureText(cand).width > maxW && line) {
       if (ch !== ' ' && lastSpace > 0 && line.length - lastSpace < 12) {
@@ -617,7 +611,7 @@ function wrapText(
     }
   }
   if (line === null)
-    lines[maxLines - 1] = fitText(ctx, lines[maxLines - 1] + '…', maxW);
+    lines[maxLines - 1] = fitText(ctx, `${lines[maxLines - 1] ?? ''}…`, maxW); // lines.length === maxLines here
   else if (line) lines.push(line);
   return lines;
 }
