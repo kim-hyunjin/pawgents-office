@@ -3,7 +3,7 @@
 import type { ReplyReply, SessionSnapshot } from '../shared/api.ts';
 import { getReply } from './api.ts';
 import { renderMarkdown } from './markdown.ts';
-import { $, bindDialogClose, fmtTime } from './ui.ts';
+import { $, bindCopy, bindDialogClose, fmtTime } from './ui.ts';
 
 let dlg: HTMLDialogElement,
   nameEl: HTMLElement,
@@ -22,7 +22,6 @@ export function initReply() {
   nameEl = $('r-name');
   metaEl = $('r-meta');
   body = $('r-body');
-  const copyBtn = $('r-copy');
   compose = $('p-compose');
   const composeHome = compose.parentNode!,
     composeNext = compose.nextSibling;
@@ -31,18 +30,7 @@ export function initReply() {
     cur = null;
     composeHome.insertBefore(compose, composeNext); // hand the composer back to the panel
   });
-  copyBtn.addEventListener('click', async () => {
-    if (!cur) return;
-    try {
-      await navigator.clipboard.writeText(cur.text);
-      copyBtn.textContent = '복사됨 ✓';
-    } catch {
-      copyBtn.textContent = '복사 실패';
-    }
-    setTimeout(() => {
-      copyBtn.textContent = '복사';
-    }, 1500);
-  });
+  bindCopy($('r-copy'), () => cur?.text);
 }
 
 export function openReply(s: SessionSnapshot) {

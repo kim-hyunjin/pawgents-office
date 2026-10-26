@@ -3,7 +3,7 @@
 
 import type { DiffReply, SessionSnapshot } from '../shared/api.ts';
 import { getDiff } from './api.ts';
-import { $, bindDialogClose, esc } from './ui.ts';
+import { $, bindCopy, bindDialogClose, esc } from './ui.ts';
 
 let dlg: HTMLDialogElement,
   nameEl: HTMLElement,
@@ -20,23 +20,11 @@ export function initDiff() {
   metaEl = $('d-meta');
   warnEl = $('d-warn');
   body = $('d-body');
-  const copyBtn = $('d-copy');
   bindDialogClose(dlg, $('d-close'));
   dlg.addEventListener('close', () => {
     cur = null;
   });
-  copyBtn.addEventListener('click', async () => {
-    if (!cur) return;
-    try {
-      await navigator.clipboard.writeText(cur.patch);
-      copyBtn.textContent = '복사됨 ✓';
-    } catch {
-      copyBtn.textContent = '복사 실패';
-    }
-    setTimeout(() => {
-      copyBtn.textContent = '복사';
-    }, 1500);
-  });
+  bindCopy($('d-copy'), () => cur?.patch);
 }
 
 const STATUS: Record<string, string> = {

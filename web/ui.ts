@@ -65,6 +65,23 @@ export function bindDialogClose(dlg: HTMLDialogElement, closeBtn: HTMLElement) {
   }); // backdrop
 }
 
+/** A 복사 button: copies text() (undefined: nothing open, no-op) and says how that went for a moment. */
+export function bindCopy(btn: HTMLElement, text: () => string | undefined) {
+  btn.addEventListener('click', async () => {
+    const t = text();
+    if (t === undefined) return;
+    try {
+      await navigator.clipboard.writeText(t);
+      btn.textContent = '복사됨 ✓';
+    } catch {
+      btn.textContent = '복사 실패';
+    }
+    setTimeout(() => {
+      btn.textContent = '복사';
+    }, 1500);
+  });
+}
+
 // localStorage that never throws (blocked storage, private mode). Keys stay as they are: renaming one resets a setting.
 export const storage = {
   get(k: string) {
