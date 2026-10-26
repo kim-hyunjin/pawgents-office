@@ -5,6 +5,7 @@ import { isCatFamily } from '../../shared/model.ts';
 import { hasSkin, newSkinId, SKIN_ID } from '../skins.ts';
 import type { Skin } from '../types.ts';
 import type { EventBus } from './events.ts';
+import { isRecord } from './persistence.ts';
 
 // a built-in breed (the list itself lives in web/sprites.js) or an uploaded skin, 'skin:<id>'
 export const BREED_KEY = /^([a-z]{2,24}|skin:[a-z0-9]{10})$/;
@@ -32,30 +33,37 @@ export class SettingsRepo {
     this.save = save;
   }
 
-  loadSkins(skins: any) {
+  /** Saved skins (state.json `skins`): ones whose id looks like a skin id, first of an id, with the image on disk. */
+  loadSkins(skins: unknown) {
     this.skins = [];
     for (const k of Array.isArray(skins) ? skins : []) {
+      if (!isRecord(k)) continue;
+      // fields are kept as saved: addSkin checked them, SKIN_ID only looks at the id's text
+      const id = k.id as string;
       if (
-        SKIN_ID.test(k?.id) &&
-        !hasSkin(this.skins, k.id) &&
-        fs.existsSync(this.skinFile(k.id))
+        SKIN_ID.test(String(id)) &&
+        !hasSkin(this.skins, id) &&
+        fs.existsSync(this.skinFile(id))
       ) {
         this.skins.push({
-          id: k.id,
+          id,
           name: String(k.name || '스킨'),
-          cellW: k.cellW,
-          cellH: k.cellH,
+          cellW: k.cellW as number,
+          cellH: k.cellH as number,
         });
       }
     }
   }
-  /** After loadSkins: a pick of a skin that is gone is dropped. */
-  loadCats(cats: any) {
+  /** Saved picks (state.json `cats`): a known family and a breed key; after loadSkins, as a pick of a gone skin is dropped. */
+  loadCats(cats: unknown) {
     this.cats = {};
-    for (const [fam, breed] of Object.entries(
-      (cats || {}) as Record<string, any>,
-    )) {
-      if (isCatFamily(fam) && BREED_KEY.test(breed) && this.hasBreed(breed))
+    for (const [fam, breed] of Object.entries(isRecord(cats) ? cats : {})) {
+      if (
+        isCatFamily(fam) &&
+        typeof breed === 'string' &&
+        BREED_KEY.test(breed) &&
+        this.hasBreed(breed)
+      )
         this.cats[fam] = breed;
     }
   }

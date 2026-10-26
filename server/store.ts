@@ -18,7 +18,7 @@ import * as dto from './http/dto.ts';
 import { repoOf as gitRepoOf } from './repo.ts';
 import { EventBus, type Listener } from './store/events.ts';
 import { OfficeRepo } from './store/offices.ts';
-import { Persistence } from './store/persistence.ts';
+import { field, Persistence } from './store/persistence.ts';
 import { SessionRepo } from './store/sessions.ts';
 import { SettingsRepo } from './store/settings.ts';
 import type {
@@ -100,11 +100,14 @@ export class Store {
 
   // ---- persistence -------------------------------------------------------
   load() {
-    const data: any = this.persistence.read();
-    this.officeRepo.loadDesks(data?.desks);
-    this.settings.loadSkins(data?.skins);
-    this.settings.loadCats(data?.cats); // after skins: a pick of a skin that is gone is dropped
-    this.officeRepo.loadOffices(data?.offices, data?.together);
+    const data = this.persistence.read();
+    this.officeRepo.loadDesks(field(data, 'desks'));
+    this.settings.loadSkins(field(data, 'skins'));
+    this.settings.loadCats(field(data, 'cats')); // after skins: a pick of a skin that is gone is dropped
+    this.officeRepo.loadOffices(
+      field(data, 'offices'),
+      field(data, 'together'),
+    );
   }
   /** Write the state file soon (debounced). */
   save() {

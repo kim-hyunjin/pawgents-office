@@ -21,6 +21,7 @@ import {
 } from '../domain/office.ts';
 import type { DeskMemory, Office, Session } from '../types.ts';
 import type { EventBus } from './events.ts';
+import { isRecord } from './persistence.ts';
 
 export class OfficeRepo {
   offices: Office[];
@@ -47,21 +48,29 @@ export class OfficeRepo {
     this.repoOf = repoOf;
   }
 
-  loadDesks(desks: any) {
+  /** Saved desks (state.json `desks`): entries with a numeric desk, younger than DESK_MEMORY_MS, kept as saved. */
+  loadDesks(desks: unknown) {
     const now = Date.now();
     this.desks = {};
-    for (const [id, v] of Object.entries(
-      (desks || {}) as Record<string, any>,
-    )) {
-      if (v && typeof v.desk === 'number' && now - (v.at || 0) < DESK_MEMORY_MS)
-        this.desks[id] = v;
+    for (const [id, v] of Object.entries(isRecord(desks) ? desks : {})) {
+      if (
+        isRecord(v) &&
+        typeof v.desk === 'number' &&
+        now - Number(v.at || 0) < DESK_MEMORY_MS
+      )
+        this.desks[id] = v as unknown as DeskMemory;
     }
   }
-  loadOffices(list: any, together: any) {
+  /**
+   * Saved offices (state.json `offices`, `together`): ones with a string id (first of an id wins) and a repos list,
+   * keeping string repos only; a broken layout falls back to the default. The default office is always there.
+   */
+  loadOffices(list: unknown, together: unknown) {
     const offices: Office[] = [];
     for (const o of Array.isArray(list) ? list : []) {
       if (
-        typeof o?.id !== 'string' ||
+        !isRecord(o) ||
+        typeof o.id !== 'string' ||
         offices.some((x) => x.id === o.id) ||
         !Array.isArray(o.repos)
       )
@@ -69,7 +78,7 @@ export class OfficeRepo {
       const saved = normalize(o.layout);
       const layout = validate(saved).length
         ? cloneOffice(DEFAULT_OFFICE)
-        : saved!; // a broken layout falls back to the default
+        : saved!;
       offices.push(
         newOffice(
           o.id,
@@ -82,7 +91,10 @@ export class OfficeRepo {
     if (!offices.some((o) => o.id === DEFAULT_OFFICE_ID))
       offices.unshift(defaultOffice());
     this.offices = offices;
-    this.together = offices.some((o) => o.id === together) ? together : null;
+    this.together =
+      typeof together === 'string' && offices.some((o) => o.id === together)
+        ? together
+        : null;
   }
 
   office(id: string | null) {

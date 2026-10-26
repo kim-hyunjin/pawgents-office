@@ -216,3 +216,46 @@ test('store: offices come from the injected repo resolver, one per repo', () => 
   );
   assert.deepEqual([a.desk, b.desk, c.desk], [0, 1, 0]);
 });
+
+test('store: the loaders take any JSON shape and keep only what passes', () => {
+  const { opts } = tmpStore();
+  const store = new Store(opts);
+  for (const text of [
+    '5',
+    '"x"',
+    '[1,2]',
+    'null',
+    '{"desks":"ab","cats":7,"offices":{},"skins":"s"}',
+  ]) {
+    fs.writeFileSync(opts.stateFile, text);
+    store.load();
+    assert.deepEqual(
+      store.offices.map((o) => o.id),
+      ['default'],
+      text,
+    );
+    assert.deepEqual(
+      [store.desks, store.cats, store.skins, store.together],
+      [{}, {}, [], null],
+      text,
+    );
+  }
+  const now = Date.now();
+  fs.writeFileSync(
+    opts.stateFile,
+    JSON.stringify({
+      // a time saved as numeric text still counts
+      desks: { a: { desk: 2, at: String(now) }, b: 'x', c: null, d: { at: 1 } },
+      cats: { opus: ['tabby'], sonnet: 'tabby', haiku: 'Tabby' },
+      offices: ['x', null, { id: 'o1', repos: ['r', 3, null] }],
+      together: 'o1',
+    }),
+  );
+  store.load();
+  assert.deepEqual(Object.keys(store.desks), ['a']);
+  assert.equal(store.desks.a?.desk, 2);
+  assert.deepEqual(store.cats, { sonnet: 'tabby' });
+  assert.deepEqual(store.office('o1')!.repos, ['r']);
+  assert.equal(store.office('o1')!.name, '사무실');
+  assert.equal(store.together, 'o1');
+});
