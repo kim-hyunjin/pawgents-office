@@ -1,5 +1,11 @@
 // A session's panel and the browser's actions on it: its log and last reply, prompt, close, mode, permissions.
-import type { LogReply, ReplyReply } from '../../../shared/api.ts';
+import type {
+  LogReply,
+  ModeReply,
+  OkReply,
+  PromptReply,
+  ReplyReply,
+} from '../../../shared/api.ts';
 import { PERMISSION_MODES } from '../../../shared/permission.ts';
 import { BAD_REQUEST, UNKNOWN_MODE } from '../../app/errors.ts';
 import type { SessionActions } from '../../app/sessions.ts';
@@ -62,7 +68,10 @@ export const sessionRoutes = ({
         return;
       }
       try {
-        json(res, 200, { ok: true, ...(await sessions.prompt(s, text)) });
+        json(res, 200, {
+          ok: true,
+          ...(await sessions.prompt(s, text)),
+        } satisfies PromptReply);
       } catch (e) {
         sendError(res, e);
       }
@@ -81,7 +90,7 @@ export const sessionRoutes = ({
       if (!s) return;
       try {
         await sessions.close(s, data.force === true);
-        json(res, 200, { ok: true });
+        json(res, 200, { ok: true } satisfies OkReply);
       } catch (e) {
         sendError(res, e);
       }
@@ -101,7 +110,10 @@ export const sessionRoutes = ({
       const s = findSession(store, res, id, { live: true, msg: SESSION_GONE });
       if (!s) return;
       try {
-        json(res, 200, { ok: true, mode: await sessions.setMode(s, mode) });
+        json(res, 200, {
+          ok: true,
+          mode: await sessions.setMode(s, mode),
+        } satisfies ModeReply);
       } catch (e) {
         sendError(res, e);
       }
@@ -121,7 +133,7 @@ export const sessionRoutes = ({
       if (!s) return;
       try {
         await sessions.answerPermission(s, data.id, data.allow);
-        json(res, 200, { ok: true });
+        json(res, 200, { ok: true } satisfies OkReply);
       } catch (e) {
         sendError(res, e);
       }

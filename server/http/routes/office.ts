@@ -1,4 +1,5 @@
 // The office editor and switcher: layout, reset, rename, close, and everyone in one office.
+import type { OkReply } from '../../../shared/api.ts';
 import { NO_OFFICE, type OfficeActions } from '../../app/offices.ts';
 import type { Store } from '../../store.ts';
 import { json, readJson, sendRefusal } from '../common.ts';
@@ -34,7 +35,7 @@ export function officeRoutes({
         sendRefusal(ctx.res, e);
         return;
       }
-      json(ctx.res, 200, { ok: true });
+      json(ctx.res, 200, { ok: true } satisfies OkReply);
     };
 
   return [
@@ -52,7 +53,7 @@ export function officeRoutes({
           sendRefusal(res, e);
           return;
         }
-        json(res, 200, { ok: true });
+        json(res, 200, { ok: true } satisfies OkReply);
       },
     ],
     [

@@ -6,22 +6,14 @@ import type {
   DiffReply,
   LaunchReply,
   LogReply,
+  ModeReply,
+  OkReply,
+  PromptReply,
   ReplyReply,
   Snapshot,
   WorktreesReply,
 } from '../shared/api.ts';
 import type { Layout } from '../shared/layout.ts';
-
-// Replies shared/api.ts doesn't name (yet): plain acknowledgements.
-interface OkReply {
-  ok: true;
-}
-interface PromptReply extends OkReply {
-  accepted: boolean;
-}
-interface ModeReply extends OkReply {
-  mode: string | null;
-}
 
 /** body !== undefined: sent as JSON (some routes need the JSON content-type even with an empty body — CSRF guard). */
 async function api<T>(

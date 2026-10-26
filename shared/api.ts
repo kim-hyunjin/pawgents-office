@@ -209,6 +209,19 @@ export interface LaunchReply {
   sessions: (string | undefined)[];
 }
 
+/** A plain acknowledgement: POST /sessions/:id/close|permission, the office routes, skin delete. */
+export interface OkReply {
+  ok: true;
+}
+/** POST /sessions/:id/prompt: accepted is false when Orca says the text didn't go in. */
+export interface PromptReply extends OkReply {
+  accepted: boolean;
+}
+/** POST /sessions/:id/mode: the mode the session is in now. */
+export interface ModeReply extends OkReply {
+  mode: string | null;
+}
+
 /** GET /sessions/:id/log */
 export interface LogReply {
   id: string;

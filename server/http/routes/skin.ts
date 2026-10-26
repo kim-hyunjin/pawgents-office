@@ -1,4 +1,5 @@
 // How the cats look: a breed per model family, and uploaded sprite sheets (upload, image, delete).
+import type { OkReply } from '../../../shared/api.ts';
 import type { SkinActions } from '../../app/skins.ts';
 import { json, notFound, readJson, sendRefusal } from '../common.ts';
 import { sendFile } from '../static.ts';
@@ -74,7 +75,7 @@ export const skinRoutes = ({ skins }: { skins: SkinActions }): Route[] => [
         sendRefusal(res, e);
         return;
       }
-      json(res, 200, { ok: true });
+      json(res, 200, { ok: true } satisfies OkReply);
     },
   ],
 ];
