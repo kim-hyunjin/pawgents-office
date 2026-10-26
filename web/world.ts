@@ -3,9 +3,9 @@ import type {
   SessionSnapshot,
   SubagentSnapshot,
 } from '../server/types.ts';
+import type { Geo, Layout, Pt, Spot } from '../shared/layout.ts';
+import { compile, TILE } from '../shared/layout.ts';
 import { step } from './anim.ts';
-import type { Geo, Layout, Pt, Spot } from './layout.ts';
-import { compile, TILE } from './layout.ts';
 import type { Palette } from './sprites.ts';
 import { familyOf, hashStr, paletteFor } from './sprites.ts';
 import { buildBackground } from './tilemap.ts';

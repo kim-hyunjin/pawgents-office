@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Layout } from '../web/layout.ts';
+import type { Layout } from '../shared/layout.ts';
 import {
   cloneOffice,
   DEFAULT_OFFICE,
   deskCount,
   normalize,
   validate,
-} from '../web/layout.ts';
+} from '../shared/layout.ts';
 import {
   DESK_MEMORY_MS,
   LOG_SIZE,

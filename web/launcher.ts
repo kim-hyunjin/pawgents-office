@@ -1,8 +1,8 @@
 // "새 직원" dialog: start claude sessions through the server's POST /launch, either in an Orca terminal (Orca CLI)
 // or headless (`claude -p` behind a per-session runner). Opened from the #t-new toolbar button.
 import type { Backend } from '../server/types.ts';
+import { MAX_HIRES, WORKTREE_NAME_RE } from '../shared/limits.ts';
 import { api, post } from './api.ts';
-import { MAX_HIRES, WORKTREE_NAME_RE } from './limits.ts';
 import { $, bindDialogClose, esc, setMsg as setMsgOn, storage } from './ui.ts';
 
 const dlg = $<HTMLDialogElement>('launcher'),

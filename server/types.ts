@@ -1,5 +1,5 @@
 // Domain types shared by the server, the hooks and (type-only imports, erased when served) the browser.
-import type { Layout } from '../web/layout.ts';
+import type { Layout } from '../shared/layout.ts';
 
 export type EntityState =
   | 'idle'

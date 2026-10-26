@@ -3,7 +3,6 @@
 // the kittens (subagents) and the receptionist, and manages uploaded skins: PNG sprite sheets that can stand in for a breed (format in sprites.js SKIN_ROWS / README).
 
 import type { SessionSnapshot } from '../server/types.ts';
-import { post } from './api.ts';
 import {
   isCell,
   MAX_CELL,
@@ -11,7 +10,8 @@ import {
   MAX_SKIN_BYTES,
   MIN_CELL,
   skinGridError,
-} from './limits.ts';
+} from '../shared/limits.ts';
+import { post } from './api.ts';
 import {
   BREEDS,
   breedOf,

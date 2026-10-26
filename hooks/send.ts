@@ -1,15 +1,19 @@
 #!/usr/bin/env bun
 // Claude Code hook: forwards the stdin JSON payload to the pawgents-office server.
 // Prints NOTHING (hook stdout can be injected into Claude's context) and always exits 0.
-// Exception: with --decide (headless sessions only, see decision.ts) a PermissionRequest waits for the office's answer
+// Exception: with --decide (headless sessions only, see shared/decision.ts) a PermissionRequest waits for the office's answer
 // and prints the decision JSON; no answer prints nothing, which claude treats as "no decision" (denied).
 import fs from 'node:fs';
 import path from 'node:path';
 import { BASE_URL, DATA_DIR, MAX_REPLY_CHARS } from '../server/config.ts';
 import type { HookEvent } from '../server/types.ts';
 import { safeJsonParse } from '../server/util.ts';
+import {
+  DECIDE_FLAG,
+  DECISION_TIMEOUT_S,
+  decisionOutput,
+} from '../shared/decision.ts';
 import { errMessage } from './_common.ts';
-import { DECIDE_FLAG, DECISION_TIMEOUT_S, decisionOutput } from './decision.ts';
 import { autostartEnabled, ensureServer } from './ensure.ts';
 
 const DEBUG = process.env.PAWGENTS_OFFICE_DEBUG === '1';

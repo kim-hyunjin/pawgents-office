@@ -4,12 +4,12 @@ import type {
   Snapshot,
   SubagentSnapshot,
 } from '../server/types.ts';
+import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
 import { post } from './api.ts';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
 import { feedFrom, renderFeed } from './feed.ts';
 import { openLauncher } from './launcher.ts';
-import { DEFAULT_OFFICE, inRect } from './layout.ts';
 import { openLegend, refreshLegend } from './legend.ts';
 import { Panel } from './panel.ts';
 import { HUD_BTN, render } from './render.ts';

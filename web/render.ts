@@ -1,5 +1,12 @@
-import type { Desk, Geo, Item, Placed, Reception, Rect } from './layout.ts';
-import { TILE, WALL_RISE } from './layout.ts';
+import type {
+  Desk,
+  Geo,
+  Item,
+  Placed,
+  Reception,
+  Rect,
+} from '../shared/layout.ts';
+import { TILE, WALL_RISE } from '../shared/layout.ts';
 import {
   animFor,
   backAnim,

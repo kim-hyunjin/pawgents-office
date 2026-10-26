@@ -8,7 +8,7 @@ import {
   DEFAULT_OFFICE,
   normalize,
   validate,
-} from '../web/layout.ts';
+} from '../shared/layout.ts';
 import {
   isCell,
   isName,
@@ -17,7 +17,7 @@ import {
   MAX_NAME_CHARS,
   MIN_CELL,
   WORKTREE_NAME_RE,
-} from '../web/limits.ts';
+} from '../shared/limits.ts';
 import {
   addWorktree,
   listGitWorktrees,

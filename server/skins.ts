@@ -1,6 +1,6 @@
 // Uploaded sprite sheets: ids and upload validation. Grid rules live in web/limits.js (skinGridError), shared with the upload dialog.
 
-import { MAX_SKIN_BYTES, skinGridError } from '../web/limits.ts';
+import { MAX_SKIN_BYTES, skinGridError } from '../shared/limits.ts';
 import type { Skin } from './types.ts';
 
 export const SKIN_ID = /^[a-z0-9]{10}$/;

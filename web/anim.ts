@@ -1,4 +1,4 @@
-import { TILE } from './layout.ts';
+import { TILE } from '../shared/layout.ts';
 
 /** What step() moves: anything with a position and a tile path. */
 export interface Walker {

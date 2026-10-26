@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import type { OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import path from 'node:path';
-import { WEB_DIR } from './config.ts';
+import { SHARED_DIR, WEB_DIR } from './config.ts';
 import { decode } from './util.ts';
 
 const MIME: Record<string, string> = {
@@ -68,8 +68,14 @@ export function serveStatic(urlPath: string, res: ServerResponse) {
   let rel = decode(urlPath.replace(/^\/web\//, '/'));
   if (rel === null) return false; // malformed %-escape names no file we have → 404
   if (rel === '/' || rel === '') rel = '/index.html';
-  const file = path.normalize(path.join(WEB_DIR, rel));
-  if (!file.startsWith(WEB_DIR + path.sep)) {
+  // /shared/… is the browser-safe half of shared/; shared/node/ is server-side only
+  const shared = rel.startsWith('/shared/');
+  const root = shared ? SHARED_DIR : WEB_DIR;
+  const file = path.normalize(path.join(root, shared ? rel.slice(7) : rel));
+  if (
+    !file.startsWith(root + path.sep) ||
+    (shared && file.startsWith(path.join(SHARED_DIR, 'node') + path.sep))
+  ) {
     res.writeHead(403);
     res.end('forbidden');
     return true;

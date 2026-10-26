@@ -606,7 +606,7 @@ test('backend errors map to HTTP statuses', async () => {
 // ---- Step 5: permission requests answered from the office ---------------------------------------------------------
 test('decision hook: output shapes, headless settings are synchronous, the plugin copy stays async', async () => {
   const { decisionOutput, headlessSettings, DECISION_TIMEOUT_S, DECIDE_FLAG } =
-    await import('../hooks/decision.ts');
+    await import('../shared/decision.ts');
   assert.deepEqual(decisionOutput(true), {
     hookSpecificOutput: {
       hookEventName: 'PermissionRequest',

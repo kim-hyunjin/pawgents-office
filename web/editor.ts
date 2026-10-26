@@ -4,9 +4,7 @@
 // wall moves the front door there (or drag the door along the walls). Furniture is placed from the palette and dragged around. Every change is validated (layout.js) and problem tiles turn red;
 // saving sends the draft to the server, which pushes it to every open office. The canvas overlay is editor-draw.js.
 import type { Office } from '../server/types.ts';
-import { clamp } from './anim.ts';
-import { api, post } from './api.ts';
-import type { Item, Layout, Room } from './layout.ts';
+import type { Item, Layout, Room } from '../shared/layout.ts';
 import {
   cloneOffice,
   compile,
@@ -23,7 +21,10 @@ import {
   ROOM_TYPES,
   TILE,
   validate,
-} from './layout.ts';
+} from '../shared/layout.ts';
+import { MAX_NAME_CHARS } from '../shared/limits.ts';
+import { clamp } from './anim.ts';
+import { api, post } from './api.ts';
 import type { Contained } from './layout-edit.ts';
 import {
   contents,
@@ -37,7 +38,6 @@ import {
   roomName,
   wallRoomsAt,
 } from './layout-edit.ts';
-import { MAX_NAME_CHARS } from './limits.ts';
 import { buildBackground, FLOOR } from './tilemap.ts';
 import { $, downloadBlob, esc, setMsg } from './ui.ts';
 import type { world as World } from './world.ts';

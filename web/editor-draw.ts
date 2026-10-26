@@ -2,8 +2,6 @@
 // selected / hovered furniture, the front door and where a click would move it, the room being drawn and room names.
 // Reads the editor's state (draft, selection, hover, drag, tool) and changes nothing.
 
-import { clamp } from './anim.ts';
-import type { Editor } from './editor.ts';
 import {
   doorFor,
   doorTiles,
@@ -12,7 +10,9 @@ import {
   ROOM_TYPES,
   TILE,
   WALL_RISE,
-} from './layout.ts';
+} from '../shared/layout.ts';
+import { clamp } from './anim.ts';
+import type { Editor } from './editor.ts';
 import { itemAt, onOuterWall, wallRoomsAt } from './layout-edit.ts';
 import { FLOOR } from './tilemap.ts';
 

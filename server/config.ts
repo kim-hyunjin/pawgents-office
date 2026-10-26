@@ -40,7 +40,7 @@ export function loadConfig(
       ? backend
       : 'auto') as BackendChoice,
     CLAUDE_BIN: env.PAWGENTS_OFFICE_CLAUDE_BIN || 'claude', // headless backend's claude; override when it isn't on PATH
-    // a parked permission request answers "no decision" after this: just under the hook's own 1800 s timeout (hooks/decision.ts)
+    // a parked permission request answers "no decision" after this: just under the hook's own 1800 s timeout (shared/decision.ts)
     PERMISSION_WAIT_MS:
       Number(env.PAWGENTS_OFFICE_PERMISSION_WAIT_MS) || 1_780_000, // env: dev override to test the timeout
   };
@@ -78,6 +78,7 @@ export const MAX_PROMPT_CHARS = 20_000;
 export const MAX_REPLY_CHARS = 200_000; // full markdown reply kept per entity (served on demand, not over SSE)
 
 export const WEB_DIR = path.resolve(import.meta.dirname, '../web');
+export const SHARED_DIR = path.resolve(import.meta.dirname, '../shared'); // served at /shared/: the browser imports it too
 
 export const SEATS_PER_DESK = 3;
 export const LOG_SIZE = 100;

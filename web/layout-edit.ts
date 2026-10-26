@@ -2,8 +2,7 @@
 // room names. Every function takes the draft and touches nothing else, so plain Node imports this file too (tests).
 // Editor-only: the server imports layout.js, not this.
 
-import { clamp } from './anim.ts';
-import type { Item, Layout, Pt, Room } from './layout.ts';
+import type { Item, Layout, Pt, Room } from '../shared/layout.ts';
 import {
   hasWalls,
   ITEM_KINDS,
@@ -11,7 +10,8 @@ import {
   itemRect,
   ROOM_TYPES,
   ringRect,
-} from './layout.ts';
+} from '../shared/layout.ts';
+import { clamp } from './anim.ts';
 
 export interface Contained {
   it: Item;

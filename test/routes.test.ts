@@ -89,6 +89,21 @@ test('healthz, state, unknown paths', async () => {
   assert.equal((await request('GET', '/sessions/%E0%A4%A/log')).status, 404);
 });
 
+test('static: the page, its modules and the browser-safe shared/ modules', async () => {
+  const get = (p: string) => request('GET', p, { page: false });
+  const page = await get('/');
+  assert.equal(page.status, 200);
+  assert.match(page.body, /office\.ts/);
+  for (const p of ['/office.ts', '/web/office.ts', '/shared/layout.ts']) {
+    const r = await get(p);
+    assert.equal(r.status, 200, p);
+    assert.doesNotMatch(r.body, /^import type/m, p); // served type-stripped
+  }
+  assert.equal((await get('/shared/node/x.ts')).status, 403);
+  // URL parsing folds the dot segments away: it asks for web/server/config.ts, which doesn't exist
+  assert.equal((await get('/%2e%2e/server/config.ts')).status, 404);
+});
+
 test('POST /hook: browsers are refused, hooks create and advance a session', async () => {
   const sid = 'aaaaaaaa-0000-0000-0000-000000000001';
   const refused = await request('POST', '/hook', {

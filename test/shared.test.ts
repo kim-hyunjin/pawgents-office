@@ -6,9 +6,14 @@ import path from 'node:path';
 import test from 'node:test';
 import { EVENTS } from '../hooks/_common.ts';
 import { loadConfig } from '../server/config.ts';
-import { cloneOffice, DEFAULT_OFFICE, validate } from '../web/layout.ts';
+import { cloneOffice, DEFAULT_OFFICE, validate } from '../shared/layout.ts';
+import {
+  isCell,
+  isName,
+  MAX_SKIN_ROWS,
+  skinGridError,
+} from '../shared/limits.ts';
 import { fixDoors, moveRoom, roomName } from '../web/layout-edit.ts';
-import { isCell, isName, MAX_SKIN_ROWS, skinGridError } from '../web/limits.ts';
 import { SKIN_ROWS } from '../web/sprites.ts';
 
 const root = new URL('..', import.meta.url);

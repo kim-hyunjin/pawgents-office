@@ -9,7 +9,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SEND_SCRIPT } from '../../hooks/_common.ts';
-import { DECIDE_FLAG, headlessSettings } from '../../hooks/decision.ts';
+import { DECIDE_FLAG, headlessSettings } from '../../shared/decision.ts';
 import {
   BACKEND_PROBE_TTL_MS,
   CLAUDE_BIN,

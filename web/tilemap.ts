@@ -1,8 +1,8 @@
 // Draws an office from its compiled layout (layout.js): floors, walls, built-in furniture. Live props (monitors,
 // the receptionist, yarn, wheel) are drawn every frame by render.js; the drawing helpers it needs are exported.
 
-import type { Door, Geo, Pt, Rect, Wall } from './layout.ts';
-import { TILE, WALL_RISE } from './layout.ts';
+import type { Door, Geo, Pt, Rect, Wall } from '../shared/layout.ts';
+import { TILE, WALL_RISE } from '../shared/layout.ts';
 
 /** A canvas context: the cached background is an OffscreenCanvas, props are drawn on the visible one. */
 export type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
