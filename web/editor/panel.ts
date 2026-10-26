@@ -1,5 +1,7 @@
 // The layout editor's side panel (#editor): the palette of rooms and furniture, the office's size and front door, the
 // selection's fields, problems, undo / reset / save, and sharing a layout (file, clipboard, another office).
+
+import { field, isRecord } from '../../shared/json.ts';
 import {
   cloneOffice,
   DEFAULT_OFFICE,
@@ -235,17 +237,17 @@ export class EditorPanel {
   }
   /** Shared JSON (or a bare layout) → draft. `from` reads like "붙여넣은" / "x.json의". */
   importText(text: string, from: string) {
-    let data: any; // untrusted JSON
+    let data: unknown; // untrusted JSON
     try {
       data = JSON.parse(text);
     } catch {
       this.msg(`${from} 내용이 배치 JSON이 아니에요.`, 'err');
       return;
     }
-    const layout = data?.type === SHARE_TYPE ? data.layout : data;
+    const layout =
+      field(data, 'type') === SHARE_TYPE ? field(data, 'layout') : data;
     if (
-      !layout ||
-      typeof layout !== 'object' ||
+      !isRecord(layout) ||
       !Array.isArray(layout.rooms) ||
       !Array.isArray(layout.items)
     ) {
@@ -264,7 +266,7 @@ export class EditorPanel {
       return;
     }
     this.m.change((d) => {
-      for (const k of Object.keys(d)) delete (d as any)[k];
+      for (const k of Object.keys(d)) Reflect.deleteProperty(d, k);
       Object.assign(d, next);
     });
     this.m.sel = null;

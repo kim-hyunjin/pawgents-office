@@ -1,6 +1,7 @@
 // Office layouts as data: the saved shape (an office is a w×h grid of 16px tiles holding rooms — rectangles; walls are
 // generated around them — and furniture items), its vocabulary (room types, furniture kinds, the default office) and
 // small geometry helpers. Pure, no DOM: the server imports it too.
+import { field, isRecord } from '../json.ts';
 
 export interface Pt {
   x: number;
@@ -317,50 +318,53 @@ export function doorFor(office: Layout, tx: number, ty: number): FrontDoor {
     : { side, y: Math.max(1, Math.min(h - 2, y)) };
 }
 
-/** Only the fields a layout has (anything else from a client is dropped), upgraded to this version. Validate the result. */
-export function normalize(o: any): Layout | null {
+/**
+ * Only the fields a layout has (anything else from a client is dropped), upgraded to this version. The values are not
+ * checked here: the result has a Layout's shape only, and validate() decides whether it is one.
+ */
+export function normalize(o: unknown): Layout | null {
   // o: untrusted JSON from a client
-  if (!o || typeof o !== 'object') return null;
-  const pick = (src: any, keys: string[]) =>
+  if (!isRecord(o)) return null;
+  const pick = (src: unknown, keys: string[]) =>
     Object.fromEntries(
-      keys.filter((k) => src?.[k] !== undefined).map((k) => [k, src[k]]),
+      keys
+        .filter((k) => field(src, k) !== undefined)
+        .map((k) => [k, field(src, k)]),
     );
-  const old = !(o.v >= 2);
-  const side = DOOR_SIDES[o.door?.side] ? o.door.side : 'bottom';
-  return {
+  const old = !(Number(o.v) >= 2);
+  const doorSide = field(o.door, 'side');
+  const side =
+    typeof doorSide === 'string' && DOOR_SIDES[doorSide] ? doorSide : 'bottom';
+  const door = isHorizontal(side)
+    ? { side, x: field(o.door, 'x') }
+    : { side, y: field(o.door, 'y') };
+  const room = (r: unknown) => {
+    const doors = field(r, 'doors');
+    return {
+      ...pick(r, ['id', 'type', 'name', 'x', 'y', 'w', 'h', 'glass', 'walls']),
+      ...(old && field(r, 'type') === 'play' && field(r, 'walls') === undefined
+        ? { walls: false }
+        : {}), // v1 play rooms had no walls
+      doors: Array.isArray(doors)
+        ? doors.map((d: unknown) => ({
+            x: field(d, 'x'),
+            y: field(d, 'y'),
+            ...(field(d, 'open') ? { open: true } : {}),
+          }))
+        : doors,
+    };
+  };
+  const shaped = {
     v: LAYOUT_VERSION,
     w: o.w,
     h: o.h,
-    door: isHorizontal(side) ? { side, x: o.door?.x } : { side, y: o.door?.y },
-    rooms: Array.isArray(o.rooms)
-      ? o.rooms.map((r: any) => ({
-          ...pick(r, [
-            'id',
-            'type',
-            'name',
-            'x',
-            'y',
-            'w',
-            'h',
-            'glass',
-            'walls',
-          ]),
-          ...(old && r?.type === 'play' && r.walls === undefined
-            ? { walls: false }
-            : {}), // v1 play rooms had no walls
-          doors: Array.isArray(r?.doors)
-            ? r.doors.map((d: any) => ({
-                x: d?.x,
-                y: d?.y,
-                ...(d?.open ? { open: true } : {}),
-              }))
-            : r?.doors,
-        }))
-      : o.rooms,
+    door,
+    rooms: Array.isArray(o.rooms) ? o.rooms.map(room) : o.rooms,
     items: Array.isArray(o.items)
-      ? o.items.map((it: any) => pick(it, ['id', 'kind', 'x', 'y']))
+      ? o.items.map((it: unknown) => pick(it, ['id', 'kind', 'x', 'y']))
       : o.items,
   };
+  return shaped as Layout; // shape only, see above
 }
 export const inRect = (r: Rect, x: number, y: number) =>
   x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
