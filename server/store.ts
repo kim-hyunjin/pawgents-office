@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Layout } from '../shared/layout.ts';
 import { SKINS_DIR, STATE_FILE } from './config.ts';
-import { DEFAULT_OFFICE_ID } from './domain/office.ts';
+import { DEFAULT_OFFICE_ID, type RepoResolver } from './domain/office.ts';
 import {
   markRevived,
   newSession,
@@ -15,7 +15,7 @@ import {
 } from './domain/session.ts';
 import * as files from './domain/worked-files.ts';
 import * as dto from './http/dto.ts';
-import { repoOf } from './repo.ts';
+import { repoOf as gitRepoOf } from './repo.ts';
 import { EventBus, type Listener } from './store/events.ts';
 import { OfficeRepo } from './store/offices.ts';
 import { Persistence } from './store/persistence.ts';
@@ -54,10 +54,16 @@ export class Store {
   officeRepo: OfficeRepo;
   sessionRepo: SessionRepo;
 
+  /** `repoOf`: which repo (so which office) a working directory belongs to; git by default. */
   constructor({
     stateFile = STATE_FILE,
     skinsDir = SKINS_DIR,
-  }: { stateFile?: string; skinsDir?: string } = {}) {
+    repoOf = gitRepoOf,
+  }: {
+    stateFile?: string;
+    skinsDir?: string;
+    repoOf?: RepoResolver;
+  } = {}) {
     const events = new EventBus(),
       save = () => this.save();
     this.events = events;

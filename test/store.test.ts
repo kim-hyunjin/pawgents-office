@@ -188,3 +188,31 @@ test('reducer: a turn with tools, a subagent, a reply and the end of the session
   assert.deepEqual([s().ended, s().state], [true, 'offduty']);
   assert.equal(applyHook(store, { hook_event_name: 'Stop' }), null); // no session id
 });
+
+test('store: offices come from the injected repo resolver, one per repo', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pawgents-store-'));
+  const store = new Store({
+    stateFile: path.join(dir, 'state.json'),
+    skinsDir: path.join(dir, 'skins'),
+    repoOf: (cwd) =>
+      cwd
+        ? { key: `/repos/${path.basename(cwd)}`, name: path.basename(cwd) }
+        : { key: 'default', name: '' },
+  });
+  const a = store.getOrCreateSession('a', { cwd: '/w/alpha' });
+  const b = store.getOrCreateSession('b', { cwd: '/w/alpha' });
+  const c = store.getOrCreateSession('c', { cwd: '/w/beta' });
+  const d = store.getOrCreateSession('d', {});
+  assert.equal(a.officeId, b.officeId);
+  assert.notEqual(a.officeId, c.officeId);
+  assert.equal(d.officeId, 'default');
+  assert.deepEqual(
+    store.offices.map((o) => [o.name, o.repos]),
+    [
+      ['사무실', ['default']],
+      ['alpha', ['/repos/alpha']],
+      ['beta', ['/repos/beta']],
+    ],
+  );
+  assert.deepEqual([a.desk, b.desk, c.desk], [0, 1, 0]);
+});
