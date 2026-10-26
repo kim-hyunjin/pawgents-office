@@ -38,6 +38,7 @@ import {
   roomName,
   wallRoomsAt,
 } from './layout-edit.ts';
+import { app } from './state.ts';
 import { FLOOR } from './tilemap.ts';
 import { $, downloadBlob, esc, setMsg } from './ui.ts';
 import type { World } from './world.ts';
@@ -134,7 +135,7 @@ export class Editor {
     startEditing();
     $('ed-title').textContent = office.name;
     $('ed-delete').hidden = office.id === 'default';
-    const others = this.world.offices.filter((o) => o.id !== office.id);
+    const others = app.get().offices.filter((o) => o.id !== office.id);
     $('ed-from').innerHTML =
       `<option value="">${others.length ? '사무실 고르기…' : '다른 사무실이 없어요'}</option>` +
       others
@@ -626,7 +627,7 @@ export class Editor {
     });
     $('ed-from').addEventListener('change', () => {
       const from = $<HTMLSelectElement>('ed-from');
-      const o = this.world.offices.find((x) => x.id === from.value);
+      const o = app.get().offices.find((x) => x.id === from.value);
       from.value = '';
       if (o) this.importLayout(o.layout, `'${o.name}' 사무실의`);
     });

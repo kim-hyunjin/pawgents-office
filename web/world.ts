@@ -1,14 +1,14 @@
-import type {
-  Office,
-  SessionSnapshot,
-  SubagentSnapshot,
-} from '../shared/api.ts';
+// The cats on screen and where they go: one entity per session (employee) and per live subagent (assistant), the
+// slot allocators over the office's spots, and the geometry being drawn. Follows the sessions in state.ts.
+import type { SessionSnapshot, SubagentSnapshot } from '../shared/api.ts';
 import type { Geo, Layout, Pt, Spot } from '../shared/layout.ts';
 import { compile, TILE } from '../shared/layout.ts';
 import { step } from './anim.ts';
 import type { Frame } from './render.ts';
 import type { Palette } from './sprites.ts';
 import { familyOf, hashStr, paletteFor } from './sprites.ts';
+import type { Change } from './state.ts';
+import { app, here } from './state.ts';
 import { awaitingBg } from './ui.ts';
 
 const PLAY_AFTER_MS =
@@ -113,18 +113,11 @@ export interface Assistant extends EntBase {
 export type Ent = Employee | Assistant;
 
 export interface World {
-  offices: Office[];
-  officeId: string | null;
-  together: string | null;
   layoutJson: string;
   geo: Geo;
   view: Geo;
   editing: boolean;
-  sessions: Map<string, SessionSnapshot>;
   ents: Map<string, Ent>;
-  hoverKey: string | null;
-  selectedKey: string | null;
-  connected: boolean;
   rooms: (string | null)[];
   roomSeats: Slots[];
   plan: Slots;
@@ -133,25 +126,16 @@ export interface World {
   funSpots: Spot[];
   play: Slots;
   near: Map<string, Slots>;
-  rosterOpen: boolean;
 }
 
-// Also written elsewhere: rosterOpen (office.ts), selectedKey (office.ts / panel close).
 // geo, view and the slot allocators are set by applyLayout before anything reads them.
 const unset = null as never;
 export const world: World = {
-  offices: [], // [{ id, name, repos, layout }] from the server, one per repo
-  officeId: null, // the office on screen; only its sessions get cats
-  together: null, // office everyone works in regardless of repo (server setting), or null
   layoutJson: '', // its layout as last applied, to spot changes
   geo: unset, // compiled layout (layout.ts) of the office on screen
   view: unset, // what is drawn: geo of the live office, or of the editor's draft
   editing: false,
-  sessions: new Map(), // id -> server session object
   ents: new Map(), // key -> entity
-  hoverKey: null,
-  selectedKey: null,
-  connected: false,
   // slot allocators over the layout's spots; rebuilt by applyLayout
   rooms: [], // meeting room index -> session id
   roomSeats: [],
@@ -160,7 +144,6 @@ export const world: World = {
   bullpen: unset,
   funSpots: [], // idle cats roam between these: the play area plus the lounge (sofa, coffee machine)
   play: unset,
-  rosterOpen: false,
   near: new Map(), // aisle -> Slots
 };
 
@@ -184,11 +167,26 @@ export function applyLayout(office: Layout) {
   for (const e of world.ents.values()) {
     e.station = null;
     if (e.phase === 'fade') continue;
-    const s = world.sessions.get(e.sessionId);
+    const s = app.get().sessions.get(e.sessionId);
     if (!s) goTo(e, { kind: 'exit', ...geo.spawn });
     else if (e.kind === 'employee') goTo(e, sessionStation(s, e, now));
     else if (e.data && !e.data.ended) goTo(e, assistantStation(s, e.data));
   }
+}
+
+/** Show another office: its layout, empty (the caller brings its staff back in). */
+export function enterOffice(layout: Layout) {
+  world.ents.clear();
+  world.layoutJson = JSON.stringify(layout);
+  applyLayout(layout);
+}
+/** The office on screen got a new layout from the server: re-lay it out. False if it is the same as before. */
+export function relayout(layout: Layout) {
+  const json = JSON.stringify(layout);
+  if (json === world.layoutJson) return false;
+  world.layoutJson = json;
+  applyLayout(layout);
+  return true;
 }
 
 // ---- layout editor: it shows its draft instead of the live office, without cats ----
@@ -420,8 +418,6 @@ function fade(e: Ent, now: number) {
   releaseAll(e);
 }
 
-export const here = (s: SessionSnapshot) => s.officeId === world.officeId;
-
 /** Bring a session's cats (employee + assistants) in the office on screen in line with the server's view of it. */
 export function syncSession(s: SessionSnapshot, seated: boolean, now: number) {
   let e = world.ents.get(s.id) as Employee | undefined;
@@ -462,6 +458,23 @@ export function syncSession(s: SessionSnapshot, seated: boolean, now: number) {
       fade(ae, now);
   }
 }
+/** The cats follow the session list: a session here gets its cats synced, one elsewhere loses them, one gone leaves. */
+export function followSessions(c: Change) {
+  if (c.type === 'session') {
+    if (here(c.s)) syncSession(c.s, c.seated, c.at);
+    else dropCats(c.s.id); // works in another office: no cat here
+  } else if (c.type === 'remove') exitSession(c.id);
+}
+/** Breed or skin choices changed: redraw every cat with its family's look. */
+export function repaintCats() {
+  const { sessions } = app.get();
+  for (const e of world.ents.values()) {
+    const s = sessions.get(e.sessionId);
+    if (!s) continue;
+    if (e.kind === 'employee') e.pal = paletteFor(s.id, 'employee', s.model);
+    else e.pal = paletteFor(e.agentId, 'assistant', e.data?.model || s.model);
+  }
+}
 /** Remove a session's cats at once (it works in another office now, or we switched away). */
 export function dropCats(id: string) {
   for (const e of [...world.ents.values()])
@@ -479,7 +492,7 @@ export function exitSession(id: string) {
 }
 /** Re-evaluate every station on screen (lounge timing, meeting/library linger); called once a second. */
 export function retarget(now: number) {
-  for (const s of world.sessions.values()) {
+  for (const s of app.get().sessions.values()) {
     if (!here(s)) continue;
     const e = world.ents.get(s.id) as Employee | undefined;
     if (e && e.phase !== 'leave') goTo(e, sessionStation(s, e, now));

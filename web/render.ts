@@ -19,6 +19,7 @@ import {
   sprite,
   spriteSize,
 } from './sprites.ts';
+import type { AppState } from './state.ts';
 import type { Ctx } from './tilemap.ts';
 import { background, drawBox, drawReception } from './tilemap.ts';
 import { fmtTime } from './ui.ts';
@@ -56,9 +57,10 @@ export function render(
   ctx: CanvasRenderingContext2D,
   S: number,
   world: World,
+  st: AppState,
   now: number,
 ): Frame {
-  const { hoverKey, selectedKey } = world;
+  const { hoverKey, selectedKey } = st;
   const geo = world.view;
   const ents = world.editing ? NO_ENTS : world.ents;
   // office space starts WALL_RISE below the canvas top; the band above is the raised top wall
@@ -143,7 +145,7 @@ export function render(
   for (const e of list)
     drawBubble(ctx, S, e, now, placed, geo.W, heads.get(e.key)?.h);
   ctx.setTransform(1, 0, 0, 1, 0, 0); // HUD hangs on the raised wall
-  return { hud: drawHUD(ctx, S, world, now), heads };
+  return { hud: drawHUD(ctx, S, world, st, now), heads };
 }
 
 // ---- furniture state ------------------------------------------------------------
@@ -700,14 +702,15 @@ function drawHUD(
   ctx: CanvasRenderingContext2D,
   S: number,
   world: World,
+  st: AppState,
   now: number,
 ): Rect {
-  const { sessions, connected } = world;
+  const { sessions, connected } = st;
   let emp = 0,
     asst = 0,
     busy = 0;
   for (const s of sessions.values()) {
-    if (s.ended || s.officeId !== world.officeId) continue; // this office only
+    if (s.ended || s.officeId !== st.officeId) continue; // this office only
     emp++;
     if (s.state !== 'idle') busy++;
     for (const a of s.subagents) if (!a.ended) asst++;
@@ -718,13 +721,13 @@ function drawHUD(
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   const text = `직원 ${emp}  ·  보조 ${asst}  ·  일하는 중 ${busy}${meetings ? `  ·  회의 ${meetings}` : ''}`;
-  const toggle = world.rosterOpen ? '목록 ▴' : '목록 ▾';
+  const toggle = st.rosterOpen ? '목록 ▴' : '목록 ▾';
   const tw = ctx.measureText(text).width,
     gw = ctx.measureText(toggle).width;
   const x0 = 1.5 * TILE * S,
     w = tw + gw + 16 * S;
   ctx.fillStyle =
-    world.hoverKey === HUD_BTN ? 'rgba(52,56,92,0.95)' : 'rgba(20,22,40,0.85)';
+    st.hoverKey === HUD_BTN ? 'rgba(52,56,92,0.95)' : 'rgba(20,22,40,0.85)';
   roundRect(ctx, x0, 2 * S, w, 10 * S, 2 * S);
   ctx.fill();
   ctx.fillStyle = connected ? '#22c55e' : '#ef4444';
