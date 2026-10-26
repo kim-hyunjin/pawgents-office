@@ -1,0 +1,10 @@
+{
+  // The browser's half on its own: DOM only, no Bun / Node types, so a server-side API can't slip into web/ or shared/.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": [".", "../shared"],
+  "exclude": ["../shared/node"]
+}

@@ -11,7 +11,8 @@
       "hooks/**",
       "scripts/**",
       "test/**",
-      "web/**/*.ts"
+      "web/**/*.ts",
+      "shared/**"
     ]
   },
   "formatter": {

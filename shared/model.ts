@@ -14,7 +14,13 @@ const BUSY_STATES: ReadonlySet<EntityState> = new Set<EntityState>([
 export const isBusyState = (s: EntityState) => BUSY_STATES.has(s);
 
 /** Model families a cat is drawn for; 'other' catches models we don't know. */
-export const CAT_FAMILIES = ['fable', 'opus', 'sonnet', 'haiku', 'other'] as const;
+export const CAT_FAMILIES = [
+  'fable',
+  'opus',
+  'sonnet',
+  'haiku',
+  'other',
+] as const;
 export type CatFamily = (typeof CAT_FAMILIES)[number];
 export const isCatFamily = (f: string): f is CatFamily =>
   (CAT_FAMILIES as readonly string[]).includes(f);
