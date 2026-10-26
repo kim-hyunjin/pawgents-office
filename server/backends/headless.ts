@@ -390,7 +390,7 @@ const RESULT_TEXT: Record<string, string> = { allow: '→ 허용', deny: '→ �
  * dropped-and-reconnected socket keeps them. Needs only these three of the store, so a stub can stand in for it.
  */
 export function createPermissionDesk(
-  store: Pick<Store, 'log' | 'setState' | 'emitSession'>,
+  store: Pick<Store, 'log' | 'setState' | 'updateSession'>,
 ) {
   const parked = new Map<string, Map<string, Parked>>();
   const parkedOf = (sid: string): Map<string, Parked> =>
@@ -406,7 +406,7 @@ export function createPermissionDesk(
       target = summarizeToolInput(tool, ev.tool_input),
       detail = truncate(detailForTool(tool, ev.tool_input), 200);
     const pending = parkedOf(s.id);
-    s.pendingPermissions.push({ id, tool, target, detail, at: Date.now() });
+    const card = { id, tool, target, detail, at: Date.now() };
     let done = false,
       settled: (r: DecisionReply) => void = () => {};
     const reply = new Promise<DecisionReply>((r) => {
@@ -422,22 +422,25 @@ export function createPermissionDesk(
       done = true;
       clearTimeout(timer);
       settled(decision ? { decision, ...(message ? { message } : {}) } : {});
-      s.pendingPermissions = s.pendingPermissions.filter((p) => p.id !== id);
-      pending.delete(id);
-      if (!pending.size) parked.delete(s.id);
-      if (!silent)
-        store.log(s, {
-          ev: 'PermissionRequest',
-          tool,
-          target,
-          text: RESULT_TEXT[decision ?? ''] || '→ 응답 없음',
-        });
-      if (!s.pendingPermissions.length && s.state === 'waiting' && !s.ended)
-        store.setState(s, 'thinking');
-      store.emitSession(s);
+      store.updateSession(s, () => {
+        s.pendingPermissions = s.pendingPermissions.filter((p) => p.id !== id);
+        pending.delete(id);
+        if (!pending.size) parked.delete(s.id);
+        if (!silent)
+          store.log(s, {
+            ev: 'PermissionRequest',
+            tool,
+            target,
+            text: RESULT_TEXT[decision ?? ''] || '→ 응답 없음',
+          });
+        if (!s.pendingPermissions.length && s.state === 'waiting' && !s.ended)
+          store.setState(s, 'thinking');
+      });
     }
-    pending.set(id, { finish, tool, target });
-    store.emitSession(s);
+    store.updateSession(s, () => {
+      s.pendingPermissions.push(card);
+      pending.set(id, { finish, tool, target });
+    });
     return { reply, cancel: () => finish(null, { silent: true }) };
   }
 

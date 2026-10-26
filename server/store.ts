@@ -125,9 +125,6 @@ export class Store {
   emit(type: string, data: unknown) {
     this.events.emit(type, data);
   }
-  emitSession(s: Session) {
-    this.sessionRepo.emit(s);
-  }
   /** Change session `s` in `fn` and push it to the browser (see SessionRepo.update: `false` means no change). */
   updateSession<T>(s: Session, fn: (s: Session) => T): T {
     return this.sessionRepo.update(s, fn);

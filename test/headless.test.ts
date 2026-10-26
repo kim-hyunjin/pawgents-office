@@ -702,7 +702,7 @@ function permFixture() {
     setState: (x: Session, st: Session['state']) => {
       x.state = st;
     },
-    emitSession: () => {},
+    updateSession: <T>(x: Session, fn: (s: Session) => T) => fn(x),
   } as unknown as Store;
   return { logs, s, store };
 }
