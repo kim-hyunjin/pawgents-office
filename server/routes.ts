@@ -11,7 +11,6 @@ import type {
   ReplyReply,
   WorktreesReply,
 } from '../shared/api.ts';
-import { errMessage } from '../shared/errors.ts';
 import { safeJsonParse } from '../shared/json.ts';
 import {
   cloneOffice,
@@ -23,19 +22,21 @@ import {
   isCell,
   isName,
   MAX_CELL,
-  MAX_HIRES,
   MAX_NAME_CHARS,
   MIN_CELL,
-  WORKTREE_NAME_RE,
 } from '../shared/limits.ts';
 import { isCatFamily } from '../shared/model.ts';
-import { MODEL_RE, PERMISSION_MODES } from '../shared/permission.ts';
+import { PERMISSION_MODES } from '../shared/permission.ts';
+import {
+  BAD_REQUEST,
+  createLaunch,
+  parseLaunchBody,
+  UNKNOWN_MODE,
+} from './app/launch.ts';
+import { consoleLogger, label, preview } from './app/log.ts';
 import type { Backend } from './app/ports.ts';
 import { receiveHook } from './app/sessions.ts';
-import { addWorktree, samePath, worktreesAt } from './backends/git.ts';
-import type { HeadlessBackend } from './backends/headless.ts';
 import type { BackendRegistry } from './backends/index.ts';
-import type { OrcaBackend } from './backends/orca.ts';
 import { MAX_BODY_BYTES, MAX_PROMPT_CHARS } from './config.ts';
 import { fileDiff } from './diff.ts';
 import { scheduleFileSync } from './files.ts';
@@ -56,7 +57,6 @@ import { sendFile } from './static.ts';
 import type { Store } from './store.ts';
 import { BREED_KEY, DEFAULT_OFFICE_ID } from './store.ts';
 import type { HookEvent, Session } from './types.ts';
-import { isDir, oneLine, truncate } from './util.ts';
 
 export interface RouteCtx {
   req: IncomingMessage;
@@ -70,20 +70,9 @@ export type Route = [
   handler: (ctx: RouteCtx) => unknown,
 ];
 
-const BAD_REQUEST = '잘못된 요청입니다.';
 const SESSION_GONE = '세션이 없거나 종료되었습니다.';
-const UNKNOWN_MODE = '알 수 없는 권한 모드입니다.';
-const UNKNOWN_BRANCH = '기준 워크트리의 브랜치를 알 수 없습니다.';
 const PROMPT_WAITING =
   '권한 승인·질문 응답을 기다리는 중입니다. 터미널에서 먼저 답해주세요.';
-
-/** `name (abcd1234)`: how the server log names a session. */
-const label = (s: Session) => `${s.name} (${s.id.slice(0, 8)})`;
-/** One short line of user text for the server log. */
-const preview = (text: string) => truncate(oneLine(text), 80);
-/** The worktree a hire gets: `name` alone, or `name-1`, `name-2`, … when hiring several. */
-const hireName = (name: string, count: number, i: number) =>
-  count > 1 ? `${name}-${i}` : name;
 
 /** The backend driving `s`, or null after answering 409 (a headless session whose runner isn't connected). */
 function backendOrDetached(
@@ -113,165 +102,6 @@ function logHook(s: Session, ev: HookEvent) {
   );
 }
 
-/** Orca: one hire at a time (Orca creates checkouts / tabs sequentially anyway), a failure doesn't hide the rest. */
-async function launchOrca(
-  orca: OrcaBackend,
-  res: ServerResponse,
-  {
-    worktreeId,
-    prompt,
-    model,
-    count,
-    name,
-  }: {
-    worktreeId: string;
-    prompt: string;
-    model: string;
-    count: number;
-    name: string | null;
-  },
-) {
-  if (!worktreeId) {
-    json(res, 400, { error: BAD_REQUEST });
-    return;
-  }
-  const base = (await orca.listWorktrees()).find((w) => w.id === worktreeId);
-  if (!base) {
-    json(res, 400, { error: '알 수 없는 워크트리입니다.' });
-    return;
-  }
-  if (name !== null && !base.branch && !base.head) {
-    json(res, 400, { error: UNKNOWN_BRANCH });
-    return;
-  }
-  const started: string[] = [],
-    errors: string[] = [];
-  for (let i = 1; i <= count; i++) {
-    const wtName = name === null ? null : hireName(name, count, i);
-    try {
-      if (wtName)
-        await orca.createWorktreeWithClaude({
-          base,
-          name: wtName,
-          prompt,
-          model,
-        });
-      else await orca.launchClaude({ worktreeId, prompt, model });
-      started.push(wtName || base.path);
-      console.log(
-        `[web] launch claude in ${wtName ? `new worktree ${wtName} (from ${base.branch || base.head})` : base.path}${prompt ? ': ' + preview(prompt) : ''}`,
-      );
-    } catch (e) {
-      errors.push(`${wtName || `#${i}`}: ${errMessage(e)}`);
-    }
-  }
-  if (!started.length) {
-    json(res, 502, { error: errors.join('\n') });
-    return;
-  }
-  json(res, 200, {
-    ok: true,
-    started: started.length,
-    errors,
-    sessions: [],
-  } satisfies LaunchReply);
-}
-
-/** Headless: worktrees (if any) are made one by one (git locks the repo), then every claude starts in parallel. */
-async function launchHeadless(
-  headless: HeadlessBackend,
-  res: ServerResponse,
-  {
-    cwd,
-    prompt,
-    model,
-    count,
-    name,
-    permissionMode,
-  }: {
-    cwd: unknown;
-    prompt: string;
-    model: string;
-    count: number;
-    name: string | null;
-    permissionMode: string;
-  },
-) {
-  if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || !isDir(cwd)) {
-    json(res, 400, { error: '작업 폴더가 없습니다.' });
-    return;
-  }
-  if (!PERMISSION_MODES.includes(permissionMode)) {
-    json(res, 400, { error: UNKNOWN_MODE });
-    return;
-  }
-  const p = await headless.probe();
-  if (!p.available) {
-    json(res, 409, { error: p.reason, code: 'headless_unavailable' });
-    return;
-  }
-  const dirs: string[] = [],
-    errors: string[] = [];
-  if (name === null) for (let i = 0; i < count; i++) dirs.push(cwd);
-  else {
-    // git's own list gives the main worktree's real-case path (repo keys are lowercased on Windows)
-    const ws = await worktreesAt(cwd),
-      sel = ws.find((w) => samePath(w.path, cwd));
-    if (!sel) {
-      json(res, 400, { error: '선택한 폴더가 git 워크트리가 아닙니다.' });
-      return;
-    }
-    if (!sel.branch && !sel.head) {
-      json(res, 400, { error: UNKNOWN_BRANCH });
-      return;
-    }
-    const repoRoot = ws[0]?.isMain ? ws[0].path : sel.path;
-    for (let i = 1; i <= count; i++) {
-      const wtName = hireName(name, count, i);
-      try {
-        dirs.push(
-          (
-            await addWorktree({
-              repoRoot,
-              name: wtName,
-              base: sel.branch || sel.head,
-            })
-          ).path,
-        );
-      } catch (e) {
-        errors.push(`${wtName}: ${errMessage(e)}`);
-      }
-    }
-  }
-  const results = await Promise.allSettled(
-    dirs.map((dir) =>
-      headless.launch({ cwd: dir, prompt, model, permissionMode }),
-    ),
-  );
-  const sessions: (string | undefined)[] = []; // undefined: gone again by the time launch returned
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      sessions.push(r.value?.id);
-      console.log(
-        `[web] launch claude (headless) in ${dirs[i]}${prompt ? ': ' + preview(prompt) : ''}`,
-      );
-    } else
-      errors.push(
-        `${path.basename(dirs[i])}: ${r.reason?.message || r.reason}`,
-      );
-  });
-  if (!sessions.length) {
-    json(res, 502, { error: errors.join('\n') || '시작하지 못했습니다.' });
-    return;
-  }
-  json(res, 200, {
-    ok: true,
-    started: sessions.length,
-    errors,
-    sessions,
-  } satisfies LaunchReply);
-}
-
 export function makeRoutes({
   store,
   sse,
@@ -281,6 +111,10 @@ export function makeRoutes({
   sse: Sse;
   backends: BackendRegistry;
 }): Route[] {
+  const launch = createLaunch({
+    launchers: backends.byId,
+    logger: consoleLogger,
+  });
   // The office routes read the body first, so 403 / 413 / 400 win over a 404 for an unknown office.
   const officeCtx = async ({ req, res, params: [id] }: RouteCtx) => {
     const office = store.office(id);
@@ -291,53 +125,6 @@ export function makeRoutes({
       return null;
     }
     return { id, office, data };
-  };
-
-  // newWorktree: branch a fresh worktree off the selected one per hire, named name / name-1, name-2, …
-  const launch = async (res: ServerResponse, data: Record<string, any>) => {
-    const backend = String(data.backend || ''),
-      prompt = String(data.prompt ?? '').trim(),
-      model = String(data.model || '').trim();
-    const count = Number(data.count ?? 1),
-      name = data.newWorktree
-        ? String(data.newWorktree.name || '').trim()
-        : null;
-    if (
-      !['orca', 'headless'].includes(backend) ||
-      prompt.length > MAX_PROMPT_CHARS ||
-      (model && !MODEL_RE.test(model)) ||
-      !Number.isInteger(count) ||
-      count < 1 ||
-      count > MAX_HIRES ||
-      (name !== null && !WORKTREE_NAME_RE.test(name))
-    ) {
-      json(res, 400, { error: BAD_REQUEST });
-      return;
-    }
-    try {
-      if (backend === 'orca')
-        await launchOrca(backends.byId.orca, res, {
-          worktreeId: String(data.worktreeId || ''),
-          prompt,
-          model,
-          count,
-          name,
-        });
-      else
-        await launchHeadless(backends.byId.headless, res, {
-          cwd: data.cwd,
-          prompt,
-          model,
-          count,
-          name,
-          permissionMode:
-            data.permissionMode == null || data.permissionMode === ''
-              ? 'default'
-              : String(data.permissionMode),
-        });
-    } catch (e) {
-      sendError(res, e);
-    }
   };
 
   return [
@@ -761,7 +548,17 @@ export function makeRoutes({
       '/launch',
       async ({ req, res }) => {
         const data = await readJson(req, res);
-        if (data) await launch(res, data);
+        if (!data) return;
+        const hire = parseLaunchBody(data);
+        if (!hire) {
+          json(res, 400, { error: BAD_REQUEST });
+          return;
+        }
+        try {
+          json(res, 200, (await launch(hire)) satisfies LaunchReply);
+        } catch (e) {
+          sendError(res, e);
+        }
       },
     ],
   ];

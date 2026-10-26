@@ -53,3 +53,8 @@ export interface Backend {
   /** Server exit: let go of connections (sessions keep running). */
   shutdown?(): void;
 }
+
+/** The server's activity log: one line per thing done (`[web] …`, `[hook] …`). The console, unless a test listens. */
+export interface Logger {
+  info(line: string): void;
+}

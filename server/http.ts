@@ -1,6 +1,7 @@
 // Request plumbing shared by the routes: bodies, JSON replies, the same-origin guard.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { safeJsonParse } from '../shared/json.ts';
+import { AppError, type Refusal } from './app/errors.ts';
 import type { ParkedPermission } from './app/ports.ts';
 import { MAX_BODY_BYTES, PERMISSION_HEARTBEAT_MS, PORT } from './config.ts';
 import type { Store } from './store.ts';
@@ -153,8 +154,17 @@ export const errorStatus = (code?: unknown) =>
   typeof code === 'string' && Object.hasOwn(ERROR_STATUS, code)
     ? ERROR_STATUS[code]
     : 502;
-/** Answer a caught error as `{ error, code }` with its errorStatus. */
+/** The HTTP status of a use case's refusal (app/errors.ts). */
+export const REFUSAL_STATUS: Record<Refusal, number> = {
+  invalid: 400,
+  not_found: 404,
+  conflict: 409,
+  failed: 502,
+};
+/** Answer a caught error as `{ error, code }`: a refusal by its kind, anything else by errorStatus. */
 export const sendError = (res: ServerResponse, e: unknown) => {
   const { code, message } = (e ?? {}) as { code?: unknown; message?: string };
-  json(res, errorStatus(code), { error: message || String(e), code });
+  const status =
+    e instanceof AppError ? REFUSAL_STATUS[e.refusal] : errorStatus(code);
+  json(res, status, { error: message || String(e), code });
 };
