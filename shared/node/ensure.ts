@@ -1,4 +1,4 @@
-// Start the pawgents-office server in the background if it isn't answering (shared by hooks/ensure-server.ts and hooks/send.ts --decide).
+// Start the pawgents-office server in the background if it isn't answering (shared by hooks/ensure-server.ts, hooks/send.ts --decide and scripts/open.ts).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
