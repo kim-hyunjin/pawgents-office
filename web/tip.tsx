@@ -1,5 +1,6 @@
 // The tooltip over a cat under the pointer: who it is, where, what it's doing and thinking.
-import { Fragment, h } from 'preact';
+import { type ComponentChildren, Fragment, h } from 'preact';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { SessionSnapshot, SubagentSnapshot } from '../shared/api.ts';
 import { FAMILIES, familyOf } from './sprites.ts';
 import { css } from './style.ts';
@@ -35,6 +36,36 @@ function Think({ d }: { d: SessionSnapshot | SubagentSnapshot }) {
   return thinkingFresh(d, Date.now()) && d.state !== 'idle' ? (
     <div class="think">💭 {d.lastThinking}</div>
   ) : null;
+}
+
+/** The tooltip box near the pointer (`at`, viewport px), on the pointer's other side where the window ends. */
+export function Tip({
+  at,
+  children,
+}: {
+  at: { x: number; y: number };
+  children?: ComponentChildren;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: at.x + 14, top: at.y + 14 });
+  // its size is known only once drawn: place it then, before the browser paints
+  useLayoutEffect(() => {
+    const { offsetWidth: w, offsetHeight: hgt } = ref.current!;
+    let left = at.x + 14,
+      top = at.y + 14;
+    if (left + w > window.innerWidth - 8) left = at.x - w - 8;
+    if (top + hgt > window.innerHeight - 8) top = at.y - hgt - 8;
+    if (left !== pos.left || top !== pos.top) setPos({ left, top });
+  });
+  return (
+    <div
+      id="tip"
+      ref={ref}
+      style={{ left: `${pos.left}px`, top: `${pos.top}px` }}
+    >
+      {children}
+    </div>
+  );
 }
 
 /** `s`: the cat's session; `where`: the place it's at ('' at its desk). */

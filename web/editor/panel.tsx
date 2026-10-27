@@ -4,7 +4,7 @@
 // the Editor calls sync() whenever the draft, the selection or the tool changes.
 
 import type { ComponentChildren, RefObject } from 'preact';
-import { Fragment, h, render as mount } from 'preact';
+import { h, render as mount } from 'preact';
 import { useRef } from 'preact/hooks';
 import { field, isRecord } from '../../shared/json.ts';
 import type { Item, Room } from '../../shared/layout.ts';
@@ -87,7 +87,7 @@ export class EditorPanel {
   others: { id: string; name: string }[] = []; // offices to copy a layout from
   constructor(ed: Editor) {
     this.ed = ed;
-    this.el = $('editor');
+    this.el = $('editor-root');
     document.addEventListener('paste', (ev) => {
       if (!ed.isOpen || (ev.target as Element).closest?.('input, textarea'))
         return;
@@ -107,10 +107,12 @@ export class EditorPanel {
     this.others = app.get().offices.filter((o) => o.id !== office.id);
   }
 
-  /** Draw the panel from the draft, the selection, the tool and the problems. */
+  /** Draw the panel from the draft, the selection, the tool and the problems; nothing while the editor is closed. */
   sync() {
-    if (!this.m.draft || !this.ed.office) return;
-    mount(<EditorView panel={this} />, this.el);
+    mount(
+      this.m.draft && this.ed.office ? <EditorView panel={this} /> : null,
+      this.el,
+    );
   }
   /** The 사무실 닫기 button follows its two-click arm. */
   showDelete() {
@@ -308,7 +310,7 @@ function EditorView({ panel }: { panel: EditorPanel }) {
   );
   const armed = ed.deleteArm.is(true);
   return (
-    <>
+    <aside id="editor">
       <header>
         <h2>
           배치 편집 <span class="dim">{office.name}</span>
@@ -578,7 +580,7 @@ function EditorView({ panel }: { panel: EditorPanel }) {
           </button>
         </div>
       </footer>
-    </>
+    </aside>
   );
 }
 

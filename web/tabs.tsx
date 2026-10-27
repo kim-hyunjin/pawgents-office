@@ -1,6 +1,6 @@
 // Tabs above the office, one per office, with head count and a dot when someone works (yellow: waiting on you),
 // and a button to gather everyone here / split up again. Gathered: only the shared office's tab.
-import { Fragment, h } from 'preact';
+import { h } from 'preact';
 import { useState } from 'preact/hooks';
 import type { Office, SessionSnapshot } from '../shared/api.ts';
 import { css } from './style.ts';
@@ -55,7 +55,7 @@ export function Tabs({
     }
   };
   return (
-    <>
+    <nav id="tabs">
       {shown.map((o) => {
         const staff = [...sessions.values()].filter(
           (s) => !s.ended && s.officeId === o.id,
@@ -107,6 +107,6 @@ export function Tabs({
           ⇢ 이 사무실에 모두 모이기
         </button>
       )}
-    </>
+    </nav>
   );
 }

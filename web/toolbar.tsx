@@ -1,5 +1,5 @@
 // The tool buttons above the office: 새 직원, 배치 편집, zoom (− / scale / +) and 모델 안내.
-import { Fragment, h } from 'preact';
+import { h } from 'preact';
 import { Pic } from './pic.tsx';
 import { paletteFor, sprite } from './sprites.ts';
 import { css } from './style.ts';
@@ -35,12 +35,15 @@ const LEGEND_CAT = sprite(
 );
 
 export function Toolbar({
+  off,
   zoom,
   onNew,
   onEdit,
   onLegend,
   onZoom,
 }: {
+  /** Hidden but keeping its room: the layout editor, which has its own buttons, is open. */
+  off: boolean;
   /** The scale drawn at, whether it is pinned (else it fits the window), and the largest there is. */
   zoom: { scale: number; pinned: boolean; max: number };
   onNew: () => void;
@@ -50,7 +53,7 @@ export function Toolbar({
   onZoom: (scale: number | null) => void;
 }) {
   return (
-    <>
+    <div id="tools" class={off ? 'off' : ''}>
       <button
         type="button"
         class="primary"
@@ -103,6 +106,6 @@ export function Toolbar({
         <Pic img={LEGEND_CAT} />
         모델 안내
       </button>
-    </>
+    </div>
   );
 }

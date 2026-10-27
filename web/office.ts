@@ -1,4 +1,4 @@
-import { h, render as mount } from 'preact';
+import { Fragment, h, render as mount } from 'preact';
 import type { Office, SessionSnapshot, Snapshot } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
 import { getState, setTogether } from './api.ts';
@@ -26,7 +26,7 @@ import {
   setUi,
 } from './state.ts';
 import { Tabs } from './tabs.tsx';
-import { CatTip } from './tip.tsx';
+import { CatTip, Tip } from './tip.tsx';
 import { Toolbar } from './toolbar.tsx';
 import { $, storage } from './ui.ts';
 import {
@@ -57,18 +57,15 @@ const params = new URLSearchParams(location.search);
 const st = app.get(); // the page's state: read here, changed only through state.ts's actions
 
 const canvas = $<HTMLCanvasElement>('office');
-const tabsEl = $('tabs');
 const barEl = $('bar'); // office tabs + the tool buttons, above the office
-const toolsEl = $('tools');
-const stageEl = $('stage');
 const ctx = canvas.getContext('2d')!;
-const tip = $('tip');
+let tabsShown = false; // drawBar: whether the office tabs are up
 // dialogs first: the reply dialog notes where the panel's composer lives before anything can move it
 initLauncher();
 initLegend();
 initDiff();
 initReply({ composer: (host) => panel.setComposerHost(host) });
-const panel = new Panel($('panel'), {
+const panel = new Panel($('panel-root'), {
   onOpen: () => refit(),
   onClose: () => {
     setUi({ selectedKey: null });
@@ -80,11 +77,9 @@ const panel = new Panel($('panel'), {
 initViewport({
   canvas,
   barEl,
-  toolsEl,
-  stageEl,
+  stageEl: $('stage'),
   sideOpen: () => panel.isOpen || editor.isOpen,
-  editorOpen: () => editor.isOpen,
-  onZoom: () => drawToolbar(),
+  onResized: () => drawBar(), // the zoom shown, and the editor (opening and closing resize) hiding the tools
 });
 const editor = new Editor({
   world,
@@ -97,7 +92,7 @@ resize();
 
 const refreshLists = () => {
   showRoster();
-  renderTabs();
+  drawBar();
 };
 // Everything that shows sessions follows the session list, in this order: the ticker, the cats, the panel, then the
 // roster and the office tabs.
@@ -146,7 +141,7 @@ function setOffices(list: Office[], together: string | null = null) {
     return;
   }
   if (relayout(cur.layout)) resize();
-  renderTabs();
+  drawBar();
 }
 function preferredOffice() {
   let want = params.get('office');
@@ -174,33 +169,6 @@ function switchOffice(id?: string | null) {
     if (here(s) && !s.ended) putSession(s, true);
   renderFeed(false);
   refreshLists();
-}
-/** The office tabs (tabs.tsx), hidden with one office; showing or hiding them changes the room the office has. */
-let tabsShown = false;
-function renderTabs() {
-  const show = st.offices.length > 1 || !!st.together;
-  tabsEl.hidden = !show;
-  mount(
-    show
-      ? h(Tabs, {
-          offices: st.offices,
-          sessions: st.sessions,
-          officeId: st.officeId,
-          together: st.together,
-          onPick: (id) => {
-            editor.close();
-            switchOffice(id);
-          },
-          // the server moves the staff and pushes the result
-          onTogether: (id) => setTogether(id).then(() => {}),
-        })
-      : null,
-    tabsEl,
-  );
-  if (show !== tabsShown) {
-    tabsShown = show;
-    resize();
-  }
 }
 let firstSnapshot = true;
 /** Breed or skin choices changed (snapshot or a 'settings' push): redraw every cat with its family's look. */
@@ -304,10 +272,13 @@ window.addEventListener('resize', () => {
 });
 
 // ---- input ---------------------------------------------------------------------
-/** The tooltip over cat `e`, or nothing when its session is gone. */
-function showTip(e: Ent) {
-  const s = st.sessions.get(e.sessionId);
-  mount(s ? h(CatTip, { e, s, where: placeOf(e) }) : null, tip);
+/** The tooltip over cat `e` by the pointer (`at`, viewport px); nothing for no cat or when its session is gone. */
+function showTip(e: Ent | null, at = { x: 0, y: 0 }) {
+  const s = e && st.sessions.get(e.sessionId);
+  mount(
+    e && s ? h(Tip, { at }, h(CatTip, { e, s, where: placeOf(e) })) : null,
+    $('tip-root'),
+  );
 }
 
 /** What the last frame drew where: the HUD button and the cats' sprite heights, for hit testing. */
@@ -321,7 +292,7 @@ const catAt = ([x, y]: [number, number]) =>
 canvas.addEventListener('mousemove', (ev) => {
   if (editor.isOpen) {
     setUi({ hoverKey: null });
-    tip.hidden = true;
+    showTip(null);
     return;
   } // the editor handles the pointer
   const xy = officeXY(ev);
@@ -329,29 +300,17 @@ canvas.addEventListener('mousemove', (ev) => {
   if (btn) {
     setUi({ hoverKey: btn });
     canvas.style.cursor = 'pointer';
-    tip.hidden = true;
+    showTip(null);
     return;
   }
   const e = catAt(xy);
   setUi({ hoverKey: e ? e.key : null });
   canvas.style.cursor = e ? 'pointer' : 'default';
-  if (e) {
-    showTip(e);
-    tip.hidden = false;
-    const r = canvas.getBoundingClientRect();
-    let tx = r.left + ev.offsetX + 14,
-      ty = r.top + ev.offsetY + 14;
-    if (tx + tip.offsetWidth > window.innerWidth - 8)
-      tx = r.left + ev.offsetX - tip.offsetWidth - 8;
-    if (ty + tip.offsetHeight > window.innerHeight - 8)
-      ty = r.top + ev.offsetY - tip.offsetHeight - 8;
-    tip.style.left = `${tx}px`;
-    tip.style.top = `${ty}px`;
-  } else tip.hidden = true;
+  showTip(e, { x: ev.clientX, y: ev.clientY });
 });
 canvas.addEventListener('mouseleave', () => {
   setUi({ hoverKey: null });
-  tip.hidden = true;
+  showTip(null);
 });
 canvas.addEventListener('click', (ev) => {
   if (editor.isOpen) return;
@@ -371,27 +330,50 @@ canvas.addEventListener('click', (ev) => {
   else setUi({ selectedKey: e.key });
 });
 
-// ---- tool buttons (above the office) ---------------------------------------------------
-function drawToolbar() {
+// ---- above the office: the office tabs (hidden with one office) and the tool buttons --------------------------
+function drawBar() {
+  const tabs = st.offices.length > 1 || !!st.together;
   mount(
-    h(Toolbar, {
-      zoom: zoomInfo(),
-      onNew: () => openLauncher(),
-      onLegend: () => openLegend(st.sessions),
-      onEdit: () => {
-        // layout editor takes the panel's place
-        const o = officeOf(st.officeId);
-        if (editor.isOpen || !o) return;
-        if (st.rosterOpen) toggleRoster();
-        deselect();
-        editor.open(o);
-      },
-      onZoom: setZoom,
-    }),
-    toolsEl,
+    h(
+      Fragment,
+      null,
+      tabs &&
+        h(Tabs, {
+          offices: st.offices,
+          sessions: st.sessions,
+          officeId: st.officeId,
+          together: st.together,
+          onPick: (id) => {
+            editor.close();
+            switchOffice(id);
+          },
+          // the server moves the staff and pushes the result
+          onTogether: (id) => setTogether(id).then(() => {}),
+        }),
+      h(Toolbar, {
+        off: editor.isOpen, // the editor has its own buttons
+        zoom: zoomInfo(),
+        onNew: () => openLauncher(),
+        onLegend: () => openLegend(st.sessions),
+        onEdit: () => {
+          // layout editor takes the panel's place
+          const o = officeOf(st.officeId);
+          if (editor.isOpen || !o) return;
+          if (st.rosterOpen) toggleRoster();
+          deselect();
+          editor.open(o);
+        },
+        onZoom: setZoom,
+      }),
+    ),
+    barEl,
   );
+  // showing or hiding the tabs changes the room the office has
+  if (tabs !== tabsShown) {
+    tabsShown = tabs;
+    resize();
+  }
 }
-drawToolbar();
 
 // ---- loop ----------------------------------------------------------------------
 let last = performance.now();

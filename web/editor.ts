@@ -76,7 +76,6 @@ export class Editor {
     this.deleteArm.disarm();
     this.panel.showDelete();
     this.shown = false;
-    this.panel.el.hidden = false;
     startEditing();
     this.panel.open(office);
     this.panel.msg('');
@@ -85,7 +84,7 @@ export class Editor {
   close() {
     if (!this.office) return;
     this.office = null;
-    this.panel.el.hidden = true;
+    this.panel.sync();
     stopEditing();
     this.input.canvas.style.cursor = 'default';
     this.onResize();

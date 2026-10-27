@@ -8,27 +8,23 @@ export let S = 3; // whole-number scale the office is drawn at; a live binding o
 
 let canvas: HTMLCanvasElement,
   barEl: HTMLElement,
-  toolsEl: HTMLElement,
   stageEl: HTMLElement,
   sideOpen: () => boolean,
-  editorOpen: () => boolean,
-  onZoom: () => void;
+  onResized: () => void;
 let PANEL_W = 0,
   PANEL_ANIM_MS = 0; // read from style.css (--panel-w / --panel-ms) so the two can't drift apart
 /**
  * Wire the canvas; once, before anything resizes. sideOpen(): the panel or the editor covers the right edge;
- * editorOpen(): the editor (which has its own buttons); onZoom(): the scale or its pin changed (zoomInfo()).
+ * onResized(): the office was fit again, so the scale or its pin (zoomInfo()) may have changed.
  */
 export function initViewport(o: {
   canvas: HTMLCanvasElement;
   barEl: HTMLElement;
-  toolsEl: HTMLElement;
   stageEl: HTMLElement;
   sideOpen: () => boolean;
-  editorOpen: () => boolean;
-  onZoom: () => void;
+  onResized: () => void;
 }) {
-  ({ canvas, barEl, toolsEl, stageEl, sideOpen, editorOpen, onZoom } = o);
+  ({ canvas, barEl, stageEl, sideOpen, onResized } = o);
   const css = getComputedStyle(document.documentElement);
   PANEL_W = parseInt(css.getPropertyValue('--panel-w'), 10);
   PANEL_ANIM_MS = parseInt(css.getPropertyValue('--panel-ms'), 10);
@@ -94,8 +90,7 @@ export function resize() {
   canvas.style.width = `${canvas.width}px`;
   canvas.style.height = `${canvas.height}px`;
   barEl.style.width = canvas.style.width;
-  toolsEl.classList.toggle('off', editorOpen()); // the editor has its own buttons
-  onZoom();
+  onResized();
   placeTicker();
 }
 

@@ -172,7 +172,7 @@ const GIT_LABEL: Record<string, string> = {
 type Msg = { text: string; kind: '' | 'ok' | 'err' };
 
 export class Panel {
-  el: HTMLElement;
+  el: HTMLElement; // where the panel (#panel) is drawn
   onOpen?: () => void;
   onClose?: () => void;
   id: string | null = null;
@@ -215,8 +215,7 @@ export class Panel {
     this.session = session;
     this.entries = new Map();
     if (!this.isOpen) {
-      this.isOpen = true;
-      this.el.classList.add('open'); // slides in via CSS transition
+      this.isOpen = true; // slides in via CSS transition (.open)
       this.onOpen?.();
     }
     this.addEntries(session.log || []);
@@ -235,9 +234,8 @@ export class Panel {
   close() {
     if (!this.isOpen) return;
     this.isOpen = false;
-    this.el.classList.remove('open');
-    if (this.el.contains(document.activeElement))
-      (document.activeElement as HTMLElement).blur();
+    const focus = document.activeElement as HTMLElement | null;
+    if (focus?.closest('#panel')) focus.blur();
     this.id = null;
     this.session = null;
     this.render();
@@ -281,14 +279,16 @@ export class Panel {
     }
     const composer = s && h(Composer, { s, panel: this });
     mount(
-      h(PanelView, {
-        s,
-        entries: this.entries,
-        composer: this.composerHost ? null : composer,
-        quitting: this.quitting,
-        onClose: () => this.close(),
-        onQuit: () => this.quit(),
-      }),
+      <aside id="panel" class={this.isOpen ? 'open' : ''}>
+        <PanelView
+          s={s}
+          entries={this.entries}
+          composer={this.composerHost ? null : composer}
+          quitting={this.quitting}
+          onClose={() => this.close()}
+          onQuit={() => this.quit()}
+        />
+      </aside>,
       this.el,
     );
     if (this.composerHost) mount(composer, this.composerHost);

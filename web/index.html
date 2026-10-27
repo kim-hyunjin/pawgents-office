@@ -9,10 +9,7 @@
 </head>
 <body>
 <main id="stage">
-  <div id="bar">
-    <nav id="tabs" hidden></nav>
-    <div id="tools"></div>
-  </div>
+  <div id="bar"></div>
   <canvas id="office" width="512" height="320"></canvas>
 </main>
 <div id="launcher-root"></div>
@@ -21,10 +18,10 @@
 <div id="legend-root"></div>
 <div id="quit-root"></div>
 <div id="roster-root"></div>
-<aside id="editor" hidden></aside>
-<div id="tip" hidden></div>
+<div id="editor-root"></div>
+<div id="tip-root"></div>
 <div id="ticker"><ul id="ticker-list"></ul></div>
-<aside id="panel"></aside>
+<div id="panel-root"></div>
 <!-- Versions match package.json's devDependencies (test/boundaries.test.ts checks); non-preact packages keep preact external so there is one copy. -->
 <script type="importmap">
 { "imports": {
