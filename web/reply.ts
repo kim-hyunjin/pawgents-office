@@ -9,26 +9,30 @@ let dlg: HTMLDialogElement,
   nameEl: HTMLElement,
   metaEl: HTMLElement,
   body: HTMLElement,
-  compose: HTMLElement;
+  composeSlot: HTMLElement;
+let lendComposer: (host: HTMLElement | null) => void = () => {};
 
 let cur: { id: string; at: number; text: string } | null = null;
 
 /**
- * Find the dialog's elements and wire them up; once, before openReply(). Also notes where the panel's composer
- * (#p-compose) sits, so it can go back there after the dialog borrowed it: call it while the composer is still home.
+ * Find the dialog's elements and wire them up; once, before openReply(). `composer(host)` draws the panel's composer
+ * in the dialog (host) while it is open and back in the panel (null) once it closes.
  */
-export function initReply() {
+export function initReply({
+  composer,
+}: {
+  composer: (host: HTMLElement | null) => void;
+}) {
   dlg = $<HTMLDialogElement>('reply');
   nameEl = $('r-name');
   metaEl = $('r-meta');
   body = $('r-body');
-  compose = $('p-compose');
-  const composeHome = compose.parentNode!,
-    composeNext = compose.nextSibling;
+  composeSlot = $('r-compose');
+  lendComposer = composer;
   bindDialogClose(dlg, $('r-close'));
   dlg.addEventListener('close', () => {
     cur = null;
-    composeHome.insertBefore(compose, composeNext); // hand the composer back to the panel
+    lendComposer(null); // hand the composer back to the panel
   });
   bindCopy($('r-copy'), () => cur?.text);
 }
@@ -38,8 +42,8 @@ export function openReply(s: SessionSnapshot) {
   nameEl.textContent = s.name;
   metaEl.textContent = '';
   body.innerHTML = '';
-  // Borrow the panel's composer (same input, draft and send state) so instructions can go out from here.
-  dlg.append(compose);
+  // Borrow the panel's composer (same draft and send state) so instructions can go out from here.
+  lendComposer(composeSlot);
   if (!dlg.open) dlg.showModal();
   load(s);
 }

@@ -14,7 +14,7 @@ import { followSessions as feedFollows, renderFeed } from './feed.ts';
 import { initLauncher, openLauncher } from './launcher.ts';
 import { initLegend, openLegend, refreshLegend } from './legend.ts';
 import { connectEvents } from './net/events.ts';
-import { Panel } from './panel.ts';
+import { Panel } from './panel.tsx';
 import { type Frame, HUD_BTN, render } from './render.ts';
 import { initReply } from './reply.ts';
 import { Roster } from './roster.tsx';
@@ -85,7 +85,7 @@ const tip = $('tip');
 initLauncher();
 initLegend();
 initDiff();
-initReply();
+initReply({ composer: (host) => panel.setComposerHost(host) });
 const panel = new Panel($('panel'), {
   onOpen: () => refit(),
   onClose: () => {
