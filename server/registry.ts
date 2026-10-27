@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isRecord, safeJsonParse } from '../shared/json.ts';
 import { isBusyState } from '../shared/model.ts';
-import { isPidAlive } from '../shared/node/process.ts';
+import { isPidAlive, isProcessAlive } from '../shared/node/process.ts';
 import { SESSIONS_DIR, STALE_TOOL_MS } from './config.ts';
 import { transcriptPathOf } from './infra/claude-paths.ts';
 import { readSafe } from './infra/fs.ts';
@@ -17,6 +17,7 @@ interface RegistryEntry {
   cwd?: string;
   name?: string;
   startedAt?: number;
+  procStart?: unknown; // the process's creation time (a FILETIME on Windows), to tell it from a later owner of the pid
   status?: unknown;
   waitingFor?: unknown;
   statusUpdatedAt?: unknown;
@@ -39,6 +40,7 @@ function toEntry(d: unknown): RegistryEntry | null {
     cwd: str(d.cwd),
     name: str(d.name),
     startedAt: typeof d.startedAt === 'number' ? d.startedAt : undefined,
+    procStart: d.procStart,
     status: d.status,
     waitingFor: d.waitingFor,
     statusUpdatedAt: d.statusUpdatedAt,
@@ -84,8 +86,14 @@ export function syncWaiting(
   return true;
 }
 
-/** Registry entries of live processes, by session id; null when the registry dir can't be read. Only *.json is opened. */
-function readLiveEntries(): Map<string, RegistryEntry> | null {
+/**
+ * Registry entries by session id, split into live processes and dead ones (a file left behind by a claude that was
+ * killed, whose pid may now be someone else's); null when the registry dir can't be read. Only *.json is opened.
+ */
+function readEntries(): {
+  live: Map<string, RegistryEntry>;
+  dead: Set<string>;
+} | null {
   let files: string[];
   try {
     files = fs.readdirSync(SESSIONS_DIR);
@@ -93,14 +101,15 @@ function readLiveEntries(): Map<string, RegistryEntry> | null {
     return null;
   }
   const live = new Map<string, RegistryEntry>();
+  const dead = new Set<string>();
   for (const f of files) {
     if (!f.endsWith('.json')) continue;
     const d = toEntry(safeJsonParse(readSafe(path.join(SESSIONS_DIR, f))));
     if (!d) continue;
-    if (!isPidAlive(d.pid)) continue;
-    live.set(d.sessionId, d);
+    if (isProcessAlive(d.pid, d.procStart)) live.set(d.sessionId, d);
+    else dead.add(d.sessionId);
   }
-  return live;
+  return { live, dead };
 }
 
 /** State of a session no hook has reported on: straight from the registry status. */
@@ -179,14 +188,16 @@ function foldEntry(
  * whose process is gone as off-duty. Only *.json is read; *.key files are never opened.
  */
 export function pollRegistry(store: Store) {
-  const live = readLiveEntries();
-  if (!live) return;
+  const entries = readEntries();
+  if (!entries) return;
+  const { live, dead } = entries;
   const now = Date.now();
   for (const [id, d] of live) syncEntry(store, id, d, now);
 
   for (const s of store.sessions.values()) {
-    if (s.ended || !s.pid) continue;
-    if (!live.has(s.id) && !isPidAlive(s.pid)) {
+    if (s.ended || !s.pid || live.has(s.id)) continue;
+    // its own file says the process is gone, even when the pid now names another one
+    if (dead.has(s.id) || !isPidAlive(s.pid)) {
       store.updateSession(s, () => store.endSession(s, 'process exited'));
     }
   }

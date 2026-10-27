@@ -54,7 +54,7 @@ bun run format        # biome check --write: 포맷과 import 정렬, 안전한 
 | 소스 | 용도 |
 |---|---|
 | **Claude Code hooks** (`SessionStart/End`, `UserPromptSubmit`, `Pre/PostToolUse`, `PermissionRequest`, `Notification`, `Stop`, `SubagentStart/Stop` 등) | 상태 변화의 주 소스. `async` command hook이라 Claude를 기다리게 하지 않고, 훅 스크립트는 아무것도 출력하지 않아 **토큰을 쓰지 않습니다**. |
-| `~/.claude/sessions/<pid>.json` | 살아있는 세션 목록. hook 설치 전에 시작된 세션도 여기서 잡아 표시합니다(존재·바쁨 여부만). 프로세스가 죽으면 퇴근 처리. |
+| `~/.claude/sessions/<pid>.json` | 살아있는 세션 목록. hook 설치 전에 시작된 세션도 여기서 잡아 표시합니다(존재·바쁨 여부만). 프로세스가 죽으면 퇴근 처리. Windows에서는 죽은 세션의 PID를 다른 프로세스가 물려받아도 파일의 `procStart`(프로세스 시작 시각)로 구분합니다. |
 | transcript (`~/.claude/projects/.../<session>.jsonl`) | 세션 제목, 모델, 최근 답변 텍스트(말풍선). 상태는 바꾸지 않습니다. |
 | `git status` / `git diff` (세션의 작업 폴더) | 패널의 작업한 파일 목록과 파일 diff. 훅 없이 시작한 세션이나 서버 재시작 뒤에도 변경 파일이 보입니다. |
 
