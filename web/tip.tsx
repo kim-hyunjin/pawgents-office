@@ -3,6 +3,8 @@ import { type ComponentChildren, Fragment, h } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { SessionSnapshot, SubagentSnapshot } from '../shared/api.ts';
 import { FAMILIES, familyOf } from './sprites.ts';
+import { pointer } from './state.ts';
+import { useStore } from './store.ts';
 import { css } from './style.ts';
 import { awaitingBg, bgSummary, STATE_LABEL, thinkingFresh } from './ui.ts';
 import type { Ent } from './world.ts';
@@ -38,14 +40,9 @@ function Think({ d }: { d: SessionSnapshot | SubagentSnapshot }) {
   ) : null;
 }
 
-/** The tooltip box near the pointer (`at`, viewport px), on the pointer's other side where the window ends. */
-export function Tip({
-  at,
-  children,
-}: {
-  at: { x: number; y: number };
-  children?: ComponentChildren;
-}) {
+/** The tooltip box near the pointer, on the pointer's other side where the window ends; it follows the pointer. */
+export function Tip({ children }: { children?: ComponentChildren }) {
+  const at = useStore(pointer);
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: at.x + 14, top: at.y + 14 });
   // its size is known only once drawn: place it then, before the browser paints

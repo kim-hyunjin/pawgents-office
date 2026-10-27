@@ -11,6 +11,7 @@ import {
 } from 'preact/hooks';
 import { EditorPanel } from './editor/panel.tsx';
 import type { Editor } from './editor.ts';
+import { Ticker } from './feed.tsx';
 import { Launcher } from './launcher.tsx';
 import { Legend } from './legend.tsx';
 import { Panel } from './panel.tsx';
@@ -106,6 +107,7 @@ export function App(p: AppProps) {
         />
       </div>
       <canvas id="office" />
+      <Ticker />
       <Roster
         sessions={st.sessions}
         anchor={st.rosterOpen ? p.rosterAnchor() : null}
@@ -120,7 +122,7 @@ export function App(p: AppProps) {
         palOf={(id) => p.entOf(id)?.pal}
       />
       {hovered && hoveredSession && !st.editing && (
-        <Tip at={st.pointer}>
+        <Tip>
           <CatTip e={hovered} s={hoveredSession} where={p.placeOf(hovered)} />
         </Tip>
       )}

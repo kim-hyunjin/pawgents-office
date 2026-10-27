@@ -1,8 +1,11 @@
 // The activity ticker under the office: the latest tool calls, prompts and replies of the office on screen's staff.
-import { Fragment, h, render as mount } from 'preact';
+// followSessions() collects them from the session list into `feed`; <Ticker> (in app.tsx) shows them.
+import { Fragment, h } from 'preact';
+import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
 import type { Change } from './state.ts';
-import { app } from './state.ts';
+import { app, useApp } from './state.ts';
+import { createStore, useStore } from './store.ts';
 import { css } from './style.ts';
 import { fmtTime, logIcon } from './ui.ts';
 
@@ -42,15 +45,24 @@ interface FeedItem {
   agent: boolean;
   e: LogEntry;
 }
-const feed = { seen: new Set<string>(), items: [] as FeedItem[] };
-export function feedFrom(s: SessionSnapshot) {
-  let added = false;
+const seen = new Set<string>();
+const feed = createStore<
+  {
+    items: FeedItem[]; // newest first, all offices
+    newest: string | null; // the line just in on screen: it flashes
+    moved: number; // goes up when a session moves office: its lines go along and the ticker starts at the top again
+  },
+  void
+>({ items: [], newest: null, moved: 0 });
+
+function feedFrom(s: SessionSnapshot) {
+  const fresh: FeedItem[] = [];
   for (const e of s.log || []) {
     if (!FEED_EVENTS.has(e.ev)) continue;
     const key = `${s.id}|${e.t}|${e.ev}|${e.tool || ''}|${e.target || ''}`;
-    if (feed.seen.has(key)) continue;
-    feed.seen.add(key);
-    feed.items.push({
+    if (seen.has(key)) continue;
+    seen.add(key);
+    fresh.push({
       key,
       t: e.t,
       sid: s.id,
@@ -59,50 +71,65 @@ export function feedFrom(s: SessionSnapshot) {
       agent: /^\[/.test(e.text || ''),
       e,
     });
-    added = true;
   }
-  if (!added) return;
-  feed.items.sort((a, b) => b.t - a.t);
-  const per = new Map<string | null, number>();
-  feed.items = feed.items.filter((it) => {
-    const o = feedOffice(it),
-      n = (per.get(o) || 0) + 1;
-    per.set(o, n);
-    return n <= FEED_MAX;
+  if (!fresh.length) return;
+  feed.update((f) => {
+    const all = [...f.items, ...fresh].sort((a, b) => b.t - a.t);
+    const per = new Map<string | null, number>();
+    f.items = all.filter((it) => {
+      const o = feedOffice(it),
+        n = (per.get(o) || 0) + 1;
+      per.set(o, n);
+      return n <= FEED_MAX;
+    });
+    if (s.officeId === app.get().officeId) f.newest = f.items[0]?.key ?? null;
   });
-  if (s.officeId === app.get().officeId) renderFeed(true);
 }
 /** A session changed: take in its new log lines; one that moved office takes its history along (or out of view). */
 export function followSessions(c: Change) {
   if (c.type !== 'session') return;
   feedFrom(c.s);
-  if (c.prev && c.prev.officeId !== c.s.officeId) renderFeed(false);
+  if (c.prev && c.prev.officeId !== c.s.officeId)
+    feed.update((f) => {
+      f.newest = null;
+      f.moved++;
+    });
 }
 /** Sessions move between offices (gathering in one, splitting up): an item follows its session's current office. */
 const feedOffice = (it: FeedItem) =>
   app.get().sessions.get(it.sid)?.officeId ?? it.officeId;
-/** Redraw the ticker with the current office's items; `live` = new items arrived (animate, keep the scroll anchored). */
-export function renderFeed(live?: boolean) {
-  const ul = document.getElementById('ticker-list')!;
-  const box = ul.parentElement!;
-  const { officeId } = app.get();
-  const items = feed.items.filter((it) => feedOffice(it) === officeId);
-  // keep the viewport anchored when the user has scrolled back into history
-  const prevTop = box.scrollTop,
-    prevH = box.scrollHeight;
-  const newest = live ? items[0]?.key : null;
-  mount(
-    h(
-      Fragment,
-      null,
-      items.map((it) => (
-        <Line key={it.key} it={it} isNew={it.key === newest} />
-      )),
-    ),
-    ul,
+/** The office on screen's lines, newest on top; the newest one just in flashes. */
+export function Ticker() {
+  const { officeId } = useApp();
+  const { items, newest, moved } = useStore(feed);
+  const box = useRef<HTMLDivElement>(null);
+  // where the user had scrolled to before this draw: lines coming in above must not move what they're reading
+  const before = box.current && {
+    top: box.current.scrollTop,
+    h: box.current.scrollHeight,
+  };
+  // another office (or its staff moved): start from the top
+  const view = `${officeId}|${moved}`;
+  const lastView = useRef(view);
+  useLayoutEffect(() => {
+    const el = box.current!;
+    if (lastView.current !== view) {
+      lastView.current = view;
+      el.scrollTop = 0;
+    } else if (before && before.top > 0)
+      el.scrollTop = before.top + (el.scrollHeight - before.h);
+  });
+  return (
+    <div id="ticker" ref={box}>
+      <ul>
+        {items
+          .filter((it) => feedOffice(it) === officeId)
+          .map((it) => (
+            <Line key={it.key} it={it} isNew={it.key === newest} />
+          ))}
+      </ul>
+    </div>
   );
-  if (!live) box.scrollTop = 0;
-  else if (prevTop > 0) box.scrollTop = prevTop + (box.scrollHeight - prevH);
 }
 
 /** One ticker line; the newest one (just in) flashes as it's added. */

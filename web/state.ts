@@ -14,7 +14,6 @@ export interface AppState {
   selectedKey: string | null; // cat whose session the panel shows
   panelId: string | null; // session the panel shows; null: closed
   rosterOpen: boolean;
-  pointer: { x: number; y: number }; // where the pointer is over the office (viewport px), for the tooltip
   editing: boolean; // the layout editor is open
   zoom: { scale: number; pinned: boolean; max: number }; // the scale the office is drawn at (viewport.ts's zoomInfo)
   looks: number; // goes up whenever cats may look different (breed or skin choices, a skin loaded)
@@ -48,7 +47,6 @@ export const app = createStore<AppState, Change>({
   selectedKey: null,
   panelId: null,
   rosterOpen: false,
-  pointer: { x: 0, y: 0 },
   editing: false,
   zoom: { scale: 1, pinned: false, max: 1 },
   looks: 0,
@@ -112,12 +110,30 @@ type Ui = Pick<
   | 'selectedKey'
   | 'panelId'
   | 'rosterOpen'
-  | 'pointer'
   | 'editing'
   | 'zoom'
 >;
-export const setUi = (patch: Partial<Ui>) =>
+/** Change UI state; a patch that changes nothing (the pointer moving over the same cat) tells no one. */
+export function setUi(patch: Partial<Ui>) {
+  const st = app.get();
+  if (Object.entries(patch).every(([k, v]) => Object.is(st[k as keyof Ui], v)))
+    return;
   app.update((st) => {
     Object.assign(st, patch);
     return { type: 'ui' };
+  });
+}
+
+/**
+ * Where the pointer is over the office (viewport px), for the tooltip. A store of its own: it changes on every move,
+ * and only the tooltip follows it.
+ */
+export const pointer = createStore<{ x: number; y: number }, void>({
+  x: 0,
+  y: 0,
+});
+export const putPointer = (x: number, y: number) =>
+  pointer.update((p) => {
+    p.x = x;
+    p.y = y;
   });

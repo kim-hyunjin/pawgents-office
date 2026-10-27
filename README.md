@@ -248,12 +248,12 @@ server/   index.ts(진입점) · main.ts(조립·start/stop) · config.ts(튜닝
           infra/(git.ts(git 실행기) · path.ts · platform.ts · fs.ts · claude-paths.ts)
           reducer.ts(훅 → 상태 변화·효과) · registry.ts(세션 레지스트리 폴링) · transcript.ts(transcript tail) · files.ts(작업 파일 동기화)
           diff.ts · repo.ts(저장소 판별) · skins.ts · sse.ts · traits.ts · headless-runner.ts(세션별 중계 프로세스)
-web/      index.html(마운트 지점·import map) · style.css(토큰·공용 스타일·레이아웃) · office.ts(진입점: 조립·입력·루프)
-          state.ts + store.ts(페이지 상태와 구독, 컴포넌트는 useApp()) · net/events.ts(SSE)
+web/      index.html(마운트 지점 하나·import map) · style.css(토큰·공용 스타일·레이아웃) · office.ts(진입점: 조립·입력·루프)
+          state.ts + store.ts(페이지 상태와 구독, 컴포넌트는 useApp()·useStore()) · net/events.ts(SSE)
           world.ts(장면·자리·동선) · render.ts · tilemap.ts(배경) · anim.ts · viewport.ts(배율·줌)
           sprites.ts + sprites/(품종 데이터·팔레트·래스터·스킨) · cats.ts(고양이 도트)
           editor.ts + editor/(model·canvas·panel.tsx) · editor-draw.ts · layout-edit.ts(배치 편집 연산, DOM 없음)
-          Preact 화면(*.tsx, 각자 자기 스타일을 style.ts의 css()로 들고 있음): app(캔버스 둘레: 탭·툴바·로스터·툴팁을 상태에서 그림) · panel · roster · launcher(새 직원)
+          Preact 화면(*.tsx, 각자 자기 스타일을 style.ts의 css()로 들고 있음): app(유일한 루트: 캔버스 둘레의 모든 화면을 상태에서 그림) · panel · roster · launcher(새 직원)
           legend(모델 안내) · reply · diff · quit-confirm · modal(공용 다이얼로그) · toolbar · tabs · tip · feed(티커) · pic(캔버스 그림)
           markdown.ts · api.ts(서버 라우트별 요청) · ui.ts
 hooks/    send.ts(훅 본체) · ensure-server.ts(SessionStart: 서버 자동 시작) · hooks.json(플러그인 훅) · install.ts · uninstall.ts · _common.ts

@@ -5,7 +5,7 @@ import { getState, setTogether } from './api.ts';
 import { App } from './app.tsx';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
-import { followSessions as feedFollows, renderFeed } from './feed.tsx';
+import { followSessions as feedFollows } from './feed.tsx';
 import { connectEvents } from './net/events.ts';
 import { type Frame, HUD_BTN, render } from './render.ts';
 import { onSkinLoad, setBreedChoices, setSkins } from './sprites.ts';
@@ -16,6 +16,7 @@ import {
   putLooks,
   putOfficeId,
   putOffices,
+  putPointer,
   putSession,
   putTogether,
   seedSessions,
@@ -173,7 +174,6 @@ function switchOffice(id?: string | null) {
   resize();
   for (const s of st.sessions.values())
     if (here(s) && !s.ended) putSession(s, true);
-  renderFeed(false);
 }
 let firstSnapshot = true;
 /** Breed or skin choices changed (snapshot or a 'settings' push): redraw every cat with its family's look. */
@@ -266,10 +266,8 @@ canvas.addEventListener('mousemove', (ev) => {
     return;
   }
   const e = catAt(xy);
-  setUi({
-    hoverKey: e ? e.key : null,
-    pointer: { x: ev.clientX, y: ev.clientY },
-  });
+  putPointer(ev.clientX, ev.clientY);
+  setUi({ hoverKey: e ? e.key : null });
   canvas.style.cursor = e ? 'pointer' : 'default';
 });
 canvas.addEventListener('mouseleave', () => {
