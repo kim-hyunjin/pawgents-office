@@ -1,16 +1,11 @@
 import { h, render as mount } from 'preact';
-import type {
-  Office,
-  SessionSnapshot,
-  Snapshot,
-  SubagentSnapshot,
-} from '../shared/api.ts';
+import type { Office, SessionSnapshot, Snapshot } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
-import { getState, setTogether as setTogetherOn } from './api.ts';
+import { getState, setTogether } from './api.ts';
 import { initDiff } from './diff.tsx';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
-import { followSessions as feedFollows, renderFeed } from './feed.ts';
+import { followSessions as feedFollows, renderFeed } from './feed.tsx';
 import { initLauncher, openLauncher } from './launcher.tsx';
 import { initLegend, openLegend, refreshLegend } from './legend.tsx';
 import { connectEvents } from './net/events.ts';
@@ -18,15 +13,7 @@ import { Panel } from './panel.tsx';
 import { type Frame, HUD_BTN, render } from './render.ts';
 import { initReply } from './reply.tsx';
 import { Roster } from './roster.tsx';
-import {
-  FAMILIES,
-  familyOf,
-  onSkinLoad,
-  paletteFor,
-  setBreedChoices,
-  setSkins,
-  sprite,
-} from './sprites.ts';
+import { onSkinLoad, setBreedChoices, setSkins } from './sprites.ts';
 import {
   app,
   dropSession,
@@ -38,17 +25,10 @@ import {
   seedSessions,
   setUi,
 } from './state.ts';
-import {
-  $,
-  awaitingBg,
-  bgSummary,
-  esc,
-  pic,
-  STATE_LABEL,
-  storage,
-  thinkingFresh,
-  toolHtml,
-} from './ui.ts';
+import { Tabs } from './tabs.tsx';
+import { CatTip } from './tip.tsx';
+import { Toolbar } from './toolbar.tsx';
+import { $, storage } from './ui.ts';
 import {
   initViewport,
   officeXY,
@@ -56,6 +36,8 @@ import {
   resize,
   rosterAnchor,
   S,
+  setZoom,
+  zoomInfo,
 } from './viewport.ts';
 import type { Ent } from './world.ts';
 import {
@@ -102,6 +84,7 @@ initViewport({
   stageEl,
   sideOpen: () => panel.isOpen || editor.isOpen,
   editorOpen: () => editor.isOpen,
+  onZoom: () => drawToolbar(),
 });
 const editor = new Editor({
   world,
@@ -192,73 +175,31 @@ function switchOffice(id?: string | null) {
   renderFeed(false);
   refreshLists();
 }
-/**
- * Tabs above the office, one per office, with head count and a dot when someone works (yellow: waiting on you),
- * and a button to gather everyone here / split up again. Gathered: only the shared office's tab. Hidden with one office.
- */
+/** The office tabs (tabs.tsx), hidden with one office; showing or hiding them changes the room the office has. */
+let tabsShown = false;
 function renderTabs() {
-  const hidden = st.offices.length < 2 && !st.together;
-  if (tabsEl.hidden !== hidden) {
-    tabsEl.hidden = hidden;
-    tabsEl.dataset.html = '';
-    if (hidden) resize();
-  }
-  if (hidden) return;
-  const shown = !tabsEl.dataset.html; // first fill: the office shrinks to make room
-  const offices = st.together
-    ? st.offices.filter((o) => o.id === st.together)
-    : st.offices;
-  const html =
-    offices
-      .map((o) => {
-        const staff = [...st.sessions.values()].filter(
-          (s) => !s.ended && s.officeId === o.id,
-        );
-        const dot = staff.some((s) => s.state === 'waiting')
-          ? '<i class="dot wait"></i>'
-          : staff.some((s) => s.state !== 'idle')
-            ? '<i class="dot"></i>'
-            : '';
-        const title =
-          o.repos.filter((r) => r !== 'default').join('\n') ||
-          '저장소 밖에서 일하는 세션';
-        return `<button type="button" data-id="${esc(o.id)}" class="${o.id === st.officeId ? 'on' : ''}" title="${esc(title)}">${esc(o.name)}<span class="n">${staff.length}</span>${dot}</button>`;
-      })
-      .join('') +
-    (st.together
-      ? '<button type="button" class="act" data-act="split" title="저장소마다 각자의 사무실로 돌아갑니다">↔ 저장소별로 나누기</button>'
-      : '<button type="button" class="act" data-act="gather" title="모든 세션이 지금 보고 있는 사무실에 모여서 일합니다">⇢ 이 사무실에 모두 모이기</button>');
-  if (html !== tabsEl.dataset.html) {
-    tabsEl.innerHTML = html;
-    tabsEl.dataset.html = html;
-  }
-  if (shown) resize();
-}
-tabsEl.addEventListener('click', (ev) => {
-  const act = (ev.target as HTMLElement).closest<HTMLButtonElement>(
-    'button[data-act]',
+  const show = st.offices.length > 1 || !!st.together;
+  tabsEl.hidden = !show;
+  mount(
+    show
+      ? h(Tabs, {
+          offices: st.offices,
+          sessions: st.sessions,
+          officeId: st.officeId,
+          together: st.together,
+          onPick: (id) => {
+            editor.close();
+            switchOffice(id);
+          },
+          // the server moves the staff and pushes the result
+          onTogether: (id) => setTogether(id).then(() => {}),
+        })
+      : null,
+    tabsEl,
   );
-  if (act) {
-    setTogether(act.dataset.act === 'gather' ? st.officeId : null, act);
-    return;
-  }
-  const b = (ev.target as HTMLElement).closest<HTMLButtonElement>(
-    'button[data-id]',
-  );
-  if (b && b.dataset.id !== st.officeId) {
-    editor.close();
-    switchOffice(b.dataset.id);
-  }
-});
-/** Gather everyone in one office (null: split up by repo). The server moves the staff and pushes the result. */
-async function setTogether(officeId: string | null, btn: HTMLButtonElement) {
-  btn.disabled = true;
-  try {
-    await setTogetherOn(officeId);
-  } catch (e) {
-    btn.title = `실패: ${(e as Error).message}`;
-  } finally {
-    btn.disabled = false;
+  if (show !== tabsShown) {
+    tabsShown = show;
+    resize();
   }
 }
 let firstSnapshot = true;
@@ -363,35 +304,10 @@ window.addEventListener('resize', () => {
 });
 
 // ---- input ---------------------------------------------------------------------
-function describe(e: Ent) {
+/** The tooltip over cat `e`, or nothing when its session is gone. */
+function showTip(e: Ent) {
   const s = st.sessions.get(e.sessionId);
-  if (!s) return '';
-  const where = placeOf(e);
-  const toolLine = (d: SessionSnapshot | SubagentSnapshot) =>
-    d.currentTool
-      ? `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span> · ${toolHtml(d.currentTool)}${d.currentTool.detail ? `<div class="detail">${esc(d.currentTool.detail)}</div>` : ''}`
-      : `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span>`;
-  const think = (d: SessionSnapshot | SubagentSnapshot) =>
-    thinkingFresh(d, Date.now()) && d.state !== 'idle'
-      ? `<div class="think">💭 ${esc(d.lastThinking)}</div>`
-      : '';
-  if (e.kind === 'assistant') {
-    const a = e.data;
-    return (
-      `<b>🧢 ${esc(a.type || 'agent')}</b> <span class="dim">보조 · ${esc(s.name)}${where ? ' · ' + where : ''}</span>` +
-      (a.description ? `<div>${esc(a.description)}</div>` : '') +
-      (a.task ? `<div class="task">${esc(a.task)}</div>` : '') +
-      `<div>${toolLine(a)}</div>${think(a)}`
-    );
-  }
-  const tier = (FAMILIES[familyOf(s.model)] ?? FAMILIES.other).title;
-  return (
-    `<b>${esc(s.name)}</b>${tier ? ` <span class="st">${tier}</span>` : ''}${where ? ` <span class="dim">· ${where}</span>` : ''}${s.title ? `<br>${esc(s.title)}` : ''}` +
-    (s.lastPrompt ? `<div class="task">지시: ${esc(s.lastPrompt)}</div>` : '') +
-    `<div>${toolLine(s)}${s.permissionMode ? ` <span class="dim">· ${esc(s.permissionMode)}</span>` : ''}</div>${think(s)}` +
-    (awaitingBg(s) ? `<div class="task">⏳ ${esc(bgSummary(s))}</div>` : '') +
-    `<div class="dim">${esc(s.cwd)}${s.model ? ' · ' + esc(s.model) : ''}</div>`
-  );
+  mount(s ? h(CatTip, { e, s, where: placeOf(e) }) : null, tip);
 }
 
 /** What the last frame drew where: the HUD button and the cats' sprite heights, for hit testing. */
@@ -420,7 +336,7 @@ canvas.addEventListener('mousemove', (ev) => {
   setUi({ hoverKey: e ? e.key : null });
   canvas.style.cursor = e ? 'pointer' : 'default';
   if (e) {
-    tip.innerHTML = describe(e);
+    showTip(e);
     tip.hidden = false;
     const r = canvas.getBoundingClientRect();
     let tx = r.left + ev.offsetX + 14,
@@ -456,22 +372,26 @@ canvas.addEventListener('click', (ev) => {
 });
 
 // ---- tool buttons (above the office) ---------------------------------------------------
-$('t-new').addEventListener('click', () => openLauncher());
-$('t-legend').addEventListener('click', () => openLegend(st.sessions));
-$('t-edit').addEventListener('click', () => {
-  // layout editor takes the panel's place
-  const o = officeOf(st.officeId);
-  if (editor.isOpen || !o) return;
-  if (st.rosterOpen) toggleRoster();
-  deselect();
-  editor.open(o);
-});
-{
-  // the legend button wears a cat, like the legend itself
-  $('t-legend').prepend(
-    pic(sprite(paletteFor('legend', 'employee', 'claude-fable'), 'idle', 0)),
+function drawToolbar() {
+  mount(
+    h(Toolbar, {
+      zoom: zoomInfo(),
+      onNew: () => openLauncher(),
+      onLegend: () => openLegend(st.sessions),
+      onEdit: () => {
+        // layout editor takes the panel's place
+        const o = officeOf(st.officeId);
+        if (editor.isOpen || !o) return;
+        if (st.rosterOpen) toggleRoster();
+        deselect();
+        editor.open(o);
+      },
+      onZoom: setZoom,
+    }),
+    toolsEl,
   );
 }
+drawToolbar();
 
 // ---- loop ----------------------------------------------------------------------
 let last = performance.now();

@@ -1,7 +1,24 @@
+// The activity ticker under the office: the latest tool calls, prompts and replies of the office on screen's staff.
+import { Fragment, h, render as mount } from 'preact';
 import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
 import type { Change } from './state.ts';
 import { app } from './state.ts';
-import { esc, fmtTime, logIcon, toolHtml } from './ui.ts';
+import { css } from './style.ts';
+import { fmtTime, logIcon } from './ui.ts';
+
+css(/* css */ `
+#ticker {
+  & ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+  & li { display: grid; grid-template-columns: 62px 150px 20px 1fr; gap: 8px; align-items: baseline; white-space: nowrap; overflow: hidden; line-height: 1.45; }
+  & li.new { animation: tick-in .35s ease-out; }
+  & time { color: var(--dim); font-variant-numeric: tabular-nums; }
+  & .who { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+  & .who.agent { color: #c4b5fd; font-weight: 500; }
+  & .what { overflow: hidden; text-overflow: ellipsis; }
+  & .what .dim { color: var(--dim); }
+}
+@keyframes tick-in { from { background: rgba(255,209,102,0.25); } to { background: transparent; } }
+`);
 
 // ---- activity ticker (sessions of the office on screen) ---------------------------
 const FEED_EVENTS = new Set([
@@ -61,10 +78,10 @@ export function followSessions(c: Change) {
   feedFrom(c.s);
   if (c.prev && c.prev.officeId !== c.s.officeId) renderFeed(false);
 }
-/** Redraw the ticker with the current office's items; `live` = new items arrived (animate, keep the scroll anchored). */
 /** Sessions move between offices (gathering in one, splitting up): an item follows its session's current office. */
 const feedOffice = (it: FeedItem) =>
   app.get().sessions.get(it.sid)?.officeId ?? it.officeId;
+/** Redraw the ticker with the current office's items; `live` = new items arrived (animate, keep the scroll anchored). */
 export function renderFeed(live?: boolean) {
   const ul = document.getElementById('ticker-list')!;
   const box = ul.parentElement!;
@@ -74,23 +91,51 @@ export function renderFeed(live?: boolean) {
   const prevTop = box.scrollTop,
     prevH = box.scrollHeight;
   const newest = live ? items[0]?.key : null;
-  ul.innerHTML = items
-    .map((it) => {
-      const e = it.e;
-      const icon = logIcon(e);
-      let what: string;
-      if (e.tool)
-        what = `${toolHtml({ name: e.tool, target: e.target })}${e.detail ? ` <span class="dim">— ${esc(e.detail)}</span>` : ''}`;
-      else if (e.ev === 'UserPromptSubmit')
-        what = `<span class="dim">지시:</span> ${esc(e.text || '')}`;
-      else if (e.ev === 'Stop')
-        what = `<span class="dim">답변:</span> ${esc(e.text || '')}`;
-      else
-        what = `${esc(e.ev)}${e.text ? ` <span class="dim">${esc(e.text)}</span>` : ''}`;
-      const who = it.agent ? `${esc(it.name)} 🧢` : esc(it.name);
-      return `<li class="${it.key === newest ? 'new' : ''}"><time>${fmtTime(e.t)}</time><span class="who ${it.agent ? 'agent' : ''}">${who}</span><span class="ic">${icon}</span><span class="what">${what}</span></li>`;
-    })
-    .join('');
+  mount(
+    h(
+      Fragment,
+      null,
+      items.map((it) => (
+        <Line key={it.key} it={it} isNew={it.key === newest} />
+      )),
+    ),
+    ul,
+  );
   if (!live) box.scrollTop = 0;
   else if (prevTop > 0) box.scrollTop = prevTop + (box.scrollHeight - prevH);
+}
+
+/** One ticker line; the newest one (just in) flashes as it's added. */
+function Line({ it, isNew }: { it: FeedItem; isNew: boolean }) {
+  const e = it.e;
+  const what = e.tool ? (
+    <>
+      <b>{e.tool}</b>
+      {e.target ? ` · ${e.target}` : ''}
+      {e.detail && <span class="dim"> — {e.detail}</span>}
+    </>
+  ) : e.ev === 'UserPromptSubmit' ? (
+    <>
+      <span class="dim">지시:</span> {e.text || ''}
+    </>
+  ) : e.ev === 'Stop' ? (
+    <>
+      <span class="dim">답변:</span> {e.text || ''}
+    </>
+  ) : (
+    <>
+      {e.ev}
+      {e.text && <span class="dim"> {e.text}</span>}
+    </>
+  );
+  return (
+    <li class={isNew ? 'new' : ''}>
+      <time>{fmtTime(e.t)}</time>
+      <span class={it.agent ? 'who agent' : 'who'}>
+        {it.agent ? `${it.name} 🧢` : it.name}
+      </span>
+      <span class="ic">{logIcon(e)}</span>
+      <span class="what">{what}</span>
+    </li>
+  );
 }

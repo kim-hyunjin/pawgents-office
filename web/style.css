@@ -14,64 +14,11 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
 #stage { min-height: 100vh; display: grid; place-items: start start; align-content: start; padding: 4px; }
 #bar { display: flex; align-items: flex-end; gap: 8px; max-width: 100%; min-height: 30px; }
-#tabs { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-#tools { display: flex; gap: 6px; margin-left: auto; padding-bottom: 4px; }
-#tools.off { visibility: hidden; }
-#tools button {
-  display: flex; align-items: center; gap: 6px; padding: 4px 10px; font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer;
-  color: var(--text); background: var(--panel); border: 1px solid #2f3352; border-radius: 6px;
-}
-#tools button:hover { background: var(--panel-2); }
-#tools button.primary { color: #1f2233; background: #ffd166; border-color: #ffd166; font-weight: 700; }
-#tools button.primary:hover { background: #ffe08a; }
-#tools canvas { image-rendering: pixelated; }
-#tools .zoom { display: flex; }
-#tools .zoom button { border-radius: 0; padding: 4px 8px; min-width: 28px; justify-content: center; }
-#tools .zoom button:first-child { border-radius: 6px 0 0 6px; }
-#tools .zoom button:last-child { border-radius: 0 6px 6px 0; }
-#tools .zoom button + button { border-left: 0; }
-#tools .zoom #t-zoom { color: var(--dim); font-variant-numeric: tabular-nums; }
-#tools .zoom #t-zoom.pinned { color: var(--accent); }
-#tools .zoom button:disabled { opacity: .4; cursor: default; }
-#tabs button {
-  display: flex; align-items: center; gap: 6px; padding: 5px 12px 4px; font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer;
-  color: var(--dim); background: var(--panel); border: 1px solid #2f3352; border-bottom: 0; border-radius: 6px 6px 0 0;
-}
-#tabs button:hover { color: var(--text); background: var(--panel-2); }
-#tabs button.on { color: var(--text); background: #2a2d45; box-shadow: inset 0 2px 0 var(--accent); }
-#tabs .n { font-size: 11px; padding: 0 6px; border-radius: 8px; background: rgba(255,255,255,0.08); }
-#tabs .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
-#tabs .dot.wait { background: #fbbf24; }
-#tabs button.act { margin-left: 6px; border-style: dashed; background: transparent; }
-#tabs button.act:hover { background: var(--panel-2); }
-#tabs button.act:disabled { opacity: .5; cursor: wait; }
 #office { image-rendering: pixelated; image-rendering: crisp-edges; background: #000; box-shadow: 0 0 0 2px #2a2d45, 0 20px 60px rgba(0,0,0,0.5); }
-
-#tip {
-  position: fixed; z-index: 20; max-width: 320px; padding: 8px 10px; pointer-events: none;
-  background: rgba(20,22,40,0.95); border: 1px solid #3b3f5c; border-radius: 6px; font-size: 12px; line-height: 1.5;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.4); word-break: break-all;
-}
-#tip .dim { color: var(--dim); }
-#tip .st { color: var(--accent); }
-#tip .detail { color: #cbd5e1; font-size: 11.5px; margin: 2px 0 4px; }
-#tip .task { color: #e2e8f0; margin: 4px 0; padding-left: 6px; border-left: 2px solid var(--accent); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-#tip .think { color: var(--dim); font-style: italic; margin-top: 4px; }
-#tip { max-width: 380px; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #111; }
 
 #ticker { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: rgba(20,22,40,0.92); border-top: 1px solid #2f3352; padding: 4px 12px; font-size: 12.5px; height: clamp(160px, 30vh, 360px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #3a3f66 transparent; }
-#ticker ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
-#ticker li { display: grid; grid-template-columns: 62px 150px 20px 1fr; gap: 8px; align-items: baseline; white-space: nowrap; overflow: hidden; line-height: 1.45; }
-#ticker li.new { animation: tick-in .35s ease-out; }
-#ticker time { color: var(--dim); font-variant-numeric: tabular-nums; }
-#ticker .who { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
-#ticker .who.agent { color: #c4b5fd; font-weight: 500; }
-#ticker .what { overflow: hidden; text-overflow: ellipsis; }
-#ticker .what .dim { color: var(--dim); }
-@keyframes tick-in { from { background: rgba(255,209,102,0.25); } to { background: transparent; } }
-
 .msg { margin: 0; font-size: 12px; color: var(--dim); min-height: 1em; word-break: break-word; }
 .msg.ok { color: #4ade80; } .msg.err { color: #f87171; }
 button.primary {
