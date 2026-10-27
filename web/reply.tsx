@@ -1,17 +1,16 @@
-// Full agent reply in a large dialog, markdown rendered. Opened from the panel's last-reply card.
+// Full agent reply in a large dialog, markdown rendered. Opened from the panel's last-reply card (panel.tsx).
 // The full text is fetched on demand (/sessions/:id/reply) — SSE only carries the short preview.
-import { h, render as mount } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { type ComponentChildren, h } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ReplyReply, SessionSnapshot } from '../shared/api.ts';
 import { getReply } from './api.ts';
 import { renderMarkdown } from './markdown.ts';
 import { BigDialog } from './modal.tsx';
 import { css } from './style.ts';
-import { $, fmtTime } from './ui.ts';
+import { fmtTime } from './ui.ts';
 
 css(/* css */ `
 #reply .body { flex: 1; overflow: auto; padding: 18px 26px 28px; }
-#r-compose { flex: none; }
 
 .md {
   font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; font-size: 14.5px; line-height: 1.7; color: var(--text); word-break: keep-all; overflow-wrap: anywhere;
@@ -48,52 +47,76 @@ css(/* css */ `
 }
 `);
 
-interface Shown {
+interface Loaded {
   id: string;
-  name: string;
-  at: number; // lastTextAt of the text shown; -1 until loaded
+  at: number; // lastTextAt of the text shown
   text: string;
-  meta: string;
-  html: string;
+  partial: boolean; // the full text couldn't be fetched: the SSE preview stands in
 }
-let cur: Shown | null = null;
-let root: HTMLElement;
-let lendComposer: (host: HTMLElement | null) => void = () => {};
 
 /**
- * Mount the dialog; once, before openReply(). `composer(host)` draws the panel's composer in the dialog (host)
- * while it is open and back in the panel (null) once it closes.
+ * Session `s`'s last answer, while `open`; fetched again when it answers anew. `children`: the panel's composer, so
+ * instructions can go out from here too.
  */
-export function initReply({
-  composer,
+export function Reply({
+  s,
+  open,
+  onClose,
+  children,
 }: {
-  composer: (host: HTMLElement | null) => void;
+  s: SessionSnapshot | null;
+  open: boolean;
+  onClose: () => void;
+  children?: ComponentChildren;
 }) {
-  root = $('reply-root');
-  lendComposer = composer;
-  draw();
-}
-
-function draw() {
-  mount(
+  const id = open ? s?.id : undefined;
+  const at = s?.lastTextAt;
+  const session = useRef(s);
+  session.current = s;
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    getReply(id)
+      .catch(() => null) // server unreachable: fall back to the preview below
+      .then((d: ReplyReply | null) => {
+        const s = session.current;
+        if (!live || !s) return;
+        const r = d ?? { text: s.lastText || '', at: s.lastTextAt };
+        setLoaded({ id, at: r.at, text: r.text || '', partial: !d });
+      });
+    return () => {
+      live = false;
+    };
+  }, [id, at]);
+  const cur = loaded && loaded.id === id ? loaded : null; // until it loads, not an earlier session's
+  const meta = cur
+    ? [s?.title, cur.at ? `${fmtTime(cur.at)} 답변` : '']
+        .filter(Boolean)
+        .join(' · ')
+    : '';
+  // The SSE preview is cut at 280 chars; say so rather than pass it off as the whole answer.
+  const html = !cur
+    ? ''
+    : (cur.partial && cur.text
+        ? '<p class="warn">전체 답변을 불러오지 못해 앞부분 미리보기만 보여줍니다. 서버가 이 기능 이전 버전이면 재시작해 주세요.</p>'
+        : '') +
+      (cur.text
+        ? renderMarkdown(cur.text)
+        : '<p class="dim">아직 답변이 없습니다.</p>');
+  return (
     <BigDialog
       id="reply"
-      open={!!cur}
-      onClose={() => {
-        cur = null;
-        draw();
-        lendComposer(null); // hand the composer back to the panel
-      }}
-      title={cur?.name ?? ''}
-      meta={cur?.meta ?? ''}
+      open={!!id}
+      onClose={onClose}
+      title={s?.name ?? ''}
+      meta={meta}
       copyTitle="마크다운 원문 복사"
       copy={() => cur?.text}
     >
-      <Body html={cur?.html ?? ''} at={cur?.at ?? -1} />
-      {/* the panel's composer is drawn in here by Panel (a Preact root of its own) */}
-      <div id="r-compose" />
-    </BigDialog>,
-    root,
+      <Body html={html} at={cur?.at ?? -1} />
+      {id && children}
+    </BigDialog>
   );
 }
 
@@ -111,45 +134,4 @@ function Body({ html, at }: { html: string; at: number }) {
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
-}
-
-export function openReply(s: SessionSnapshot) {
-  cur = { id: s.id, name: s.name, at: -1, text: '', meta: '', html: '' };
-  draw();
-  // Borrow the panel's composer (same draft and send state) so instructions can go out from here.
-  lendComposer($('r-compose'));
-  load(s);
-}
-
-/** Keep an open dialog in sync when the same session answers again. */
-export function refreshReply(s: SessionSnapshot) {
-  if (cur?.id === s.id && s.lastTextAt !== cur.at) load(s);
-}
-
-async function load(s: SessionSnapshot) {
-  const shown = cur;
-  if (!shown) return;
-  let d: ReplyReply | null = null;
-  try {
-    d = await getReply(s.id);
-  } catch {
-    /* server unreachable — fall back to the preview below */
-  }
-  if (cur !== shown) return;
-  // The SSE preview is cut at 280 chars; say so rather than pass it off as the whole answer.
-  const partial = !d;
-  const r = d ?? { text: s.lastText || '', at: s.lastTextAt };
-  shown.at = r.at;
-  shown.text = r.text || '';
-  shown.meta = [s.title, r.at ? `${fmtTime(r.at)} 답변` : '']
-    .filter(Boolean)
-    .join(' · ');
-  shown.html =
-    (partial && shown.text
-      ? '<p class="warn">전체 답변을 불러오지 못해 앞부분 미리보기만 보여줍니다. 서버가 이 기능 이전 버전이면 재시작해 주세요.</p>'
-      : '') +
-    (shown.text
-      ? renderMarkdown(shown.text)
-      : '<p class="dim">아직 답변이 없습니다.</p>');
-  draw();
 }

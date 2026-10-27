@@ -3,14 +3,11 @@ import type { Office, SessionSnapshot, Snapshot } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
 import { getState, setTogether } from './api.ts';
 import { App } from './app.tsx';
-import { initDiff } from './diff.tsx';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
 import { followSessions as feedFollows, renderFeed } from './feed.tsx';
 import { connectEvents } from './net/events.ts';
-import { Panel } from './panel.tsx';
 import { type Frame, HUD_BTN, render } from './render.ts';
-import { initReply } from './reply.tsx';
 import { onSkinLoad, setBreedChoices, setSkins } from './sprites.ts';
 import {
   app,
@@ -80,28 +77,19 @@ mount(
     },
     onZoom: (z) => setZoom(z),
     onBarResize: () => resize(),
+    onPanelClose: closePanel,
+    onSideChange: () => refit(), // the panel slides in or out: ease the office to its new room
   }),
   $('stage'),
 );
 const canvas = $<HTMLCanvasElement>('office');
 const ctx = canvas.getContext('2d')!;
-// dialogs first: the reply dialog notes where the panel's composer lives before anything can move it
-initDiff();
-initReply({ composer: (host) => panel.setComposerHost(host) });
-const panel = new Panel($('panel-root'), {
-  onOpen: () => refit(),
-  onClose: () => {
-    setUi({ selectedKey: null });
-    history.replaceState(null, '', location.pathname + location.search);
-    refit();
-  },
-});
 
 initViewport({
   canvas,
   barEl: $('bar'), // office tabs + the tool buttons, above the office
   stageEl: $('stage'),
-  sideOpen: () => panel.isOpen || editor.isOpen,
+  sideOpen: () => !!st.panelId || editor.isOpen,
   onResized: () => setUi({ zoom: zoomInfo() }),
 });
 const editor = new Editor({
@@ -113,17 +101,14 @@ const editor = new Editor({
 applyLayout(DEFAULT_OFFICE);
 resize();
 
-// Everything that shows sessions follows the session list, in this order: the ticker, the cats, then the panel. The
-// roster and the office tabs (app.tsx) follow the whole state on their own.
+// The ticker and the cats follow the session list, in this order; the panel, the roster and the office tabs
+// (app.tsx) follow the whole state on their own.
 app.subscribe(feedFollows);
 app.subscribe(worldFollows);
 app.subscribe((c) => {
-  if (c.type === 'session') panel.update(c.s);
-  else if (c.type === 'remove') panel.remove(c.id);
-});
-app.subscribe((c) => {
-  if (c.type === 'remove' && st.selectedKey === c.id)
-    setUi({ selectedKey: null });
+  if (c.type !== 'remove') return;
+  if (st.panelId === c.id) closePanel();
+  else if (st.selectedKey === c.id) setUi({ selectedKey: null });
 });
 
 /** Show a session in the panel; `key` is the cat to highlight (an assistant's, when it was clicked). */
@@ -131,13 +116,17 @@ function select(
   s: SessionSnapshot,
   { key = s.id, hash = true }: { key?: string; hash?: boolean } = {},
 ) {
-  setUi({ selectedKey: key });
-  panel.open(s);
+  setUi({ selectedKey: key, panelId: s.id });
   if (hash) history.replaceState(null, '', `#s=${encodeURIComponent(s.id)}`);
 }
+/** Close the panel: nothing selected, and the address no longer names a session. */
+function closePanel() {
+  setUi({ selectedKey: null, panelId: null });
+  history.replaceState(null, '', location.pathname + location.search);
+}
 function deselect() {
-  setUi({ selectedKey: null });
-  panel.close();
+  if (st.panelId) closePanel();
+  else setUi({ selectedKey: null });
 }
 
 // ---- offices ---------------------------------------------------------------------

@@ -11,6 +11,7 @@ import {
 } from 'preact/hooks';
 import { Launcher } from './launcher.tsx';
 import { Legend } from './legend.tsx';
+import { Panel } from './panel.tsx';
 import { QuitConfirm } from './quit-confirm.tsx';
 import { Roster } from './roster.tsx';
 import { here, useApp } from './state.ts';
@@ -36,6 +37,10 @@ export interface AppProps {
   onZoom: (scale: number | null) => void;
   /** The bar above the office changed height (the tabs came or went): the office has another room. */
   onBarResize: () => void;
+  /** The user closed the panel (× or Esc). */
+  onPanelClose: () => void;
+  /** The panel opened or closed. */
+  onSideChange: () => void;
 }
 
 export function App(p: AppProps) {
@@ -46,6 +51,13 @@ export function App(p: AppProps) {
     if (tabs === tabsShown.current) return;
     tabsShown.current = tabs;
     p.onBarResize();
+  });
+  const shown = (st.panelId && st.sessions.get(st.panelId)) || null;
+  const panelOpen = useRef(!!shown);
+  useLayoutEffect(() => {
+    if (!!shown === panelOpen.current) return;
+    panelOpen.current = !!shown;
+    p.onSideChange();
   });
   // places change as cats walk around: look again every second while the roster shows them
   const [, tick] = useReducer((n: number) => n + 1, 0);
@@ -115,6 +127,7 @@ export function App(p: AppProps) {
         sessions={st.sessions}
         looks={st.looks}
       />
+      <Panel s={shown} onClose={p.onPanelClose} />
       <QuitConfirm />
     </>
   );

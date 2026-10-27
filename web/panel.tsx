@@ -1,9 +1,15 @@
 // The side panel: one session's details, its subagents, worked files and activity log, and the composer that sends it
-// instructions, switches its permission mode and answers its permission requests. Panel holds the state and draws
-// it with Preact; the composer is drawn in the reply dialog instead while that is open (setComposerHost).
+// instructions, switches its permission mode and answers its permission requests. It also opens the session's last
+// answer (reply.tsx, which borrows the composer while open) and its files' diffs (diff.tsx).
 
-import { Fragment, h, render as mount } from 'preact';
-import { useRef } from 'preact/hooks';
+import { Fragment, h, type JSX } from 'preact';
+import {
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+} from 'preact/hooks';
 import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
 import {
   closeSession,
@@ -12,9 +18,9 @@ import {
   sendPrompt,
   setMode,
 } from './api.ts';
-import { openDiff, refreshDiff } from './diff.tsx';
+import { Diff } from './diff.tsx';
 import { confirmQuit } from './quit-confirm.tsx';
-import { openReply, refreshReply } from './reply.tsx';
+import { Reply } from './reply.tsx';
 import { FAMILIES, familyOf } from './sprites.ts';
 import { css } from './style.ts';
 import {
@@ -170,191 +176,169 @@ const GIT_LABEL: Record<string, string> = {
 };
 
 type Msg = { text: string; kind: '' | 'ok' | 'err' };
+const NO_MSG: Msg = { text: '', kind: '' };
 
-export class Panel {
-  el: HTMLElement; // where the panel (#panel) is drawn
-  onOpen?: () => void;
-  onClose?: () => void;
-  id: string | null = null;
-  session: SessionSnapshot | null = null;
-  entries = new Map<string, LogEntry>();
-  drafts = new Map<string, string>(); // sessionId -> unsent text
-  isOpen = false;
-  msg: Msg = { text: '', kind: '' };
-  sending = false;
-  modeBusy = false;
-  quitting = false;
-  deciding = new Set<string>(); // permission cards answered, buttons off until the session drops them
-  composerHost: HTMLElement | null = null; // where the composer is drawn instead of the panel (the reply dialog)
+/** What the composer works with: this session's draft, the panel's message and its requests in flight. */
+interface ComposerCtl {
+  draft: string;
+  setDraft: (text: string) => void;
+  msg: Msg;
+  sending: boolean;
+  modeBusy: boolean;
+  deciding: ReadonlySet<string>; // permission cards answered, buttons off until the session drops them
+  send: () => void;
+  decide: (card: string, allow: boolean) => void;
+  changeMode: (mode: string) => void;
+}
 
-  constructor(
-    el: HTMLElement,
-    { onOpen, onClose }: { onOpen?: () => void; onClose?: () => void } = {},
-  ) {
-    this.el = el;
-    this.onOpen = onOpen;
-    this.onClose = onClose;
-    document.addEventListener('keydown', (e) => {
+function addEntries(to: Map<string, LogEntry>, entries: LogEntry[]) {
+  for (const e of entries) {
+    const key = `${e.t}|${e.ev}|${e.tool || ''}|${e.target || ''}`;
+    if (!to.has(key)) to.set(key, e);
+  }
+}
+
+/** The panel for session `s`; null: closed (it slides away). `onClose`: the user closed it (× or Esc). */
+export function Panel({
+  s,
+  onClose,
+}: {
+  s: SessionSnapshot | null;
+  onClose: () => void;
+}) {
+  const id = s?.id ?? null;
+  const shown = useRef(id); // the session on screen, for requests that settle after the user moved on
+  shown.current = id;
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const drafts = useRef(new Map<string, string>()); // sessionId -> unsent text, kept while looking at others
+  const [msg, setMsg] = useState<Msg>(NO_MSG);
+  const [sending, setSending] = useState(false);
+  const [modeBusy, setModeBusy] = useState(false);
+  const [quitting, setQuitting] = useState(false);
+  const [deciding, setDeciding] = useState<ReadonlySet<string>>(new Set());
+  const [reply, setReply] = useState(false);
+  const [diff, setDiff] = useState<string | null>(null);
+  /** Show a message about session `about`, unless the panel has moved on to another. */
+  const say = (about: string, text: string, kind: Msg['kind'] = '') => {
+    if (shown.current === about) setMsg({ text, kind });
+  };
+
+  // The activity log: the session's recent lines as they arrive, plus its longer history fetched on open.
+  const log = useRef({ id, entries: new Map<string, LogEntry>() });
+  if (log.current.id !== id) log.current = { id, entries: new Map() };
+  if (s) addEntries(log.current.entries, s.log || []);
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    getLog(id)
+      .then((d) => {
+        if (!live || log.current.id !== id) return;
+        addEntries(log.current.entries, d.log || []);
+        redraw(0);
+      })
+      .catch(() => {}); // server restarted — SSE will refill
+    return () => {
+      live = false;
+    };
+  }, [id]);
+
+  // another session (or none): a message of its own, and the dialogs about the last one close
+  useEffect(() => {
+    setMsg(NO_MSG);
+    setReply(false);
+    setDiff(null);
+  }, [id]);
+  // closed: focus doesn't stay in what slides away
+  useLayoutEffect(() => {
+    const focus = document.activeElement as HTMLElement | null;
+    if (!id && focus?.closest('#panel')) focus.blur();
+  }, [id]);
+  useEffect(() => {
+    if (!id) return;
+    const t = setInterval(() => redraw(0), 1000); // durations tick
+    const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
       const t = e.target as HTMLElement;
       if (t.matches?.('.composer textarea')) {
         t.blur();
         return;
       }
-      this.close();
-    });
-    setInterval(() => {
-      if (this.id && this.session) this.render(); // durations tick
-    }, 1000);
-    this.render();
-  }
-
-  async open(session: SessionSnapshot) {
-    if (this.id !== session.id) this.msg = { text: '', kind: '' };
-    this.id = session.id;
-    this.session = session;
-    this.entries = new Map();
-    if (!this.isOpen) {
-      this.isOpen = true; // slides in via CSS transition (.open)
-      this.onOpen?.();
-    }
-    this.addEntries(session.log || []);
-    this.render();
-    try {
-      const d = await getLog(session.id);
-      if (this.id === session.id) {
-        this.addEntries(d.log || []);
-        this.render();
-      }
-    } catch {
-      /* server restarted — SSE will refill */
-    }
-  }
-
-  close() {
-    if (!this.isOpen) return;
-    this.isOpen = false;
-    const focus = document.activeElement as HTMLElement | null;
-    if (focus?.closest('#panel')) focus.blur();
-    this.id = null;
-    this.session = null;
-    this.render();
-    this.onClose?.();
-  }
-
-  update(session: SessionSnapshot) {
-    if (session.id !== this.id) return;
-    this.session = session;
-    this.addEntries(session.log || []);
-    this.render();
-    refreshReply(session);
-    refreshDiff(session);
-  }
-
-  remove(id: string) {
-    this.drafts.delete(id);
-    if (id === this.id) this.close();
-  }
-
-  /** Draw the composer in `host` (the reply dialog borrowing it) instead of the panel; null hands it back. */
-  setComposerHost(host: HTMLElement | null) {
-    const old = this.composerHost;
-    this.composerHost = host;
-    if (old && old !== host) mount(null, old);
-    this.render();
-  }
-
-  setMsg(text: string, kind: Msg['kind'] = '') {
-    this.msg = { text, kind };
-    this.render();
-  }
-
-  render() {
-    const s = this.session;
-    if (s) {
-      // a card the session no longer asks about is done with
-      const asked = new Set(cardsOf(s).map((c) => c.id));
-      for (const id of this.deciding)
-        if (!asked.has(id)) this.deciding.delete(id);
-    }
-    const composer = s && h(Composer, { s, panel: this });
-    mount(
-      <aside id="panel" class={this.isOpen ? 'open' : ''}>
-        <PanelView
-          s={s}
-          entries={this.entries}
-          composer={this.composerHost ? null : composer}
-          quitting={this.quitting}
-          onClose={() => this.close()}
-          onQuit={() => this.quit()}
-        />
-      </aside>,
-      this.el,
+      closeRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [id]);
+  // a card the session no longer asks about is done with
+  useEffect(() => {
+    if (!s) return;
+    const asked = new Set(cardsOf(s).map((c) => c.id));
+    setDeciding((d) =>
+      [...d].every((c) => asked.has(c))
+        ? d
+        : new Set([...d].filter((c) => asked.has(c))),
     );
-    if (this.composerHost) mount(composer, this.composerHost);
-  }
+  }, [s]);
 
   /** Hand the composer text to the session: typed into its Orca terminal, or queued as the next turn of a headless one. */
-  async send() {
-    const id = this.id,
-      text = (id && this.drafts.get(id)?.trim()) || '';
+  async function send() {
+    const text = (id && drafts.current.get(id)?.trim()) || '';
     if (
+      !s ||
       !id ||
       !text ||
-      this.sending ||
-      (this.session?.state === 'waiting' && !isHeadless(this.session))
+      sending ||
+      (s.state === 'waiting' && !isHeadless(s))
     )
       return;
-    this.sending = true;
-    this.setMsg('보내는 중…');
+    setSending(true);
+    say(id, '보내는 중…');
     try {
       await sendPrompt(id, text);
-      this.drafts.delete(id);
-      if (this.id === id) this.setMsg('전달됨 ✓', 'ok');
+      drafts.current.delete(id);
+      say(id, '전달됨 ✓', 'ok');
     } catch (e) {
-      if (this.id === id) this.setMsg((e as Error).message, 'err');
+      say(id, (e as Error).message, 'err');
     } finally {
-      this.sending = false;
-      this.render();
+      setSending(false);
     }
   }
 
   /** Answer one permission card. It stays (buttons off) until the next session event drops it. */
-  async decide(card: string, allow: boolean) {
-    const id = this.id;
-    if (!id || this.deciding.has(card)) return;
-    this.deciding.add(card);
-    this.render();
+  async function decide(card: string, allow: boolean) {
+    if (!id || deciding.has(card)) return;
+    setDeciding((d) => new Set(d).add(card));
     try {
       await decidePermission(id, card, allow);
     } catch (e) {
-      this.deciding.delete(card);
-      if (this.id === id) this.setMsg((e as Error).message, 'err');
-      else this.render();
+      setDeciding((d) => new Set([...d].filter((c) => c !== card)));
+      say(id, (e as Error).message, 'err');
     }
   }
 
-  async changeMode(mode: string) {
-    const s = this.session;
-    if (!s || !mode || this.modeBusy) return;
+  async function changeMode(mode: string) {
+    if (!s || !mode || modeBusy) return;
     const id = s.id;
-    this.modeBusy = true;
-    this.setMsg(
+    setModeBusy(true);
+    say(
+      id,
       isHeadless(s)
         ? '권한 모드 바꾸는 중…'
         : '권한 모드 바꾸는 중… (Shift+Tab)',
     );
     try {
       const r = await setMode(id, mode);
-      if (this.id === id)
-        this.setMsg(`권한 모드: ${MODE_LABEL[r.mode ?? ''] || r.mode}`, 'ok');
+      say(id, `권한 모드: ${MODE_LABEL[r.mode ?? ''] || r.mode}`, 'ok');
     } catch (e) {
-      if (this.id === id) this.setMsg((e as Error).message, 'err');
+      say(id, (e as Error).message, 'err');
     } finally {
-      this.modeBusy = false;
+      setModeBusy(false);
       const a = document.activeElement as HTMLElement | null;
       if (a?.matches('.composer select')) a.blur(); // let it follow the session again
-      this.render();
     }
   }
 
@@ -363,46 +347,81 @@ export class Panel {
    * anything else → close the Orca terminal outright. Typing `/exit` into a permission dialog could hit
    * its default option, so only an idle prompt gets text.
    */
-  async quit() {
-    const s = this.session;
-    if (!s || s.ended || this.quitting) return;
+  async function quit() {
+    if (!s || s.ended || quitting) return;
     const force = s.state !== 'idle';
     if (!(await confirmQuit(s, force))) return;
-    this.quitting = true;
+    setQuitting(true);
     const hl = isHeadless(s);
-    this.setMsg(
+    const id = s.id;
+    say(
+      id,
       force
         ? hl
           ? '프로세스를 끝내는 중…'
           : '터미널을 닫는 중…'
         : '퇴근 지시 중…',
     );
-    const id = s.id;
     try {
       await closeSession(id, force);
-      if (this.id === id)
-        this.setMsg(
-          force
-            ? hl
-              ? '프로세스를 끝냈습니다.'
-              : '터미널을 닫았습니다.'
-            : '퇴근합니다 👋',
-          'ok',
-        );
+      say(
+        id,
+        force
+          ? hl
+            ? '프로세스를 끝냈습니다.'
+            : '터미널을 닫았습니다.'
+          : '퇴근합니다 👋',
+        'ok',
+      );
     } catch (e) {
-      if (this.id === id) this.setMsg((e as Error).message, 'err');
+      say(id, (e as Error).message, 'err');
     } finally {
-      this.quitting = false;
-      this.render();
+      setQuitting(false);
     }
   }
 
-  addEntries(entries: LogEntry[]) {
-    for (const e of entries) {
-      const key = `${e.t}|${e.ev}|${e.tool || ''}|${e.target || ''}`;
-      if (!this.entries.has(key)) this.entries.set(key, e);
-    }
-  }
+  // drawn in the panel, or in the reply dialog while that is open
+  const composer = s && (
+    <Composer
+      s={s}
+      c={{
+        draft: drafts.current.get(s.id) ?? '',
+        setDraft: (text) => {
+          drafts.current.set(s.id, text);
+          redraw(0);
+        },
+        msg,
+        sending,
+        modeBusy,
+        deciding,
+        send,
+        decide,
+        changeMode,
+      }}
+    />
+  );
+  return (
+    <>
+      <aside id="panel" class={s ? 'open' : ''}>
+        {s && (
+          <PanelView
+            s={s}
+            entries={log.current.entries}
+            composer={reply ? null : composer}
+            quitting={quitting}
+            onClose={onClose}
+            onQuit={quit}
+            onReply={() => setReply(true)}
+            onDiff={setDiff}
+          />
+        )}
+      </aside>
+      <Reply s={s} open={reply} onClose={() => setReply(false)}>
+        {composer}
+      </Reply>
+      <Diff s={s} file={diff} onClose={() => setDiff(null)} />
+    </>
+  );
 }
 
 // ---- views -----------------------------------------------------------------------------
@@ -414,15 +433,20 @@ function PanelView({
   quitting,
   onClose,
   onQuit,
+  onReply,
+  onDiff,
 }: {
-  s: SessionSnapshot | null;
+  s: SessionSnapshot;
   entries: Map<string, LogEntry>;
-  composer: h.JSX.Element | null;
+  composer: JSX.Element | null;
   quitting: boolean;
   onClose: () => void;
   onQuit: () => void;
+  /** Open the last answer in full. */
+  onReply: () => void;
+  /** Open that file's diff. */
+  onDiff: (file: string) => void;
 }) {
-  if (!s) return null;
   const now = Date.now();
   const freshThinking = thinkingFresh(s, now) && s.state !== 'idle';
   return (
@@ -469,18 +493,18 @@ function PanelView({
             title="클릭해서 크게 보기"
             // biome-ignore lint/a11y/noNoninteractiveTabindex: a card that opens the full reply, styled as a quote
             tabIndex={0}
-            onClick={() => openReply(s)}
+            onClick={onReply}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                openReply(s);
+                onReply();
               }
             }}
           >
             {s.lastText}
           </blockquote>
         )}
-        <Files s={s} />
+        <Files s={s} onDiff={onDiff} />
         <h3>활동 로그</h3>
         <Log entries={entries} />
       </div>
@@ -518,7 +542,7 @@ function Meta({ s, now }: { s: SessionSnapshot; now: number }) {
   ) : (
     '—'
   );
-  const rows: [string, h.JSX.Element | string][] = [
+  const rows: [string, JSX.Element | string][] = [
     ['현재 작업', tool],
     ['이번 턴', turn],
     [
@@ -613,7 +637,13 @@ function Agents({ s, now }: { s: SessionSnapshot; now: number }) {
  * Worked files, newest first: what git status lists for the worktree plus what this session's tools read or
  * edited (the server merges both). A chip opens that file's diff.
  */
-function Files({ s }: { s: SessionSnapshot }) {
+function Files({
+  s,
+  onDiff,
+}: {
+  s: SessionSnapshot;
+  onDiff: (file: string) => void;
+}) {
   const list = (s.files || []).slice(0, 20);
   if (!list.length) return null;
   return (
@@ -626,7 +656,7 @@ function Files({ s }: { s: SessionSnapshot }) {
             type="button"
             class={f.edited ? 'chip edited' : 'chip'}
             title={`${f.path}\n${(f.git && GIT_LABEL[f.git]) || (f.edited ? '이 세션이 편집함 (커밋됨)' : '읽기만 함')}\n클릭: diff 보기`}
-            onClick={() => openDiff(s, f.path)}
+            onClick={() => onDiff(f.path)}
           >
             {f.git === 'D' ? '🗑️' : f.edited ? '✏️' : '📖'} {f.name}
           </button>
@@ -693,7 +723,7 @@ function Log({ entries }: { entries: Map<string, LogEntry> }) {
 /** A parked headless permission request, or the dialog an Orca / terminal session shows (asking). */
 type Card = {
   id: string;
-  head: h.JSX.Element;
+  head: JSX.Element;
   detail: string | null;
   answerable: boolean;
   note: string | null;
@@ -740,7 +770,7 @@ function cardsOf(s: SessionSnapshot): Card[] {
   return cards;
 }
 
-function Composer({ s, panel }: { s: SessionSnapshot; panel: Panel }) {
+function Composer({ s, c }: { s: SessionSnapshot; c: ComposerCtl }) {
   const sel = useRef<HTMLSelectElement>(null);
   // headless: no TUI dialog to answer by accident, so a prompt sent while waiting just queues as the next turn
   const off = !!s.ended,
@@ -754,49 +784,49 @@ function Composer({ s, panel }: { s: SessionSnapshot; panel: Panel }) {
    * A terminal session switches by Shift+Tab, which never reaches dontAsk, nor bypass unless claude started with
    * --dangerously-skip-permissions: those stay hidden there unless the session is already in them.
    */
-  const follow = !panel.modeBusy && document.activeElement !== sel.current;
+  const follow = !c.modeBusy && document.activeElement !== sel.current;
   const known = MODES.some(([v]) => v === s.permissionMode);
   return (
     <form
       class="composer"
       onSubmit={(e) => {
         e.preventDefault();
-        panel.send();
+        c.send();
       }}
     >
       {cards.length > 0 && (
         <div class="perms">
-          {cards.map((c) => (
-            <div key={c.id} class="perm">
-              <div class="hd">✋ {c.head}</div>
-              {c.detail && <div class="detail">{c.detail}</div>}
-              {c.answerable && (
+          {cards.map((card) => (
+            <div key={card.id} class="perm">
+              <div class="hd">✋ {card.head}</div>
+              {card.detail && <div class="detail">{card.detail}</div>}
+              {card.answerable && (
                 <div class="row">
                   <button
                     type="button"
                     class="primary"
-                    disabled={panel.deciding.has(c.id)}
-                    onClick={() => panel.decide(c.id, true)}
+                    disabled={c.deciding.has(card.id)}
+                    onClick={() => c.decide(card.id, true)}
                   >
                     허용
                   </button>
                   <button
                     type="button"
-                    disabled={panel.deciding.has(c.id)}
-                    onClick={() => panel.decide(c.id, false)}
+                    disabled={c.deciding.has(card.id)}
+                    onClick={() => c.decide(card.id, false)}
                   >
                     거부
                   </button>
                 </div>
               )}
-              {c.note && <div class="note">{c.note}</div>}
+              {card.note && <div class="note">{card.note}</div>}
             </div>
           ))}
         </div>
       )}
       <textarea
         rows={2}
-        value={panel.drafts.get(s.id) ?? ''}
+        value={c.draft}
         disabled={off}
         placeholder={
           off
@@ -809,15 +839,12 @@ function Composer({ s, panel }: { s: SessionSnapshot; panel: Panel }) {
                   ? '권한 승인·질문 응답 대기 중 — 터미널에서 먼저 답해주세요. (써 두고 나중에 보낼 수 있어요)'
                   : `이 직원에게 지시…  (Enter 보내기 · Shift+Enter 줄바꿈)${s.orcaTerminal ? '' : '\nOrca 터미널 연결 전 — 보내면 자동으로 찾아봅니다.'}`
         }
-        onInput={(e) => {
-          panel.drafts.set(s.id, e.currentTarget.value);
-          panel.render();
-        }}
+        onInput={(e) => c.setDraft(e.currentTarget.value)}
         onKeyDown={(e) => {
           // isComposing: Enter that commits a Hangul syllable must not send.
           if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
-            panel.send();
+            c.send();
           }
         }}
       />
@@ -826,9 +853,9 @@ function Composer({ s, panel }: { s: SessionSnapshot; panel: Panel }) {
           <select
             ref={sel}
             title="권한 모드 바꾸기 (Orca 터미널은 Shift+Tab으로 전환)"
-            disabled={panel.modeBusy || waiting}
+            disabled={c.modeBusy || waiting}
             value={follow ? (known ? s.permissionMode! : '') : undefined}
-            onChange={(e) => panel.changeMode(e.currentTarget.value)}
+            onChange={(e) => c.changeMode(e.currentTarget.value)}
           >
             {MODES.map(([v, label]) => {
               const hide =
@@ -845,11 +872,11 @@ function Composer({ s, panel }: { s: SessionSnapshot; panel: Panel }) {
             </option>
           </select>
         )}
-        <span class={`msg ${panel.msg.kind}`}>{panel.msg.text}</span>
+        <span class={`msg ${c.msg.kind}`}>{c.msg.text}</span>
         <button
           type="submit"
           class="primary"
-          disabled={off || waiting || panel.sending}
+          disabled={off || waiting || c.sending}
         >
           보내기
         </button>

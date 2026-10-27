@@ -12,6 +12,7 @@ export interface AppState {
   connected: boolean; // the event stream is up
   hoverKey: string | null; // cat (or HUD_BTN) under the pointer
   selectedKey: string | null; // cat whose session the panel shows
+  panelId: string | null; // session the panel shows; null: closed
   rosterOpen: boolean;
   pointer: { x: number; y: number }; // where the pointer is over the office (viewport px), for the tooltip
   editing: boolean; // the layout editor is open
@@ -45,6 +46,7 @@ export const app = createStore<AppState, Change>({
   connected: false,
   hoverKey: null,
   selectedKey: null,
+  panelId: null,
   rosterOpen: false,
   pointer: { x: 0, y: 0 },
   editing: false,
@@ -108,6 +110,7 @@ type Ui = Pick<
   | 'connected'
   | 'hoverKey'
   | 'selectedKey'
+  | 'panelId'
   | 'rosterOpen'
   | 'pointer'
   | 'editing'

@@ -1,13 +1,13 @@
 // One file's git diff in a large dialog, colored by line. Opened from the panel's worked-file chips;
-// the patch comes from /sessions/:id/diff (working tree vs HEAD, or the session's last commit of it).
+// the patch comes from /sessions/:id/diff (working tree vs HEAD, or the session's last commit of it), fetched again
+// whenever the session touches the file.
 
-import { h, render as mount } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { h } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { SessionSnapshot } from '../shared/api.ts';
 import { getDiff } from './api.ts';
 import { BigDialog } from './modal.tsx';
 import { css } from './style.ts';
-import { $ } from './ui.ts';
 
 css(/* css */ `
 #diff {
@@ -29,42 +29,52 @@ interface Line {
   cls: 'ctx' | 'meta' | 'hunk' | 'add' | 'del';
   text: string;
 }
-interface Shown {
-  id: string;
-  file: string;
-  t: number; // when the session last touched the file, as of this load
+interface Loaded {
+  key: string; // session id + file it is for
   patch: string;
   meta: string;
   warn: string;
-  lines: Line[] | null; // null: not loaded yet
-}
-let cur: Shown | null = null;
-let root: HTMLElement;
-
-/** Mount the dialog; once, before openDiff(). */
-export function initDiff() {
-  root = $('diff-root');
-  draw();
+  lines: Line[] | null; // null: nothing to show (it failed)
 }
 
-function draw() {
-  mount(
+/** `file` of session `s` open in the dialog; no file: closed. */
+export function Diff({
+  s,
+  file,
+  onClose,
+}: {
+  s: SessionSnapshot | null;
+  file: string | null;
+  onClose: () => void;
+}) {
+  const id = file ? s?.id : undefined;
+  const key = id ? `${id}|${file}` : '';
+  const t = s && file ? touchedAt(s, file) : 0; // the session touched the file again: fetch anew
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  useEffect(() => {
+    if (!id || !file) return;
+    let live = true;
+    load(id, file).then((l) => {
+      if (live) setLoaded({ key: `${id}|${file}`, ...l });
+    });
+    return () => {
+      live = false;
+    };
+  }, [id, file, t]);
+  const cur = loaded?.key === key ? loaded : null; // until it loads, not another file's
+  return (
     <BigDialog
       id="diff"
-      open={!!cur}
-      onClose={() => {
-        cur = null;
-        draw();
-      }}
-      title={cur?.file.split(/[\\/]/).pop() ?? ''}
-      meta={cur?.meta ?? ''}
+      open={!!key}
+      onClose={onClose}
+      title={file?.split(/[\\/]/).pop() ?? ''}
+      meta={cur?.meta ?? file ?? ''}
       copyTitle="패치 복사"
       copy={() => cur?.patch}
     >
       {cur?.warn && <p class="warn">{cur.warn}</p>}
       <Patch lines={cur?.lines ?? null} />
-    </BigDialog>,
-    root,
+    </BigDialog>
   );
 }
 
@@ -77,59 +87,28 @@ const STATUS: Record<string, string> = {
 const touchedAt = (s: SessionSnapshot, file: string) =>
   (s.files || []).find((f) => f.path === file)?.t ?? 0;
 
-export function openDiff(s: SessionSnapshot, file: string) {
-  cur = {
-    id: s.id,
-    file,
-    t: touchedAt(s, file),
-    patch: '',
-    meta: file,
-    warn: '',
-    lines: null,
-  };
-  draw();
-  load();
-}
-
-/** The session touched the open file again (a tool finished on it): fetch the diff anew. */
-export function refreshDiff(s: SessionSnapshot) {
-  if (cur?.id !== s.id) return;
-  const t = touchedAt(s, cur.file);
-  if (t > cur.t) {
-    cur.t = t;
-    load();
-  }
-}
-
-async function load() {
-  if (!cur) return;
-  const shown = cur;
+async function load(id: string, file: string): Promise<Omit<Loaded, 'key'>> {
   try {
-    const d = await getDiff(shown.id, shown.file);
-    if (cur !== shown) return;
-    shown.patch = d.patch || '';
-    const { lines, add, del } = parse(shown.patch);
+    const d = await getDiff(id, file);
+    const patch = d.patch || '';
+    const { lines, add, del } = parse(patch);
     const status =
       d.status === 'committed'
         ? `작업 트리에 변경 없음 · 세션 중 마지막 커밋 "${d.commit?.subject || d.commit?.hash?.slice(0, 7) || ''}" 기준`
         : STATUS[d.status] || d.status;
-    shown.meta = [
-      d.rel || shown.file,
-      status,
-      shown.patch ? `+${add} −${del}` : '',
-    ]
-      .filter(Boolean)
-      .join(' · ');
-    shown.warn = d.truncated
-      ? `diff가 너무 커서 앞부분 ${shown.patch.length.toLocaleString()}자만 보여줍니다.`
-      : '';
-    shown.lines = lines;
+    return {
+      patch,
+      meta: [d.rel || file, status, patch ? `+${add} −${del}` : '']
+        .filter(Boolean)
+        .join(' · '),
+      warn: d.truncated
+        ? `diff가 너무 커서 앞부분 ${patch.length.toLocaleString()}자만 보여줍니다.`
+        : '',
+      lines,
+    };
   } catch (e) {
-    if (cur !== shown) return;
-    shown.warn = (e as Error).message;
-    shown.lines = null;
+    return { patch: '', meta: file, warn: (e as Error).message, lines: null };
   }
-  draw();
 }
 
 function Patch({ lines }: { lines: Line[] | null }) {
