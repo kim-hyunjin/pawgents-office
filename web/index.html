@@ -24,59 +24,10 @@
   </div>
   <canvas id="office" width="512" height="320"></canvas>
 </main>
-<dialog id="launcher">
-  <form id="l-form" method="dialog">
-    <h2>새 직원 채용</h2>
-    <fieldset id="l-backend" hidden>
-      <legend>실행 방식</legend>
-      <label class="check"><input type="radio" name="backend" value="orca"> Orca</label>
-      <label class="check"><input type="radio" name="backend" value="headless"> 직접 실행 (claude -p)</label>
-      <p id="l-backend-hint" class="dim"></p>
-    </fieldset>
-    <label id="l-worktree-row">워크트리
-      <select id="l-worktree" required><option value="">불러오는 중…</option></select>
-    </label>
-    <label id="l-cwd-row" hidden>작업 폴더
-      <select id="l-cwd"><option value="">불러오는 중…</option></select>
-      <input id="l-cwd-custom" autocomplete="off" spellcheck="false" placeholder="C:\path\to\repo" hidden>
-    </label>
-    <label id="l-perm-row" hidden>권한 모드
-      <select id="l-perm">
-        <option value="default">기본 (사무실에서 승인)</option>
-        <option value="acceptEdits">편집 자동 승인</option>
-        <option value="auto">자동 (분류기 판단)</option>
-      </select>
-    </label>
-    <label class="check"><input type="checkbox" id="l-new"> 새 워크트리 만들기 <span class="dim" id="l-new-hint">(선택한 워크트리의 브랜치에서 분기)</span></label>
-    <label id="l-name-row" hidden>새 워크트리 이름 <span class="dim">(브랜치 이름으로도 쓰여요)</span>
-      <input id="l-name" autocomplete="off" spellcheck="false" maxlength="60" placeholder="예: feature-login">
-    </label>
-    <label>인원 <span class="dim" id="l-count-hint"></span>
-      <input id="l-count" type="number" min="1" value="1">
-    </label>
-    <label>모델 <span class="dim">(비우면 기본값)</span>
-      <input id="l-model" list="l-models" placeholder="opus / sonnet / haiku / 모델 ID" autocomplete="off">
-      <datalist id="l-models"><option value="opus"><option value="sonnet"><option value="haiku"></datalist>
-    </label>
-    <label>첫 지시 <span class="dim">(선택)</span>
-      <textarea id="l-prompt" rows="5" placeholder="무엇을 할지 적어주세요. 비우면 빈 세션으로 시작합니다."></textarea>
-    </label>
-    <p id="l-msg" class="msg"></p>
-    <div class="row">
-      <button type="button" id="l-cancel">취소</button>
-      <button type="submit" id="l-submit" class="primary">시작</button>
-    </div>
-  </form>
-</dialog>
+<div id="launcher-root"></div>
 <div id="reply-root"></div>
 <div id="diff-root"></div>
-<dialog id="legend">
-  <header>
-    <h2>모델 안내</h2>
-    <button type="button" id="lg-close" title="닫기 (Esc)">×</button>
-  </header>
-  <div id="lg-body"></div>
-</dialog>
+<div id="legend-root"></div>
 <div id="quit-root"></div>
 <div id="roster-root"></div>
 <aside id="editor" hidden>

@@ -22,8 +22,9 @@ css(/* css */ `
 `);
 
 /**
- * A modal <dialog>, shown while `open`. It closes itself on Esc, on a click on its backdrop and on a `method="dialog"`
- * form's submit; `onClose(returnValue)` then tells the owner, who should drop `open`.
+ * A modal <dialog>, shown while `open`. Esc and a click on its backdrop ask `onClose` (the owner drops `open`, which
+ * closes it); buttons inside call the owner's close directly. Either way the owner hears of it right away: the
+ * dialog's own close event comes a moment later, too late for an owner that opens it again at once.
  */
 export function Modal({
   open,
@@ -32,31 +33,36 @@ export function Modal({
   ...attrs
 }: {
   open: boolean;
-  onClose: (returnValue: string) => void;
+  onClose: () => void;
   children: ComponentChildren;
   id?: string;
   class?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const live = useRef(open);
+  live.current = open;
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) {
-      d.returnValue = '';
-      d.showModal();
-    } else if (!open && d.open) d.close();
+    if (open && !d.open) d.showModal();
+    else if (!open && d.open) d.close();
   }, [open]);
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: a click on the dialog itself is one on its backdrop; Esc is the keyboard's way out
     <dialog
       {...attrs}
       ref={ref}
+      onCancel={(e) => {
+        e.preventDefault(); // Esc: the owner closes it
+        onClose();
+      }}
+      // news only when the owner still has it open and it stayed closed (a method="dialog" form closed it, say);
+      // one from a close the owner asked for can arrive after it was shown again
       onClose={(e) => {
-        // a close event that arrives after the dialog was shown again is stale
-        if (!e.currentTarget.open) onClose(e.currentTarget.returnValue);
+        if (live.current && !e.currentTarget.open) onClose();
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) e.currentTarget.close();
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       {children}
@@ -97,8 +103,7 @@ export function BigDialog({
           type="button"
           class="close"
           title="닫기 (Esc)"
-          // close the <dialog> itself: its close event reaches onClose once, like Esc does
-          onClick={(e) => e.currentTarget.closest('dialog')?.close()}
+          onClick={onClose}
         >
           ×
         </button>

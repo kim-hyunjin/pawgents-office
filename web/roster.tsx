@@ -2,15 +2,16 @@
 // detail panel, or send one home (asks first, like the panel's 퇴근 button). Toggled from the HUD's "목록" button.
 
 import { h } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import type { SessionSnapshot } from '../shared/api.ts';
 import { isBusyState } from '../shared/model.ts';
 import { closeSession } from './api.ts';
+import { Pic } from './pic.tsx';
 import { confirmQuit } from './quit-confirm.tsx';
 import type { Palette } from './sprites.ts';
 import { FAMILIES, familyOf, sprite } from './sprites.ts';
 import { css } from './style.ts';
-import { pic, quitTitle, STATE_COLOR, STATE_LABEL, toolText } from './ui.ts';
+import { quitTitle, STATE_COLOR, STATE_LABEL, toolText } from './ui.ts';
 
 const ICON_ZOOM = 2;
 
@@ -185,7 +186,7 @@ function Row({
         if (ev.key === 'Enter') onPick();
       }}
     >
-      <CatIcon pal={pal} />
+      <Pic class="cat" img={pal && sprite(pal, 'idle', 0)} zoom={ICON_ZOOM} />
       <div class="info">
         <div class="top">
           <b class="name">{s.name || s.id.slice(0, 8)}</b>
@@ -218,14 +219,4 @@ function Row({
       </button>
     </li>
   );
-}
-
-/** The cat's idle frame, drawn once its look is known and again when it changes; no cat on screen, no icon. */
-function CatIcon({ pal }: { pal: Palette | undefined }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    if (pal && ref.current) pic(sprite(pal, 'idle', 0), ICON_ZOOM, ref.current);
-  }, [pal]);
-  // 0×0 until drawn, not the 300×150 a bare canvas starts at; pic() sizes it, and Preact leaves width alone after
-  return <canvas class="cat" width={0} height={0} ref={ref} />;
 }
