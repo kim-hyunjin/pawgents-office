@@ -98,6 +98,17 @@
   </header>
   <div id="lg-body"></div>
 </dialog>
+<dialog id="quit-confirm">
+  <form method="dialog">
+    <h2 id="qc-title"></h2>
+    <p id="qc-body" class="dim"></p>
+    <label class="check"><input type="checkbox" id="qc-skip"> 다음부터 묻지 않기</label>
+    <div class="row">
+      <button type="submit" id="qc-cancel" value="">취소</button>
+      <button type="submit" id="qc-ok" value="ok" class="primary">퇴근</button>
+    </div>
+  </form>
+</dialog>
 <aside id="roster" hidden>
   <header>
     <h2>직원 목록 <span id="rs-count" class="dim"></span></h2>

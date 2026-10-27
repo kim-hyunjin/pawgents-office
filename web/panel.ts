@@ -1,5 +1,4 @@
 import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
-import { isBusyState } from '../shared/model.ts';
 import {
   closeSession,
   decidePermission,
@@ -8,10 +7,10 @@ import {
   setMode,
 } from './api.ts';
 import { openDiff, refreshDiff } from './diff.ts';
+import { confirmQuit } from './quit-confirm.ts';
 import { openReply, refreshReply } from './reply.ts';
 import { FAMILIES, familyOf } from './sprites.ts';
 import {
-  armConfirm,
   awaitingBg,
   bgSummary,
   esc,
@@ -19,7 +18,6 @@ import {
   isHeadless,
   logIcon,
   MODE_LABEL,
-  quitTitle,
   STATE_COLOR,
   STATE_LABEL,
   setMsg,
@@ -59,7 +57,6 @@ export class Panel {
   modeBusy = false;
   permKey = '';
   quitting = false;
-  quitArm = armConfirm<true>(4000, () => this.showQuit()); // 퇴근 asks twice
 
   constructor(
     el: HTMLElement,
@@ -134,7 +131,6 @@ export class Panel {
     this.id = session.id;
     this.session = session;
     this.entries = new Map();
-    this.resetQuit();
     if (!this.isOpen) {
       this.isOpen = true;
       this.el.classList.add('open'); // slides in via CSS transition
@@ -156,7 +152,6 @@ export class Panel {
     this.el.classList.remove('open');
     if (this.el.contains(document.activeElement))
       (document.activeElement as HTMLElement).blur();
-    this.resetQuit();
     if (this.id) this.drafts.set(this.id, this.input.value);
     this.id = null;
     this.session = null;
@@ -320,16 +315,15 @@ export class Panel {
   }
 
   /**
-   * End the session. First click arms, second click (within 4s) sends. Idle → `/exit` (clean
-   * SessionEnd, tab stays); anything else → close the Orca terminal outright. Typing `/exit`
-   * into a permission dialog could hit its default option, so only an idle prompt gets text.
+   * End the session, once the confirmation dialog says so. Idle → `/exit` (clean SessionEnd, tab stays);
+   * anything else → close the Orca terminal outright. Typing `/exit` into a permission dialog could hit
+   * its default option, so only an idle prompt gets text.
    */
   async quit() {
     const s = this.session;
     if (!s || s.ended || this.quitting) return;
     const force = s.state !== 'idle';
-    if (!this.quitArm.click(true)) return;
-    this.resetQuit();
+    if (!(await confirmQuit(s, force))) return;
     this.quitting = true;
     this.quitBtn.disabled = true;
     const hl = isHeadless(s);
@@ -358,28 +352,6 @@ export class Panel {
       this.quitting = false;
       this.quitBtn.disabled = false;
     }
-  }
-
-  resetQuit() {
-    this.quitArm.disarm();
-    this.showQuit();
-  }
-  /** The 퇴근 button's label: armed, it says what the second click will do to the session. */
-  showQuit() {
-    if (!this.quitBtn) return;
-    const s = this.session;
-    if (s && this.quitArm.is(true)) {
-      const force = s.state !== 'idle';
-      this.quitBtn.classList.add('armed');
-      this.quitBtn.textContent = force
-        ? `${isBusyState(s.state) ? '작업 중' : '응답 대기'} — 강제 종료?`
-        : '정말 퇴근?';
-      this.quitBtn.title = quitTitle(s, force);
-      return;
-    }
-    this.quitBtn.classList.remove('armed');
-    this.quitBtn.textContent = '퇴근';
-    this.quitBtn.title = '이 세션 종료';
   }
 
   renderCompose(s: SessionSnapshot | null) {

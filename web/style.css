@@ -208,7 +208,6 @@ button:disabled { opacity: .5; cursor: default; }
 #rs-list .line.err { color: #f87171; }
 #rs-list .quit { flex: none; font: inherit; font-size: 12px; padding: 4px 10px; border: 0; border-radius: 6px; cursor: pointer; background: var(--panel-2); color: var(--text); }
 #rs-list .quit:hover { background: #4a2e3a; }
-#rs-list .quit.armed { background: #b4413c; color: #fff; }
 #rs-list .quit:disabled { opacity: .6; cursor: default; }
 
 /* ---- model legend dialog ---- */
@@ -319,7 +318,22 @@ button:disabled { opacity: .5; cursor: default; }
   border: 1px solid #4a3a4a; background: transparent; color: #fca5a5;
 }
 #p-quit:hover { background: rgba(248,113,113,0.12); }
-#p-quit.armed { background: #f87171; border-color: #f87171; color: #1f2233; font-weight: 700; }
+
+/* ---- 퇴근 confirmation ---- */
+#quit-confirm {
+  width: min(380px, calc(100vw - 32px)); padding: 0; border: 1px solid #3b3f5c; border-radius: 10px;
+  background: var(--panel); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+#quit-confirm::backdrop { background: rgba(8,9,20,0.6); }
+#quit-confirm form { padding: 16px 18px; display: grid; gap: 12px; }
+#quit-confirm h2 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+#quit-confirm p { margin: 0; font-size: 13px; line-height: 1.5; }
+#quit-confirm label.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+#quit-confirm label.check input { margin: 0; accent-color: var(--accent); }
+#quit-confirm .row { display: flex; gap: 8px; justify-content: flex-end; }
+#quit-confirm button { font: inherit; font-size: 12.5px; padding: 6px 14px; border-radius: 6px; border: 0; cursor: pointer; background: var(--panel-2); color: var(--text); }
+#quit-confirm button.primary { background: var(--accent); color: #1f2233; font-weight: 700; }
+#quit-confirm button.danger { background: #f87171; color: #1f2233; font-weight: 700; }
 
 /* ---- layout editor ---- */
 #editor {

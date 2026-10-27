@@ -1,13 +1,13 @@
 // Staff roster: a compact list of every working cat under the HUD — state at a glance, click a row for the
-// detail panel, or send one home (two clicks, like the panel's 퇴근 button). Toggled from the HUD's "목록" button.
+// detail panel, or send one home (asks first, like the panel's 퇴근 button). Toggled from the HUD's "목록" button.
 
 import type { SessionSnapshot } from '../shared/api.ts';
 import { isBusyState } from '../shared/model.ts';
 import { closeSession } from './api.ts';
+import { confirmQuit } from './quit-confirm.ts';
 import type { Palette } from './sprites.ts';
 import { FAMILIES, familyOf, sprite } from './sprites.ts';
 import {
-  armConfirm,
   esc,
   pic,
   quitTitle,
@@ -38,7 +38,6 @@ export class Roster {
   placeOf: (id: string) => string;
   palOf: (id: string) => Palette | undefined;
   rows = new Map<string, Row>(); // id -> row elements
-  arm = armConfirm<string>(4000, (id) => this.refreshRow(id)); // id whose 퇴근 button waits for the confirming click
   pending = new Set<string>(); // ids with a close request in flight or sent
   failed = new Map<string, string>(); // id -> error message, shown in the row for a few seconds
   lastSessions: Sessions | undefined = undefined;
@@ -84,7 +83,6 @@ export class Roster {
   }
   close() {
     this.el.hidden = true;
-    this.disarm();
   }
 
   update(sessions: Sessions) {
@@ -184,10 +182,6 @@ export class Roster {
       r.quit.textContent = '퇴근 중…';
       r.quit.disabled = true;
       r.quit.className = 'quit';
-    } else if (this.arm.is(s.id)) {
-      r.quit.textContent = busy ? '강제 종료?' : '정말 퇴근?';
-      r.quit.disabled = false;
-      r.quit.className = 'quit armed';
     } else {
       r.quit.textContent = '퇴근';
       r.quit.disabled = false;
@@ -198,11 +192,11 @@ export class Roster {
       : quitTitle(s, false);
   }
 
-  /** First click arms (4s), second sends: idle → a clean end, otherwise a forced close (same rule as the panel). */
+  /** Once confirmed: idle → a clean end, otherwise a forced close (same rule as the panel). */
   async quit(s: SessionSnapshot | undefined) {
     if (!s || this.pending.has(s.id)) return;
-    if (!this.arm.click(s.id)) return;
-    this.disarm();
+    if (!(await confirmQuit(s, s.state !== 'idle')) || this.pending.has(s.id))
+      return;
     this.pending.add(s.id);
     this.refreshRow(s.id);
     try {
@@ -221,9 +215,6 @@ export class Roster {
       }, 5000);
     }
     this.refreshRow(s.id);
-  }
-  disarm() {
-    this.arm.disarm();
   }
   refreshRow(id: string) {
     const r = this.rows.get(id);
