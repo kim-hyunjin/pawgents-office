@@ -1,6 +1,6 @@
 {
   "name": "pawgents-office",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "Claude Code 세션들이 고양이 직원이 되어 픽셀아트 사무실에서 일하는 모습을 보여주는 로컬 웹 UI",
   "author": {
     "name": "kim-hyunjin"
