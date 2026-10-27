@@ -100,6 +100,12 @@ test('static: the page, its modules and the browser-safe shared/ modules', async
     assert.equal(r.status, 200, p);
     assert.doesNotMatch(r.body, /^import type/m, p); // served type-stripped
   }
+  // .tsx: JSX becomes h() calls, and the file's own `import { h }` stays for the import map to resolve
+  const tsx = await get('/roster.tsx');
+  assert.equal(tsx.status, 200);
+  assert.match(tsx.body, /^import \{ h \} from "preact";$/m);
+  assert.match(tsx.body, /\bh\("aside", \{/);
+  assert.doesNotMatch(tsx.body, /<aside/);
   assert.equal((await get('/shared/node/x.ts')).status, 403);
   // URL parsing folds the dot segments away: it asks for web/server/config.ts, which doesn't exist
   assert.equal((await get('/%2e%2e/server/config.ts')).status, 404);

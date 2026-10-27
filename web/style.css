@@ -187,29 +187,6 @@ button:disabled { opacity: .5; cursor: default; }
 #launcher legend { padding: 0 0 5px; font-size: 12px; color: var(--dim); }
 #launcher fieldset p { flex-basis: 100%; margin: 0; font-size: 12px; }
 
-/* ---- staff roster (under the HUD) ---- */
-#roster {
-  position: fixed; z-index: 9; width: min(340px, calc(100vw - 16px)); max-height: 70vh; display: flex; flex-direction: column;
-  background: rgba(29,32,54,0.97); border: 1px solid #3b3f5c; border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); font-size: 13px;
-}
-#roster header { display: flex; align-items: center; padding: 8px 8px 8px 14px; border-bottom: 1px solid #2f3352; }
-#roster h2 { flex: 1; margin: 0; font-size: 14px; }
-#roster h2 .dim { color: var(--dim); font-weight: 400; }
-#rs-close { width: 26px; height: 26px; border: 0; border-radius: 6px; background: var(--panel-2); color: var(--text); font-size: 16px; cursor: pointer; }
-#rs-list { list-style: none; margin: 0; padding: 4px; overflow: auto; }
-#rs-list li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
-#rs-list li:hover, #rs-list li:focus { background: var(--panel-2); outline: none; }
-#rs-list li.empty { cursor: default; color: var(--dim); justify-content: center; padding: 14px; }
-#rs-list .cat { flex: none; image-rendering: pixelated; background: #cdb089; border-radius: 4px; padding: 2px; }
-#rs-list .info { flex: 1; min-width: 0; }
-#rs-list .top { display: flex; align-items: center; gap: 6px; }
-#rs-list .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#rs-list .line { margin-top: 2px; font-size: 11.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#rs-list .line.err { color: #f87171; }
-#rs-list .quit { flex: none; font: inherit; font-size: 12px; padding: 4px 10px; border: 0; border-radius: 6px; cursor: pointer; background: var(--panel-2); color: var(--text); }
-#rs-list .quit:hover { background: #4a2e3a; }
-#rs-list .quit:disabled { opacity: .6; cursor: default; }
-
 /* ---- model legend dialog ---- */
 #legend {
   width: min(560px, calc(100vw - 32px)); max-height: 86vh; padding: 0; border: 1px solid #3b3f5c; border-radius: 10px;

@@ -1,3 +1,4 @@
+import { h, render as mount } from 'preact';
 import type {
   Office,
   SessionSnapshot,
@@ -16,7 +17,7 @@ import { connectEvents } from './net/events.ts';
 import { Panel } from './panel.ts';
 import { type Frame, HUD_BTN, render } from './render.ts';
 import { initReply } from './reply.ts';
-import { Roster } from './roster.ts';
+import { Roster } from './roster.tsx';
 import {
   FAMILIES,
   familyOf,
@@ -112,7 +113,7 @@ applyLayout(DEFAULT_OFFICE);
 resize();
 
 const refreshLists = () => {
-  roster.update(st.sessions);
+  showRoster();
   renderTabs();
 };
 // Everything that shows sessions follows the session list, in this order: the ticker, the cats, the panel, then the
@@ -271,7 +272,7 @@ function applyCatChoices({ cats, skins }: Pick<Snapshot, 'cats' | 'skins'>) {
 onSkinLoad(() => repaintCats());
 function repaintCats() {
   repaintEnts();
-  roster.update(st.sessions);
+  showRoster();
   refreshLegend();
 }
 function applySnapshot(snap: Snapshot) {
@@ -329,28 +330,36 @@ connectEvents(
 );
 
 // ---- roster (opened from the HUD) ----------------------------------------------------
-const roster = new Roster($('roster'), {
-  onPick: (id) => {
-    const s = st.sessions.get(id);
-    if (!s) return;
-    if (!here(s)) switchOffice(s.officeId);
-    select(s);
-  },
-  placeOf: (id) => {
-    const s = st.sessions.get(id);
-    if (s && !here(s)) return officeOf(s.officeId)?.name || ''; // works in another office
-    const e = world.ents.get(id);
-    return e && e.station?.kind !== 'desk' ? placeOf(e) : '';
-  },
-  palOf: (id) => world.ents.get(id)?.pal,
-});
-function toggleRoster() {
-  roster.toggle(st.sessions, rosterAnchor(lastFrame!.hud));
-  setUi({ rosterOpen: roster.isOpen });
+/** Draw the roster from the current state (Preact keeps what didn't change); closed, it renders nothing. */
+function showRoster() {
+  mount(
+    h(Roster, {
+      sessions: st.sessions,
+      anchor: st.rosterOpen && lastFrame ? rosterAnchor(lastFrame.hud) : null,
+      onClose: toggleRoster,
+      onPick: (id) => {
+        const s = st.sessions.get(id);
+        if (!s) return;
+        if (!here(s)) switchOffice(s.officeId);
+        select(s);
+      },
+      placeOf: (id) => {
+        const s = st.sessions.get(id);
+        if (s && !here(s)) return officeOf(s.officeId)?.name || ''; // works in another office
+        const e = world.ents.get(id);
+        return e && e.station?.kind !== 'desk' ? placeOf(e) : '';
+      },
+      palOf: (id) => world.ents.get(id)?.pal,
+    }),
+    $('roster-root'),
+  );
 }
-$('rs-close').addEventListener('click', () => setUi({ rosterOpen: false }));
+function toggleRoster() {
+  setUi({ rosterOpen: !st.rosterOpen });
+  showRoster();
+}
 window.addEventListener('resize', () => {
-  if (roster.isOpen) roster.open(st.sessions, rosterAnchor(lastFrame!.hud));
+  if (st.rosterOpen) showRoster();
 });
 
 // ---- input ---------------------------------------------------------------------
@@ -453,7 +462,7 @@ $('t-edit').addEventListener('click', () => {
   // layout editor takes the panel's place
   const o = officeOf(st.officeId);
   if (editor.isOpen || !o) return;
-  if (roster.isOpen) toggleRoster();
+  if (st.rosterOpen) toggleRoster();
   deselect();
   editor.open(o);
 });

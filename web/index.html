@@ -109,13 +109,7 @@
     </div>
   </form>
 </dialog>
-<aside id="roster" hidden>
-  <header>
-    <h2>직원 목록 <span id="rs-count" class="dim"></span></h2>
-    <button type="button" id="rs-close" title="닫기">×</button>
-  </header>
-  <ul id="rs-list"></ul>
-</aside>
+<div id="roster-root"></div>
 <aside id="editor" hidden>
   <header>
     <h2>배치 편집 <span id="ed-title" class="dim"></span></h2>
@@ -218,6 +212,13 @@
     </div>
   </form>
 </aside>
+<!-- Versions match package.json's devDependencies (test/boundaries.test.ts checks); non-preact packages keep preact external so there is one copy. -->
+<script type="importmap">
+{ "imports": {
+  "preact": "https://esm.sh/preact@11.0.2",
+  "preact/hooks": "https://esm.sh/preact@11.0.2/hooks?external=preact"
+} }
+</script>
 <script type="module" src="office.ts"></script>
 </body>
 </html>

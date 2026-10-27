@@ -8,6 +8,7 @@ const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.ts': 'text/javascript; charset=utf-8',
+  '.tsx': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
@@ -33,14 +34,28 @@ export function sendFile(
     .pipe(res);
 }
 
-const transpiler = new Bun.Transpiler({ loader: 'ts' });
+// .tsx gets the classic h() factory: Bun's automatic runtime leaves out the jsx-runtime import, so each .tsx imports h itself
+const transpilers = {
+  '.ts': new Bun.Transpiler({ loader: 'ts' }),
+  '.tsx': new Bun.Transpiler({
+    loader: 'tsx',
+    tsconfig: {
+      compilerOptions: {
+        jsx: 'react',
+        jsxFactory: 'h',
+        jsxFragmentFactory: 'Fragment',
+      },
+    },
+  }),
+};
 const transpiled = new Map<string, { mtimeMs: number; code: string }>();
 
-/** The browser imports the .ts modules directly: strip types per request (cached until the file changes), no build step. */
+/** The browser imports the .ts/.tsx modules directly: strip types (and JSX) per request, cached until the file changes. */
 function sendTranspiled(
   res: ServerResponse,
   file: string,
   mtimeMs: number,
+  transpiler: Bun.Transpiler,
 ): void {
   let hit = transpiled.get(file);
   if (!hit || hit.mtimeMs !== mtimeMs) {
@@ -87,12 +102,13 @@ export function serveStatic(urlPath: string, res: ServerResponse) {
     return false;
   }
   if (!st.isFile()) return false;
-  if (file.endsWith('.ts')) {
-    sendTranspiled(res, file, st.mtimeMs);
+  const ext = path.extname(file);
+  if (ext === '.ts' || ext === '.tsx') {
+    sendTranspiled(res, file, st.mtimeMs, transpilers[ext]);
     return true;
   }
   sendFile(res, file, st.size, {
-    'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
+    'Content-Type': MIME[ext] || 'application/octet-stream',
     'Cache-Control': 'no-cache',
   });
   return true;

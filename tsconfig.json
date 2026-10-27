@@ -15,7 +15,11 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
-    "erasableSyntaxOnly": true
+    "erasableSyntaxOnly": true,
+    // web/*.tsx: the classic factory, matching server/http/static.ts's transpiler
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment"
   },
   "include": ["server", "hooks", "scripts", "test", "web"]
 }
