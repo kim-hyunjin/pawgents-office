@@ -1,6 +1,7 @@
 // Small DOM and formatting helpers shared by the office, its panels and dialogs, and the words, colors and icons
 // every view uses for a session (state, permission mode, tools, background work).
 
+import { useEffect, useState } from 'preact/hooks';
 import type {
   Backend,
   CurrentTool,
@@ -75,6 +76,25 @@ export function armConfirm<K>(ms: number, onChange: (key: K) => void) {
       clearTimeout(timer);
       armed = null;
     },
+  };
+}
+
+/** armConfirm for a component: the key waiting for its confirming click, and the click (true: it confirms). */
+export function useArm<K>(ms: number) {
+  const [armed, setArmed] = useState<K | null>(null);
+  useEffect(() => {
+    if (armed === null) return;
+    const t = setTimeout(() => setArmed(null), ms);
+    return () => clearTimeout(t);
+  }, [armed, ms]);
+  return {
+    is: (key: K) => armed === key,
+    click(key: K) {
+      if (armed === key) return true;
+      setArmed(() => key);
+      return false;
+    },
+    disarm: () => setArmed(null),
   };
 }
 

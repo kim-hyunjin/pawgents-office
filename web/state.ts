@@ -1,9 +1,8 @@
 // What the page knows: the server's sessions and offices, which office is on screen, and what the pointer is on.
 // Changed only through the actions below, so whoever shows sessions (ticker, cats, panel, roster, tabs) can subscribe
 // to `app` instead of being called by hand; components do it with useApp(). The cats themselves are world.ts's.
-import { useLayoutEffect, useReducer } from 'preact/hooks';
 import type { Office, SessionSnapshot } from '../shared/api.ts';
-import { createStore } from './store.ts';
+import { createStore, useStore } from './store.ts';
 
 export interface AppState {
   sessions: Map<string, SessionSnapshot>; // id -> the server's session
@@ -54,12 +53,7 @@ export const app = createStore<AppState, Change>({
 });
 
 /** The page's state, for a component that is drawn again on every change to it. */
-export function useApp() {
-  const [, redraw] = useReducer((n: number) => n + 1, 0);
-  // subscribed while mounting, so no change made right after the first draw is missed
-  useLayoutEffect(() => app.subscribe(() => redraw(0)), []);
-  return app.get();
-}
+export const useApp = () => useStore(app);
 
 /** The session works in the office on screen. */
 export const here = (s: SessionSnapshot) => s.officeId === app.get().officeId;

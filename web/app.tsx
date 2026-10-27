@@ -1,8 +1,17 @@
 // The page around the office canvas, drawn from the state (state.ts) and redrawn whenever it changes: the office tabs
-// and tool buttons above the office, the roster under the HUD and the tooltip over the cat under the pointer. The
-// canvas itself is office.ts's: this only puts it in place.
+// and tool buttons above the office, the roster under the HUD, the tooltip over the cat under the pointer, and the
+// dialogs the toolbar and the roster open. The canvas itself is office.ts's: this only puts it in place.
 import { Fragment, h } from 'preact';
-import { useEffect, useLayoutEffect, useReducer, useRef } from 'preact/hooks';
+import {
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+} from 'preact/hooks';
+import { Launcher } from './launcher.tsx';
+import { Legend } from './legend.tsx';
+import { QuitConfirm } from './quit-confirm.tsx';
 import { Roster } from './roster.tsx';
 import { here, useApp } from './state.ts';
 import { Tabs } from './tabs.tsx';
@@ -23,9 +32,7 @@ export interface AppProps {
   /** Gather everyone in this office (null: split up by repo); settles once the server has it. */
   onTogether: (officeId: string | null) => Promise<void>;
   onRosterClose: () => void;
-  onNew: () => void;
   onEdit: () => void;
-  onLegend: () => void;
   onZoom: (scale: number | null) => void;
   /** The bar above the office changed height (the tabs came or went): the office has another room. */
   onBarResize: () => void;
@@ -48,6 +55,10 @@ export function App(p: AppProps) {
     return () => clearInterval(t);
   }, [st.rosterOpen]);
 
+  const [dialog, setDialog] = useState<'launcher' | 'legend' | null>(null);
+  const [hires, setHires] = useState(0); // each 새 직원 opens a fresh form
+  const close = () => setDialog(null);
+
   const officeName = (id: string | null) =>
     st.offices.find((o) => o.id === id)?.name || '';
   const hovered = st.hoverKey ? p.entOf(st.hoverKey) : undefined;
@@ -68,9 +79,13 @@ export function App(p: AppProps) {
         <Toolbar
           off={st.editing} // the editor has its own buttons
           zoom={st.zoom}
-          onNew={p.onNew}
+          onNew={() => {
+            if (dialog === 'launcher') return;
+            setHires((n) => n + 1);
+            setDialog('launcher');
+          }}
           onEdit={p.onEdit}
-          onLegend={p.onLegend}
+          onLegend={() => setDialog('legend')}
           onZoom={p.onZoom}
         />
       </div>
@@ -93,6 +108,14 @@ export function App(p: AppProps) {
           <CatTip e={hovered} s={hoveredSession} where={p.placeOf(hovered)} />
         </Tip>
       )}
+      <Launcher key={hires} open={dialog === 'launcher'} onClose={close} />
+      <Legend
+        open={dialog === 'legend'}
+        onClose={close}
+        sessions={st.sessions}
+        looks={st.looks}
+      />
+      <QuitConfirm />
     </>
   );
 }

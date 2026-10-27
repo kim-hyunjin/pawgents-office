@@ -1,13 +1,15 @@
 // The 퇴근 confirmation: a dialog with a "don't ask again" box, remembered per browser. A forced close (the session
 // isn't idle, so its terminal tab or process is killed) is remembered apart from a clean /exit: skipping the harmless
-// question must not silence the one that cuts work off.
-import { h, render as mount } from 'preact';
+// question must not silence the one that cuts work off. confirmQuit() asks; <QuitConfirm> (in app.tsx) shows the
+// question while one is open.
+import { h } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import type { SessionSnapshot } from '../shared/api.ts';
 import { isBusyState } from '../shared/model.ts';
 import { Modal } from './modal.tsx';
+import { createStore, useStore } from './store.ts';
 import { css } from './style.ts';
-import { $, quitTitle, storage } from './ui.ts';
+import { quitTitle, storage } from './ui.ts';
 
 css(/* css */ `
 #quit-confirm {
@@ -35,32 +37,32 @@ interface Ask {
   /** Called once with the answer (and whether to skip the question from now on). */
   answer: (yes: boolean, skip: boolean) => void;
 }
-let ask: Ask | null = null;
-
-function draw() {
-  mount(<QuitConfirm ask={ask} />, $('quit-root'));
-}
+/** The question open now, if any. */
+const asking = createStore<{ ask: Ask | null }, void>({ ask: null });
+const setAsk = (ask: Ask | null) =>
+  asking.update((st) => {
+    st.ask = ask;
+  });
 
 /** Ask before sending session `s` home; true: go ahead. `force`: it isn't idle, so it will be killed, not /exit-ed. */
 export function confirmQuit(s: SessionSnapshot, force: boolean) {
   const key = force ? NO_ASK_FORCE : NO_ASK;
   if (storage.get(key) === '1') return Promise.resolve(true);
   return new Promise<boolean>((resolve) => {
-    ask = {
+    setAsk({
       s,
       force,
       answer(yes, skip) {
         if (yes && skip) storage.set(key, '1');
-        ask = null;
-        draw();
+        setAsk(null);
         resolve(yes);
       },
-    };
-    draw();
+    });
   });
 }
 
-function QuitConfirm({ ask }: { ask: Ask | null }) {
+export function QuitConfirm() {
+  const { ask } = useStore(asking);
   const ok = useRef<HTMLButtonElement>(null),
     cancel = useRef<HTMLButtonElement>(null),
     skip = useRef<HTMLInputElement>(null);

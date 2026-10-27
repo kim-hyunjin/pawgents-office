@@ -1,9 +1,10 @@
-// "모델 안내" dialog: which cat stands for which model, opened from the #t-legend toolbar button. Each model row has a
+// "모델 안내" dialog: which cat stands for which model, opened from the toolbar's 모델 안내 button (app.tsx). Each model row has a
 // breed picker; the choice is saved on the server and pushed to every open office (office.ts applies it). Also shows
 // the kittens (subagents) and the receptionist, and manages uploaded skins: PNG sprite sheets that can stand in for a breed (format in sprites.ts SKIN_ROWS / README).
 
 import type { ComponentChildren } from 'preact';
-import { h, render as mount } from 'preact';
+import { h } from 'preact';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { SessionSnapshot } from '../shared/api.ts';
 import {
   isCell,
@@ -36,7 +37,7 @@ import {
   sprite,
 } from './sprites.ts';
 import { css } from './style.ts';
-import { $, armConfirm, downloadBlob } from './ui.ts';
+import { downloadBlob, useArm } from './ui.ts';
 
 css(/* css */ `
 #legend {
@@ -95,49 +96,91 @@ const MONITOR: Record<string, string> = {
 };
 const ZOOM = 2;
 
-let root: HTMLElement;
-let isOpen = false;
-let sessions: Sessions = new Map();
-const picking = new Map<string, string>(); // family -> breed picked, until the server's settings push confirms it
-const busy = new Set<string>(); // 'fam:…' / 'skin:…' with a request in flight
-const errs = new Map<string, string>(); // same keys -> what went wrong, shown under that row
-const delArm = armConfirm<string>(3000, () => draw()); // skin id whose 삭제 button waits for the confirming click
-
-/** Mount the dialog; once, before openLegend(). */
-export function initLegend() {
-  root = $('legend-root');
-  draw();
+/** What the rows share while the dialog is mounted: picks the server hasn't confirmed, requests in flight, errors. */
+interface Ctx {
+  sessions: Sessions;
+  picking: ReadonlyMap<string, string>; // family -> breed picked, until the server's settings push confirms it
+  busy: ReadonlySet<string>; // 'fam:…' / 'skin:…' with a request in flight
+  errs: ReadonlyMap<string, string>; // same keys -> what went wrong, shown under that row
+  delArm: ReturnType<typeof useArm<string>>; // skin id whose 삭제 button waits for the confirming click
+  /** Run row `key`'s request: its controls off meanwhile, its error under the row if it fails (then `undo`). */
+  run: (key: string, req: () => Promise<unknown>, undo?: () => void) => void;
+  /** A breed picked for a family, or null: back to what the server has. */
+  pick: (fam: string, breed: string | null) => void;
 }
 
-/** Draw again while open (the server confirmed a breed or skin change, so coats and labels follow). */
-export function refreshLegend() {
-  picking.clear();
-  if (isOpen) draw();
+function without<K>(s: ReadonlySet<K>, k: K) {
+  const n = new Set(s);
+  n.delete(k);
+  return n;
+}
+function unset<K, V>(m: ReadonlyMap<K, V>, k: K) {
+  const n = new Map(m);
+  n.delete(k);
+  return n;
 }
 
-export function openLegend(s: Sessions) {
-  sessions = s;
-  errs.clear();
-  isOpen = true;
-  draw();
-}
-
-function draw() {
-  const close = () => {
-    isOpen = false;
-    draw();
+/** `looks`: goes up when the server confirms a breed or skin change (state.ts), so coats and labels follow. */
+export function Legend({
+  open,
+  onClose,
+  sessions,
+  looks,
+}: {
+  open: boolean;
+  onClose: () => void;
+  sessions: Sessions;
+  looks: number;
+}) {
+  const [picking, setPicking] = useState<ReadonlyMap<string, string>>(
+    new Map(),
+  );
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const [errs, setErrs] = useState<ReadonlyMap<string, string>>(new Map());
+  const delArm = useArm<string>(3000);
+  // a new `looks` is the server confirming the picks: show what it has
+  useEffect(() => setPicking(new Map()), [looks]);
+  useEffect(() => {
+    if (open) setErrs(new Map());
+  }, [open]);
+  const ctx: Ctx = {
+    sessions,
+    picking,
+    busy,
+    errs,
+    delArm,
+    async run(key, req, undo) {
+      setBusy((b) => new Set(b).add(key));
+      setErrs((e) => unset(e, key));
+      try {
+        await req();
+      } catch (err) {
+        undo?.();
+        setErrs((e) => new Map(e).set(key, (err as Error).message));
+      } finally {
+        setBusy((b) => without(b, key));
+      }
+    },
+    pick: (fam, breed) =>
+      setPicking((m) =>
+        breed === null ? unset(m, fam) : new Map(m).set(fam, breed),
+      ),
   };
-  mount(
-    <Modal id="legend" open={isOpen} onClose={close}>
+  return (
+    <Modal id="legend" open={open} onClose={onClose}>
       <header>
         <h2>모델 안내</h2>
-        <button type="button" class="close" title="닫기 (Esc)" onClick={close}>
+        <button
+          type="button"
+          class="close"
+          title="닫기 (Esc)"
+          onClick={onClose}
+        >
           ×
         </button>
       </header>
-      {isOpen && <Body />}
-    </Modal>,
-    root,
+      {open && <Body ctx={ctx} />}
+    </Modal>
   );
 }
 
@@ -191,9 +234,9 @@ function Row({
   );
 }
 
-function Body() {
+function Body({ ctx }: { ctx: Ctx }) {
   const count: Record<string, number> = {};
-  for (const s of sessions.values())
+  for (const s of ctx.sessions.values())
     if (!s.ended) {
       const f = familyOf(s.model);
       count[f] = (count[f] || 0) + 1;
@@ -208,12 +251,12 @@ function Body() {
               key={fam}
               cats={looks(breedOf(fam))}
               title={[f.label, f.title].filter(Boolean).join(' · ')}
-              extra={<BreedPicker fam={fam} />}
+              extra={<BreedPicker fam={fam} ctx={ctx} />}
               lines={[
                 MONITOR[f.monitor] || f.monitor,
                 n ? `지금 ${n}명 근무 중` : '지금 근무 중인 직원 없음',
               ]}
-              err={errs.get(`fam:${fam}`)}
+              err={ctx.errs.get(`fam:${fam}`)}
             />
           );
         })}
@@ -232,36 +275,29 @@ function Body() {
           lines={['로비 카운터에 상주하는 안내 로봇. 세션과는 무관해요.']}
         />
       </ul>
-      <Skins />
+      <Skins ctx={ctx} />
     </div>
   );
 }
 
 /** Breed <select> for a model family (uploaded skins in their own group); picking one asks the server to save it. */
-function BreedPicker({ fam }: { fam: string }) {
+function BreedPicker({ fam, ctx }: { fam: string; ctx: Ctx }) {
   const def = (FAMILIES[fam] ?? FAMILIES.other).breed;
   const key = `fam:${fam}`;
   const skins = skinList();
   return (
     <select
       class="breed"
-      value={picking.get(fam) ?? choiceOf(fam)}
-      disabled={busy.has(key)}
-      onChange={async (e) => {
+      value={ctx.picking.get(fam) ?? choiceOf(fam)}
+      disabled={ctx.busy.has(key)}
+      onChange={(e) => {
         const v = e.currentTarget.value;
-        picking.set(fam, v);
-        busy.add(key);
-        errs.delete(key);
-        draw();
-        try {
-          await setCatChoice(fam, v === def ? null : v);
-        } catch (err) {
-          picking.delete(fam); // back to what the server has
-          errs.set(key, (err as Error).message);
-        } finally {
-          busy.delete(key);
-          draw();
-        }
+        ctx.pick(fam, v);
+        ctx.run(
+          key,
+          () => setCatChoice(fam, v === def ? null : v),
+          () => ctx.pick(fam, null), // back to what the server has
+        );
       }}
     >
       {Object.entries(BREEDS).map(([k, b]) => (
@@ -293,10 +329,9 @@ interface Draft {
   uploadErr: string | null;
   uploading: boolean;
 }
-let draft: Draft | null = null; // sheet picked for upload
-
-function Skins() {
+function Skins({ ctx }: { ctx: Ctx }) {
   const skins = skinList();
+  const [draft, setDraft] = useState<Draft | null>(null); // sheet picked for upload
   return (
     <section class="skins">
       <h3>스킨</h3>
@@ -319,16 +354,16 @@ function Skins() {
             onChange={(e) => {
               const f = e.currentTarget.files?.[0];
               e.currentTarget.value = ''; // the same file again is a new pick
-              if (f) pickFile(f);
+              if (f) readSheet(f).then(setDraft);
             }}
           />
         </label>
       </div>
-      {draft && <DraftForm d={draft} />}
+      {draft && <DraftForm d={draft} setDraft={setDraft} />}
       {skins.length > 0 && (
         <ul>
           {skins.map((s) => (
-            <SkinRow key={s.id} s={s} />
+            <SkinRow key={s.id} s={s} ctx={ctx} />
           ))}
         </ul>
       )}
@@ -336,12 +371,18 @@ function Skins() {
   );
 }
 
-function SkinRow({ s }: { s: ReturnType<typeof skinList>[number] }) {
+function SkinRow({
+  s,
+  ctx,
+}: {
+  s: ReturnType<typeof skinList>[number];
+  ctx: Ctx;
+}) {
   const key = `skin:${s.id}`;
   const users = Object.keys(FAMILIES)
     .filter((fam) => choiceOf(fam) === key)
     .map((fam) => FAMILIES[fam]?.label);
-  const armed = delArm.is(s.id);
+  const armed = ctx.delArm.is(s.id);
   return (
     <Row
       cats={s.rows ? looks(key) : []}
@@ -354,31 +395,21 @@ function SkinRow({ s }: { s: ReturnType<typeof skinList>[number] }) {
             : `${Object.keys(s.rows).length}가지 동작 · 칸 ${s.cellW}×${s.cellH}`,
         users.length ? `${users.join('·')}에서 사용 중` : '사용하는 모델 없음',
       ]}
-      err={errs.get(key)}
+      err={ctx.errs.get(key)}
       tail={
         <button
           type="button"
           class={armed ? 'del armed' : 'del'}
-          disabled={busy.has(key)}
+          disabled={ctx.busy.has(key)}
           title={
             users.length
               ? '삭제하면 이 스킨을 쓰던 모델은 기본 품종으로 돌아가요.'
               : ''
           }
-          onClick={async () => {
-            if (!delArm.click(s.id)) return; // first click arms, second confirms
-            delArm.disarm();
-            busy.add(key);
-            errs.delete(key);
-            draw();
-            try {
-              await deleteSkin(s.id); // the row goes with the server's 'settings' push
-            } catch (e) {
-              errs.set(key, (e as Error).message);
-            } finally {
-              busy.delete(key);
-              draw();
-            }
+          onClick={() => {
+            if (!ctx.delArm.click(s.id)) return; // first click arms, second confirms
+            ctx.delArm.disarm();
+            ctx.run(key, () => deleteSkin(s.id)); // the row goes with the server's 'settings' push
           }}
         >
           {armed ? '정말 삭제' : '삭제'}
@@ -399,7 +430,8 @@ function guessCell(w: number, h: number) {
   );
 }
 
-async function pickFile(file: File) {
+/** A picked PNG as an upload draft (or the reason it can't be one). */
+async function readSheet(file: File): Promise<Draft> {
   const name =
     file.name.replace(/\.png$/i, '').slice(0, MAX_NAME_CHARS) || '스킨';
   const empty = { uploadErr: null, uploading: false };
@@ -414,9 +446,9 @@ async function pickFile(file: File) {
       fr.readAsDataURL(file);
     });
     const c = guessCell(bmp.width, bmp.height);
-    draft = { name, dataUrl, bmp, cellW: c, cellH: c, error: null, ...empty };
+    return { name, dataUrl, bmp, cellW: c, cellH: c, error: null, ...empty };
   } catch (e) {
-    draft = {
+    return {
       name,
       cellW: 0,
       cellH: 0,
@@ -424,28 +456,29 @@ async function pickFile(file: File) {
       ...empty,
     };
   }
-  draw();
 }
 
-// the last cut, so redraws that didn't touch the grid don't scan the sheet again
-let sliced: {
-  bmp: ImageBitmap;
-  w: number;
-  h: number;
-  rows: ReturnType<typeof sliceSheet>;
-} | null = null;
-function slice(bmp: ImageBitmap, w: number, h: number) {
-  if (sliced?.bmp !== bmp || sliced.w !== w || sliced.h !== h)
-    sliced = { bmp, w, h, rows: sliceSheet(bmp, w, h) };
-  return sliced.rows;
-}
-
-function DraftForm({ d }: { d: Draft }) {
-  const close = () => {
-    draft = null;
-    draw();
-  };
-  if (!d.bmp)
+function DraftForm({
+  d,
+  setDraft,
+}: {
+  d: Draft;
+  setDraft: (d: Draft | null) => void;
+}) {
+  const close = () => setDraft(null);
+  const bmp = d.bmp;
+  // same grid checks as the server, so most mistakes show before uploading
+  const gridErr = !bmp
+    ? null
+    : isCell(d.cellW) && isCell(d.cellH)
+      ? skinGridError(bmp.width, bmp.height, d.cellW, d.cellH)
+      : `칸 크기는 ${MIN_CELL}–${MAX_CELL}px이어야 해요.`;
+  // cut the sheet again only when the grid changed, not on every keystroke in the name
+  const rows = useMemo(
+    () => (bmp && !gridErr ? sliceSheet(bmp, d.cellW, d.cellH) : {}),
+    [bmp, d.cellW, d.cellH, gridErr],
+  );
+  if (!bmp)
     return (
       <div class="draft">
         <div class="err">{d.error}</div>
@@ -456,19 +489,10 @@ function DraftForm({ d }: { d: Draft }) {
         </div>
       </div>
     );
-  const bmp = d.bmp;
-  // same grid checks as the server, so most mistakes show before uploading
-  let err =
-    isCell(d.cellW) && isCell(d.cellH)
-      ? skinGridError(bmp.width, bmp.height, d.cellW, d.cellH)
-      : `칸 크기는 ${MIN_CELL}–${MAX_CELL}px이어야 해요.`;
-  const rows = err ? {} : slice(bmp, d.cellW, d.cellH);
+  let err = gridErr;
   if (!err && (!rows.idle || !rows.walk))
     err = '첫 줄(앉아 있기)과 둘째 줄(걷기)에 그림이 있어야 해요.';
-  const edit = (patch: Partial<Draft>) => {
-    Object.assign(d, patch);
-    draw();
-  };
+  const edit = (patch: Partial<Draft>) => setDraft({ ...d, ...patch });
   async function upload() {
     edit({ uploading: true, uploadErr: null });
     try {

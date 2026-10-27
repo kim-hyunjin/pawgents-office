@@ -1,13 +1,13 @@
 // "새 직원" dialog: start claude sessions through the server's POST /launch, either in an Orca terminal (Orca CLI)
-// or headless (`claude -p` behind a per-session runner). Opened from the #t-new toolbar button.
-import { Fragment, h, render as mount } from 'preact';
+// or headless (`claude -p` behind a per-session runner). Opened from the toolbar's 새 직원 button (app.tsx).
+import { Fragment, h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Backend, WorktreeInfo as Worktree } from '../shared/api.ts';
 import { MAX_HIRES, WORKTREE_NAME_RE } from '../shared/limits.ts';
 import { getBackends, getWorktrees, launch } from './api.ts';
 import { Modal } from './modal.tsx';
 import { css } from './style.ts';
-import { $, storage } from './ui.ts';
+import { storage } from './ui.ts';
 
 css(/* css */ `
 #launcher {
@@ -49,43 +49,20 @@ const HINT: Record<Backend, string> = {
   headless: '사무실 서버가 claude -p 를 직접 띄웁니다. Orca가 없어도 돼요.',
 };
 
-let root: HTMLElement;
-let isOpen = false;
-let opens = 0; // each open mounts a fresh form: every field starts from its default
-
-/** Mount the dialog; once, before openLauncher(). */
-export function initLauncher() {
-  root = $('launcher-root');
-  draw();
-}
-function draw() {
-  mount(
-    <Launcher
-      key={opens}
-      open={isOpen}
-      onClose={() => {
-        isOpen = false;
-        draw();
-      }}
-    />,
-    root,
-  );
-}
-
-export function openLauncher() {
-  if (isOpen) return;
-  isOpen = true;
-  opens++;
-  draw();
-}
-
 type Msg = { text: string; kind: '' | 'ok' | 'err' };
 /** A backend's list: loading, loaded, or failed (the select stays disabled). */
 type List = Worktree[] | 'loading' | 'error';
 const label = (w: Worktree, extra: string) =>
   `${w.repo}${w.branch ? ` · ${w.branch}` : ''}${extra}`;
 
-function Launcher({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** Mount it anew (a new `key`) for each open: every field starts from its default. */
+export function Launcher({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   const [msg, setMsgState] = useState<Msg>({ text: '', kind: '' });
   const setMsg = (text: string, kind: Msg['kind'] = '') =>
     setMsgState({ text, kind });

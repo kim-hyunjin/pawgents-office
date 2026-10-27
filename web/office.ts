@@ -7,8 +7,6 @@ import { initDiff } from './diff.tsx';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
 import { followSessions as feedFollows, renderFeed } from './feed.tsx';
-import { initLauncher, openLauncher } from './launcher.tsx';
-import { initLegend, openLegend, refreshLegend } from './legend.tsx';
 import { connectEvents } from './net/events.ts';
 import { Panel } from './panel.tsx';
 import { type Frame, HUD_BTN, render } from './render.ts';
@@ -72,8 +70,6 @@ mount(
     // the server moves the staff and pushes the result
     onTogether: (id) => setTogether(id).then(() => {}),
     onRosterClose: toggleRoster,
-    onNew: () => openLauncher(),
-    onLegend: () => openLegend(st.sessions),
     onEdit: () => {
       // layout editor takes the panel's place
       const o = officeOf(st.officeId);
@@ -90,8 +86,6 @@ mount(
 const canvas = $<HTMLCanvasElement>('office');
 const ctx = canvas.getContext('2d')!;
 // dialogs first: the reply dialog notes where the panel's composer lives before anything can move it
-initLauncher();
-initLegend();
 initDiff();
 initReply({ composer: (host) => panel.setComposerHost(host) });
 const panel = new Panel($('panel-root'), {
@@ -203,7 +197,6 @@ onSkinLoad(() => repaintCats());
 function repaintCats() {
   repaintEnts();
   putLooks();
-  refreshLegend();
 }
 function applySnapshot(snap: Snapshot) {
   applyCatChoices(snap);
