@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { SessionSnapshot } from '../shared/api.ts';
 import { isBusyState } from '../shared/model.ts';
 import { closeSession } from './api.ts';
-import { confirmQuit } from './quit-confirm.ts';
+import { confirmQuit } from './quit-confirm.tsx';
 import type { Palette } from './sprites.ts';
 import { FAMILIES, familyOf, sprite } from './sprites.ts';
 import { css } from './style.ts';

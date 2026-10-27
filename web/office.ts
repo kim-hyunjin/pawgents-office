@@ -7,7 +7,7 @@ import type {
 } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
 import { getState, setTogether as setTogetherOn } from './api.ts';
-import { initDiff } from './diff.ts';
+import { initDiff } from './diff.tsx';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
 import { followSessions as feedFollows, renderFeed } from './feed.ts';
@@ -16,7 +16,7 @@ import { initLegend, openLegend, refreshLegend } from './legend.ts';
 import { connectEvents } from './net/events.ts';
 import { Panel } from './panel.tsx';
 import { type Frame, HUD_BTN, render } from './render.ts';
-import { initReply } from './reply.ts';
+import { initReply } from './reply.tsx';
 import { Roster } from './roster.tsx';
 import {
   FAMILIES,

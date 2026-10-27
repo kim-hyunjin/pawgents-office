@@ -68,30 +68,8 @@
     </div>
   </form>
 </dialog>
-<dialog id="reply">
-  <header>
-    <div>
-      <h2 id="r-name"></h2>
-      <p id="r-meta" class="dim"></p>
-    </div>
-    <button type="button" id="r-copy" title="마크다운 원문 복사">복사</button>
-    <button type="button" id="r-close" title="닫기 (Esc)">×</button>
-  </header>
-  <article id="r-body" class="md"></article>
-  <div id="r-compose"></div>
-</dialog>
-<dialog id="diff">
-  <header>
-    <div>
-      <h2 id="d-name"></h2>
-      <p id="d-meta" class="dim"></p>
-    </div>
-    <button type="button" id="d-copy" title="패치 복사">복사</button>
-    <button type="button" id="d-close" title="닫기 (Esc)">×</button>
-  </header>
-  <p id="d-warn" class="warn" hidden></p>
-  <pre id="d-body" class="diff"></pre>
-</dialog>
+<div id="reply-root"></div>
+<div id="diff-root"></div>
 <dialog id="legend">
   <header>
     <h2>모델 안내</h2>
@@ -99,17 +77,7 @@
   </header>
   <div id="lg-body"></div>
 </dialog>
-<dialog id="quit-confirm">
-  <form method="dialog">
-    <h2 id="qc-title"></h2>
-    <p id="qc-body" class="dim"></p>
-    <label class="check"><input type="checkbox" id="qc-skip"> 다음부터 묻지 않기</label>
-    <div class="row">
-      <button type="submit" id="qc-cancel" value="">취소</button>
-      <button type="submit" id="qc-ok" value="ok" class="primary">퇴근</button>
-    </div>
-  </form>
-</dialog>
+<div id="quit-root"></div>
 <div id="roster-root"></div>
 <aside id="editor" hidden>
   <header>

@@ -12,9 +12,9 @@ import {
   sendPrompt,
   setMode,
 } from './api.ts';
-import { openDiff, refreshDiff } from './diff.ts';
-import { confirmQuit } from './quit-confirm.ts';
-import { openReply, refreshReply } from './reply.ts';
+import { openDiff, refreshDiff } from './diff.tsx';
+import { confirmQuit } from './quit-confirm.tsx';
+import { openReply, refreshReply } from './reply.tsx';
 import { FAMILIES, familyOf } from './sprites.ts';
 import { css } from './style.ts';
 import {
