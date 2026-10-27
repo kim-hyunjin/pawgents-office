@@ -1,6 +1,7 @@
 // What the page knows: the server's sessions and offices, which office is on screen, and what the pointer is on.
 // Changed only through the actions below, so whoever shows sessions (ticker, cats, panel, roster, tabs) can subscribe
-// to `app` instead of being called by hand. The cats themselves are world.ts's.
+// to `app` instead of being called by hand; components do it with useApp(). The cats themselves are world.ts's.
+import { useLayoutEffect, useReducer } from 'preact/hooks';
 import type { Office, SessionSnapshot } from '../shared/api.ts';
 import { createStore } from './store.ts';
 
@@ -13,6 +14,10 @@ export interface AppState {
   hoverKey: string | null; // cat (or HUD_BTN) under the pointer
   selectedKey: string | null; // cat whose session the panel shows
   rosterOpen: boolean;
+  pointer: { x: number; y: number }; // where the pointer is over the office (viewport px), for the tooltip
+  editing: boolean; // the layout editor is open
+  zoom: { scale: number; pinned: boolean; max: number }; // the scale the office is drawn at (viewport.ts's zoomInfo)
+  looks: number; // goes up whenever cats may look different (breed or skin choices, a skin loaded)
 }
 
 export type Change =
@@ -30,6 +35,7 @@ export type Change =
   | { type: 'seed' }
   | { type: 'offices' }
   | { type: 'office' }
+  | { type: 'looks' }
   | { type: 'ui' };
 
 export const app = createStore<AppState, Change>({
@@ -41,7 +47,19 @@ export const app = createStore<AppState, Change>({
   hoverKey: null,
   selectedKey: null,
   rosterOpen: false,
+  pointer: { x: 0, y: 0 },
+  editing: false,
+  zoom: { scale: 1, pinned: false, max: 1 },
+  looks: 0,
 });
+
+/** The page's state, for a component that is drawn again on every change to it. */
+export function useApp() {
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  // subscribed while mounting, so no change made right after the first draw is missed
+  useLayoutEffect(() => app.subscribe(() => redraw(0)), []);
+  return app.get();
+}
 
 /** The session works in the office on screen. */
 export const here = (s: SessionSnapshot) => s.officeId === app.get().officeId;
@@ -84,9 +102,22 @@ export const putOfficeId = (officeId: string) =>
     return { type: 'office' };
   });
 
+/** Cats may look different now: their breed or skin choices changed, or a skin finished loading. */
+export const putLooks = () =>
+  app.update((st) => {
+    st.looks++;
+    return { type: 'looks' };
+  });
+
 type Ui = Pick<
   AppState,
-  'connected' | 'hoverKey' | 'selectedKey' | 'rosterOpen'
+  | 'connected'
+  | 'hoverKey'
+  | 'selectedKey'
+  | 'rosterOpen'
+  | 'pointer'
+  | 'editing'
+  | 'zoom'
 >;
 export const setUi = (patch: Partial<Ui>) =>
   app.update((st) => {

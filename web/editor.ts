@@ -12,6 +12,7 @@ import { closeOffice, renameOffice, saveLayout } from './api.ts';
 import { EditorCanvas } from './editor/canvas.ts';
 import { EditorModel } from './editor/model.ts';
 import { EditorPanel } from './editor/panel.tsx';
+import { setUi } from './state.ts';
 import { armConfirm } from './ui.ts';
 import type { World } from './world.ts';
 import { showDraft, startEditing, stopEditing } from './world.ts';
@@ -76,6 +77,7 @@ export class Editor {
     this.deleteArm.disarm();
     this.panel.showDelete();
     this.shown = false;
+    setUi({ editing: true });
     startEditing();
     this.panel.open(office);
     this.panel.msg('');
@@ -85,6 +87,7 @@ export class Editor {
     if (!this.office) return;
     this.office = null;
     this.panel.sync();
+    setUi({ editing: false });
     stopEditing();
     this.input.canvas.style.cursor = 'default';
     this.onResize();

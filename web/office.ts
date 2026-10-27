@@ -1,7 +1,8 @@
-import { Fragment, h, render as mount } from 'preact';
+import { h, render as mount } from 'preact';
 import type { Office, SessionSnapshot, Snapshot } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
 import { getState, setTogether } from './api.ts';
+import { App } from './app.tsx';
 import { initDiff } from './diff.tsx';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
@@ -12,12 +13,12 @@ import { connectEvents } from './net/events.ts';
 import { Panel } from './panel.tsx';
 import { type Frame, HUD_BTN, render } from './render.ts';
 import { initReply } from './reply.tsx';
-import { Roster } from './roster.tsx';
 import { onSkinLoad, setBreedChoices, setSkins } from './sprites.ts';
 import {
   app,
   dropSession,
   here,
+  putLooks,
   putOfficeId,
   putOffices,
   putSession,
@@ -25,9 +26,6 @@ import {
   seedSessions,
   setUi,
 } from './state.ts';
-import { Tabs } from './tabs.tsx';
-import { CatTip, Tip } from './tip.tsx';
-import { Toolbar } from './toolbar.tsx';
 import { $, storage } from './ui.ts';
 import {
   initViewport,
@@ -39,7 +37,6 @@ import {
   setZoom,
   zoomInfo,
 } from './viewport.ts';
-import type { Ent } from './world.ts';
 import {
   applyLayout,
   entAt,
@@ -56,10 +53,42 @@ import {
 const params = new URLSearchParams(location.search);
 const st = app.get(); // the page's state: read here, changed only through state.ts's actions
 
+// The page around the canvas (app.tsx) draws itself from the state; mounting it puts the canvas in place.
+mount(
+  h(App, {
+    entOf: (key) => world.ents.get(key),
+    placeOf,
+    rosterAnchor: () => (lastFrame ? rosterAnchor(lastFrame.hud) : null),
+    onPick: (id) => {
+      const s = st.sessions.get(id);
+      if (!s) return;
+      if (!here(s)) switchOffice(s.officeId);
+      select(s);
+    },
+    onPickOffice: (id) => {
+      editor.close();
+      switchOffice(id);
+    },
+    // the server moves the staff and pushes the result
+    onTogether: (id) => setTogether(id).then(() => {}),
+    onRosterClose: toggleRoster,
+    onNew: () => openLauncher(),
+    onLegend: () => openLegend(st.sessions),
+    onEdit: () => {
+      // layout editor takes the panel's place
+      const o = officeOf(st.officeId);
+      if (editor.isOpen || !o) return;
+      if (st.rosterOpen) toggleRoster();
+      deselect();
+      editor.open(o);
+    },
+    onZoom: (z) => setZoom(z),
+    onBarResize: () => resize(),
+  }),
+  $('stage'),
+);
 const canvas = $<HTMLCanvasElement>('office');
-const barEl = $('bar'); // office tabs + the tool buttons, above the office
 const ctx = canvas.getContext('2d')!;
-let tabsShown = false; // drawBar: whether the office tabs are up
 // dialogs first: the reply dialog notes where the panel's composer lives before anything can move it
 initLauncher();
 initLegend();
@@ -76,10 +105,10 @@ const panel = new Panel($('panel-root'), {
 
 initViewport({
   canvas,
-  barEl,
+  barEl: $('bar'), // office tabs + the tool buttons, above the office
   stageEl: $('stage'),
   sideOpen: () => panel.isOpen || editor.isOpen,
-  onResized: () => drawBar(), // the zoom shown, and the editor (opening and closing resize) hiding the tools
+  onResized: () => setUi({ zoom: zoomInfo() }),
 });
 const editor = new Editor({
   world,
@@ -90,12 +119,8 @@ const editor = new Editor({
 applyLayout(DEFAULT_OFFICE);
 resize();
 
-const refreshLists = () => {
-  showRoster();
-  drawBar();
-};
-// Everything that shows sessions follows the session list, in this order: the ticker, the cats, the panel, then the
-// roster and the office tabs.
+// Everything that shows sessions follows the session list, in this order: the ticker, the cats, then the panel. The
+// roster and the office tabs (app.tsx) follow the whole state on their own.
 app.subscribe(feedFollows);
 app.subscribe(worldFollows);
 app.subscribe((c) => {
@@ -103,8 +128,6 @@ app.subscribe((c) => {
   else if (c.type === 'remove') panel.remove(c.id);
 });
 app.subscribe((c) => {
-  if (c.type !== 'session' && c.type !== 'remove') return;
-  refreshLists();
   if (c.type === 'remove' && st.selectedKey === c.id)
     setUi({ selectedKey: null });
 });
@@ -141,7 +164,6 @@ function setOffices(list: Office[], together: string | null = null) {
     return;
   }
   if (relayout(cur.layout)) resize();
-  drawBar();
 }
 function preferredOffice() {
   let want = params.get('office');
@@ -168,7 +190,6 @@ function switchOffice(id?: string | null) {
   for (const s of st.sessions.values())
     if (here(s) && !s.ended) putSession(s, true);
   renderFeed(false);
-  refreshLists();
 }
 let firstSnapshot = true;
 /** Breed or skin choices changed (snapshot or a 'settings' push): redraw every cat with its family's look. */
@@ -181,7 +202,7 @@ function applyCatChoices({ cats, skins }: Pick<Snapshot, 'cats' | 'skins'>) {
 onSkinLoad(() => repaintCats());
 function repaintCats() {
   repaintEnts();
-  showRoster();
+  putLooks();
   refreshLegend();
 }
 function applySnapshot(snap: Snapshot) {
@@ -208,10 +229,7 @@ function applySnapshot(snap: Snapshot) {
   if (picked) select(st.sessions.get(picked.id)!, { hash: false });
 }
 // Re-evaluate stations once a second (lounge timing, meeting/library linger).
-setInterval(() => {
-  retarget(Date.now());
-  refreshLists(); // places change as cats walk around
-}, 1000);
+setInterval(() => retarget(Date.now()), 1000);
 
 // ---- SSE -----------------------------------------------------------------------
 connectEvents(
@@ -239,48 +257,11 @@ connectEvents(
 );
 
 // ---- roster (opened from the HUD) ----------------------------------------------------
-/** Draw the roster from the current state (Preact keeps what didn't change); closed, it renders nothing. */
-function showRoster() {
-  mount(
-    h(Roster, {
-      sessions: st.sessions,
-      anchor: st.rosterOpen && lastFrame ? rosterAnchor(lastFrame.hud) : null,
-      onClose: toggleRoster,
-      onPick: (id) => {
-        const s = st.sessions.get(id);
-        if (!s) return;
-        if (!here(s)) switchOffice(s.officeId);
-        select(s);
-      },
-      placeOf: (id) => {
-        const s = st.sessions.get(id);
-        if (s && !here(s)) return officeOf(s.officeId)?.name || ''; // works in another office
-        const e = world.ents.get(id);
-        return e && e.station?.kind !== 'desk' ? placeOf(e) : '';
-      },
-      palOf: (id) => world.ents.get(id)?.pal,
-    }),
-    $('roster-root'),
-  );
-}
 function toggleRoster() {
   setUi({ rosterOpen: !st.rosterOpen });
-  showRoster();
 }
-window.addEventListener('resize', () => {
-  if (st.rosterOpen) showRoster();
-});
 
 // ---- input ---------------------------------------------------------------------
-/** The tooltip over cat `e` by the pointer (`at`, viewport px); nothing for no cat or when its session is gone. */
-function showTip(e: Ent | null, at = { x: 0, y: 0 }) {
-  const s = e && st.sessions.get(e.sessionId);
-  mount(
-    e && s ? h(Tip, { at }, h(CatTip, { e, s, where: placeOf(e) })) : null,
-    $('tip-root'),
-  );
-}
-
 /** What the last frame drew where: the HUD button and the cats' sprite heights, for hit testing. */
 let lastFrame: Frame | null = null;
 /** The HUD on the top wall is the one canvas-drawn button. */
@@ -292,7 +273,6 @@ const catAt = ([x, y]: [number, number]) =>
 canvas.addEventListener('mousemove', (ev) => {
   if (editor.isOpen) {
     setUi({ hoverKey: null });
-    showTip(null);
     return;
   } // the editor handles the pointer
   const xy = officeXY(ev);
@@ -300,17 +280,17 @@ canvas.addEventListener('mousemove', (ev) => {
   if (btn) {
     setUi({ hoverKey: btn });
     canvas.style.cursor = 'pointer';
-    showTip(null);
     return;
   }
   const e = catAt(xy);
-  setUi({ hoverKey: e ? e.key : null });
+  setUi({
+    hoverKey: e ? e.key : null,
+    pointer: { x: ev.clientX, y: ev.clientY },
+  });
   canvas.style.cursor = e ? 'pointer' : 'default';
-  showTip(e, { x: ev.clientX, y: ev.clientY });
 });
 canvas.addEventListener('mouseleave', () => {
   setUi({ hoverKey: null });
-  showTip(null);
 });
 canvas.addEventListener('click', (ev) => {
   if (editor.isOpen) return;
@@ -329,51 +309,6 @@ canvas.addEventListener('click', (ev) => {
   if (s) select(s, { key: e.key });
   else setUi({ selectedKey: e.key });
 });
-
-// ---- above the office: the office tabs (hidden with one office) and the tool buttons --------------------------
-function drawBar() {
-  const tabs = st.offices.length > 1 || !!st.together;
-  mount(
-    h(
-      Fragment,
-      null,
-      tabs &&
-        h(Tabs, {
-          offices: st.offices,
-          sessions: st.sessions,
-          officeId: st.officeId,
-          together: st.together,
-          onPick: (id) => {
-            editor.close();
-            switchOffice(id);
-          },
-          // the server moves the staff and pushes the result
-          onTogether: (id) => setTogether(id).then(() => {}),
-        }),
-      h(Toolbar, {
-        off: editor.isOpen, // the editor has its own buttons
-        zoom: zoomInfo(),
-        onNew: () => openLauncher(),
-        onLegend: () => openLegend(st.sessions),
-        onEdit: () => {
-          // layout editor takes the panel's place
-          const o = officeOf(st.officeId);
-          if (editor.isOpen || !o) return;
-          if (st.rosterOpen) toggleRoster();
-          deselect();
-          editor.open(o);
-        },
-        onZoom: setZoom,
-      }),
-    ),
-    barEl,
-  );
-  // showing or hiding the tabs changes the room the office has
-  if (tabs !== tabsShown) {
-    tabsShown = tabs;
-    resize();
-  }
-}
 
 // ---- loop ----------------------------------------------------------------------
 let last = performance.now();
