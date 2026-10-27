@@ -9,6 +9,8 @@ import {
   useRef,
   useState,
 } from 'preact/hooks';
+import { EditorPanel } from './editor/panel.tsx';
+import type { Editor } from './editor.ts';
 import { Launcher } from './launcher.tsx';
 import { Legend } from './legend.tsx';
 import { Panel } from './panel.tsx';
@@ -21,6 +23,8 @@ import { Toolbar } from './toolbar.tsx';
 import type { Ent } from './world.ts';
 
 export interface AppProps {
+  /** The layout editor (made once the canvas this puts in place exists); its side panel shows while editing. */
+  editor: () => Editor;
   /** The cat with this key, while it is on screen. */
   entOf: (key: string) => Ent | undefined;
   /** Where cat `e` is right now ('' at its desk). */
@@ -128,6 +132,7 @@ export function App(p: AppProps) {
         looks={st.looks}
       />
       <Panel s={shown} onClose={p.onPanelClose} />
+      {st.editing && <EditorPanel ed={p.editor()} />}
       <QuitConfirm />
     </>
   );

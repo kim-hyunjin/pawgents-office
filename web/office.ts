@@ -51,6 +51,7 @@ const st = app.get(); // the page's state: read here, changed only through state
 // The page around the canvas (app.tsx) draws itself from the state; mounting it puts the canvas in place.
 mount(
   h(App, {
+    editor: () => editor,
     entOf: (key) => world.ents.get(key),
     placeOf,
     rosterAnchor: () => (lastFrame ? rosterAnchor(lastFrame.hud) : null),

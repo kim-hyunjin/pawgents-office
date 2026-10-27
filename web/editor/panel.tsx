@@ -1,11 +1,12 @@
 // The layout editor's side panel (#editor): the palette of rooms and furniture, the office's size and front door, the
 // selection's fields, problems, undo / reset / save, and sharing a layout (file, clipboard, another office).
-// EditorPanel keeps what only the panel knows (its message, the offices to copy from) and draws it all with Preact;
-// the Editor calls sync() whenever the draft, the selection or the tool changes.
+// <EditorPanel> (in app.tsx while editing) draws it from the Editor, redrawn whenever the Editor says it changed;
+// Edits holds what its controls do to the draft.
 
 import type { ComponentChildren, RefObject } from 'preact';
-import { h, render as mount } from 'preact';
-import { useRef } from 'preact/hooks';
+import { h } from 'preact';
+import { useEffect, useMemo, useRef } from 'preact/hooks';
+import type { Office } from '../../shared/api.ts';
 import { field, isRecord } from '../../shared/json.ts';
 import type { Item, Room } from '../../shared/layout.ts';
 import {
@@ -24,12 +25,13 @@ import {
   ROOM_TYPES,
 } from '../../shared/layout.ts';
 import { MAX_NAME_CHARS } from '../../shared/limits.ts';
-import type { Editor } from '../editor.ts';
+import type { Editor, Msg } from '../editor.ts';
 import { fixDoors, fixFrontDoor } from '../layout-edit.ts';
-import { app } from '../state.ts';
+import { useApp } from '../state.ts';
+import { useStore } from '../store.ts';
 import { css } from '../style.ts';
 import { FLOOR } from '../tilemap.ts';
-import { $, downloadBlob } from '../ui.ts';
+import { downloadBlob } from '../ui.ts';
 
 css(/* css */ `
 #editor {
@@ -78,49 +80,17 @@ css(/* css */ `
 
 const SHARE_TYPE = 'pawgents-office-layout'; // marks an exported layout file
 
-type Msg = { text: string; kind: '' | 'ok' | 'err' };
-
-export class EditorPanel {
+/** The edits the panel's controls make to the draft (the canvas makes the rest: editor/canvas.ts). */
+class Edits {
   ed: Editor;
-  el: HTMLElement;
-  message: Msg = { text: '', kind: '' };
-  others: { id: string; name: string }[] = []; // offices to copy a layout from
   constructor(ed: Editor) {
     this.ed = ed;
-    this.el = $('editor-root');
-    document.addEventListener('paste', (ev) => {
-      if (!ed.isOpen || (ev.target as Element).closest?.('input, textarea'))
-        return;
-      const text = ev.clipboardData?.getData('text');
-      if (text) {
-        ev.preventDefault();
-        this.importText(text, '붙여넣은');
-      }
-    });
   }
   get m() {
     return this.ed.model;
   }
-
-  /** Fill the panel for an office just opened: the offices to copy a layout from. */
-  open(office: { id: string; name: string }) {
-    this.others = app.get().offices.filter((o) => o.id !== office.id);
-  }
-
-  /** Draw the panel from the draft, the selection, the tool and the problems; nothing while the editor is closed. */
-  sync() {
-    mount(
-      this.m.draft && this.ed.office ? <EditorView panel={this} /> : null,
-      this.el,
-    );
-  }
-  /** The 사무실 닫기 button follows its two-click arm. */
-  showDelete() {
-    this.sync();
-  }
   msg(text: string, kind: Msg['kind'] = '') {
-    this.message = { text, kind };
-    this.sync();
+    this.ed.msg(text, kind);
   }
 
   // ---- edits ----------------------------------------------------------------------------
@@ -158,7 +128,7 @@ export class EditorPanel {
   resetDefault() {
     this.m.change((d) => Object.assign(d, cloneOffice(DEFAULT_OFFICE)));
     this.m.sel = null;
-    this.sync();
+    this.ed.changed();
   }
   /** Empty floor to start over: size and front door stay; one undo step brings it all back. */
   clearAll() {
@@ -167,7 +137,7 @@ export class EditorPanel {
       d.items = [];
     });
     this.m.sel = null;
-    this.sync();
+    this.ed.changed();
   }
   /** A room becomes another type: its walls and glass go back to that type's. */
   setRoomType(s: Room, type: string) {
@@ -273,13 +243,37 @@ export class EditorPanel {
 
 // ---- view -------------------------------------------------------------------------------
 
+/** The side panel of editor `ed`, which is open: drawn again whenever the editor says something changed. */
+export function EditorPanel({ ed }: { ed: Editor }) {
+  useStore(ed.changes);
+  const { offices } = useApp();
+  const edits = useMemo(() => new Edits(ed), [ed]);
+  // a layout copied from another office's editor (or anywhere) pastes in, unless a field takes the text
+  useEffect(() => {
+    const onPaste = (ev: ClipboardEvent) => {
+      if ((ev.target as Element).closest?.('input, textarea')) return;
+      const text = ev.clipboardData?.getData('text');
+      if (text) {
+        ev.preventDefault();
+        edits.importText(text, '붙여넣은');
+      }
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [edits]);
+  if (!ed.office || !ed.model.draft) return null;
+  // offices to copy a layout from
+  const others = offices.filter((o) => o.id !== ed.office?.id);
+  return <EditorView panel={edits} others={others} />;
+}
+
 /** A field's value, except while it has focus: what is being typed isn't overwritten by a redraw. */
 const unlessFocused = (ref: RefObject<HTMLElement | null>, v: unknown) =>
   ref.current && document.activeElement === ref.current
     ? undefined
     : String(v ?? '');
 
-function EditorView({ panel }: { panel: EditorPanel }) {
+function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
   const ed = panel.ed,
     m = panel.m,
     d = m.draft,
@@ -337,7 +331,7 @@ function EditorView({ panel }: { panel: EditorPanel }) {
               value={unlessFocused(nameRef, m.name)}
               onInput={(e) => {
                 m.name = e.currentTarget.value;
-                panel.sync();
+                ed.changed();
               }}
             />
           </label>
@@ -487,21 +481,17 @@ function EditorView({ panel }: { panel: EditorPanel }) {
             다른 사무실 배치 가져오기
             <select
               value=""
-              disabled={!panel.others.length}
+              disabled={!others.length}
               onChange={(e) => {
-                const o = app
-                  .get()
-                  .offices.find((x) => x.id === e.currentTarget.value);
+                const o = others.find((x) => x.id === e.currentTarget.value);
                 e.currentTarget.value = '';
                 if (o) panel.importLayout(o.layout, `'${o.name}' 사무실의`);
               }}
             >
               <option value="">
-                {panel.others.length
-                  ? '사무실 고르기…'
-                  : '다른 사무실이 없어요'}
+                {others.length ? '사무실 고르기…' : '다른 사무실이 없어요'}
               </option>
-              {panel.others.map((o) => (
+              {others.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name}
                 </option>
@@ -532,7 +522,7 @@ function EditorView({ panel }: { panel: EditorPanel }) {
         </section>
       </div>
       <footer>
-        <p class={`msg ${panel.message.kind}`}>{panel.message.text}</p>
+        <p class={`msg ${ed.message.kind}`}>{ed.message.text}</p>
         <div class="row">
           <button
             type="button"
@@ -585,7 +575,7 @@ function EditorView({ panel }: { panel: EditorPanel }) {
 }
 
 /** The selected room's or furniture's fields, drawn afresh for each selection. */
-function Selection({ panel }: { panel: EditorPanel }) {
+function Selection({ panel }: { panel: Edits }) {
   const m = panel.m,
     s = m.selected(),
     sel = m.sel;
@@ -597,7 +587,7 @@ function Selection({ panel }: { panel: EditorPanel }) {
   );
 }
 
-function RoomFields({ panel, s }: { panel: EditorPanel; s: Room }) {
+function RoomFields({ panel, s }: { panel: Edits; s: Room }) {
   const nameRef = useRef<HTMLInputElement>(null);
   const walls = hasWalls(s),
     glass = s.glass ?? !!ROOM_TYPES[s.type]?.glass;
@@ -664,7 +654,7 @@ function RoomFields({ panel, s }: { panel: EditorPanel; s: Room }) {
   );
 }
 
-function ItemFields({ panel, s }: { panel: EditorPanel; s: Item }) {
+function ItemFields({ panel, s }: { panel: Edits; s: Item }) {
   const k = ITEM_KINDS[s.kind] ?? { label: s.kind, w: 1, h: 1 }; // a draft's kinds are known (validate)
   return (
     <section class="sel">
