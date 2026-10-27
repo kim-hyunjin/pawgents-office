@@ -11,7 +11,7 @@ import { compile, isOfficeSize } from '../shared/layout.ts';
 import { closeOffice, renameOffice, saveLayout } from './api.ts';
 import { EditorCanvas } from './editor/canvas.ts';
 import { EditorModel } from './editor/model.ts';
-import { EditorPanel } from './editor/panel.ts';
+import { EditorPanel } from './editor/panel.tsx';
 import { armConfirm } from './ui.ts';
 import type { World } from './world.ts';
 import { showDraft, startEditing, stopEditing } from './world.ts';

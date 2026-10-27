@@ -30,68 +30,7 @@
 <div id="legend-root"></div>
 <div id="quit-root"></div>
 <div id="roster-root"></div>
-<aside id="editor" hidden>
-  <header>
-    <h2>배치 편집 <span id="ed-title" class="dim"></span></h2>
-    <button type="button" id="ed-close" title="취소">×</button>
-  </header>
-  <div id="ed-scroll">
-    <section>
-      <h3>사무실</h3>
-      <label>이름 <input id="ed-name" autocomplete="off"></label>
-      <div class="nums">
-        <label>가로 <input id="ed-w" type="number"></label>
-        <label>세로 <input id="ed-h" type="number"></label>
-        <label>정문 벽 <select id="ed-door-side"></select></label>
-        <label>정문 위치 <input id="ed-door" type="number"></label>
-      </div>
-      <p class="dim">바깥벽을 누르거나 정문을 끌어서 옮길 수도 있어요.</p>
-    </section>
-    <section>
-      <h3>방 <span class="dim">— 끌어서 그리기</span></h3>
-      <div id="ed-rooms" class="palette"></div>
-      <div class="palette walls">
-        <button type="button" id="ed-walls-on" title="모든 방에 벽을 세웁니다 (문 없는 방에는 문이 하나 생겨요)">모든 방 벽 넣기</button>
-        <button type="button" id="ed-walls-off" title="모든 방의 벽을 걷어 열린 구역으로 만듭니다">모든 방 벽 빼기</button>
-      </div>
-    </section>
-    <section>
-      <h3>가구 <span class="dim">— 눌러서 놓기</span></h3>
-      <div id="ed-items" class="palette"></div>
-    </section>
-    <section>
-      <h3>공유</h3>
-      <div class="palette">
-        <button type="button" id="ed-export" title="배치를 JSON 파일로 저장">파일로 내보내기</button>
-        <button type="button" id="ed-copy" title="배치를 클립보드에 복사 (메신저 등에 붙여넣기)">복사</button>
-        <button type="button" id="ed-import" title="내보낸 JSON 파일 불러오기">파일 가져오기</button>
-        <input type="file" id="ed-file" accept=".json,application/json" hidden>
-      </div>
-      <label class="from">다른 사무실 배치 가져오기
-        <select id="ed-from"></select>
-      </label>
-      <p class="dim">복사한 배치는 편집 중에 Ctrl+V로 붙여넣을 수 있어요. 가져온 배치도 저장해야 반영됩니다.</p>
-    </section>
-    <section id="ed-sel" hidden></section>
-    <section>
-      <p id="ed-hint" class="dim"></p>
-      <p id="ed-ok" class="ok">문제 없음 — 저장할 수 있어요.</p>
-      <ul id="ed-errs"></ul>
-    </section>
-  </div>
-  <footer>
-    <p id="ed-msg" class="msg"></p>
-    <div class="row">
-      <button type="button" id="ed-undo" title="되돌리기 (Ctrl+Z)">되돌리기</button>
-      <button type="button" id="ed-reset" title="처음 배치로 (저장해야 반영)">기본 배치로</button>
-      <button type="button" id="ed-clear" title="방과 가구를 모두 치웁니다 (저장해야 반영, Ctrl+Z로 되돌리기)">모두 지우기</button>
-      <button type="button" id="ed-delete" title="이 사무실을 닫고 직원을 기본 사무실로 보냅니다">사무실 닫기</button>
-      <span class="grow"></span>
-      <button type="button" id="ed-cancel">취소</button>
-      <button type="button" id="ed-save" class="primary">저장</button>
-    </div>
-  </footer>
-</aside>
+<aside id="editor" hidden></aside>
 <div id="tip" hidden></div>
 <div id="ticker"><ul id="ticker-list"></ul></div>
 <aside id="panel"></aside>
