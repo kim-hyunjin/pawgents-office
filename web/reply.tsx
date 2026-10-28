@@ -1,4 +1,4 @@
-// Full agent reply in a large dialog, markdown rendered. Opened from the panel's last-reply card (panel.tsx).
+// Full agent reply in a large dialog, markdown rendered. Opened from the panel's last-reply card (panel/view.tsx).
 // The full text is fetched on demand (/sessions/:id/reply) — SSE only carries the short preview.
 import { type ComponentChildren, h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';

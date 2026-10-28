@@ -9,7 +9,7 @@ import { Ticker } from './feed.tsx';
 import { useChanged } from './hooks.ts';
 import { Launcher } from './launcher.tsx';
 import { Legend } from './legend.tsx';
-import { Panel } from './panel.tsx';
+import { Panel } from './panel/index.tsx';
 import { QuitConfirm } from './quit-confirm.tsx';
 import { Roster } from './roster.tsx';
 import { closePanel, here, setUi, useApp } from './state.ts';
