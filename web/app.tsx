@@ -8,7 +8,7 @@ import type { Editor } from './editor.ts';
 import { Ticker } from './feed.tsx';
 import { useChanged } from './hooks.ts';
 import { Launcher } from './launcher.tsx';
-import { Legend } from './legend.tsx';
+import { Legend } from './legend/index.tsx';
 import { Panel } from './panel/index.tsx';
 import { QuitConfirm } from './quit-confirm.tsx';
 import { Roster } from './roster.tsx';
