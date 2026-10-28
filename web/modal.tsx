@@ -4,6 +4,7 @@
 import type { ComponentChildren } from 'preact';
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { CloseButton } from './bits.tsx';
 import { css } from './style.ts';
 
 css(/* css */ `
@@ -99,14 +100,7 @@ export function BigDialog({
           <p class="sub">{meta}</p>
         </div>
         <CopyButton title={copyTitle} text={copy} />
-        <button
-          type="button"
-          class="close"
-          title="닫기 (Esc)"
-          onClick={onClose}
-        >
-          ×
-        </button>
+        <CloseButton onClick={onClose} />
       </header>
       {children}
     </Modal>

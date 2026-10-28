@@ -3,6 +3,7 @@
 import { Fragment, h } from 'preact';
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
+import { ToolName } from './bits.tsx';
 import type { Change } from './state.ts';
 import { app, useApp } from './state.ts';
 import { createStore, useStore } from './store.ts';
@@ -137,8 +138,7 @@ function Line({ it, isNew }: { it: FeedItem; isNew: boolean }) {
   const e = it.e;
   const what = e.tool ? (
     <>
-      <b>{e.tool}</b>
-      {e.target ? ` · ${e.target}` : ''}
+      <ToolName name={e.tool} target={e.target} />
       {e.detail && <span class="dim"> — {e.detail}</span>}
     </>
   ) : e.ev === 'UserPromptSubmit' ? (

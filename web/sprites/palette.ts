@@ -41,6 +41,9 @@ export function familyOf(model?: string | null) {
   if (/haiku/.test(m)) return 'haiku';
   return 'other';
 }
+/** The model's family: its label, title, default breed and monitor (an unknown model is 'other'). */
+export const familyInfo = (model?: string | null) =>
+  FAMILIES[familyOf(model)] ?? FAMILIES.other;
 
 export function paletteFor(
   id: string,

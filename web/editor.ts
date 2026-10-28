@@ -14,11 +14,9 @@ import { EditorCanvas } from './editor/canvas.ts';
 import { EditorModel } from './editor/model.ts';
 import { setUi } from './state.ts';
 import { createStore } from './store.ts';
-import { armConfirm } from './ui.ts';
+import { armConfirm, type Msg, NO_MSG } from './ui.ts';
 import type { World } from './world.ts';
 import { showDraft, startEditing, stopEditing } from './world.ts';
-
-export type Msg = { text: string; kind: '' | 'ok' | 'err' };
 
 export class Editor {
   world: World;
@@ -28,7 +26,7 @@ export class Editor {
   /** Says when the draft, the selection, the tool, the message or the 사무실 닫기 arm changed (the side panel redraws). */
   readonly changes = createStore<object, void>({});
   deleteArm = armConfirm<true>(4000, () => this.changed()); // 사무실 닫기 asks twice
-  message: Msg = { text: '', kind: '' };
+  message: Msg = NO_MSG;
   shown = false;
   saving = false;
   model: EditorModel;
@@ -79,7 +77,7 @@ export class Editor {
     this.tool = 'select';
     this.input.drag = null;
     this.deleteArm.disarm();
-    this.message = { text: '', kind: '' };
+    this.message = NO_MSG;
     this.shown = false;
     setUi({ editing: true });
     startEditing();

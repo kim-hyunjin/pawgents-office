@@ -6,12 +6,13 @@ import { useState } from 'preact/hooks';
 import type { SessionSnapshot } from '../shared/api.ts';
 import { isBusyState } from '../shared/model.ts';
 import { closeSession } from './api.ts';
+import { CloseButton, StateBadge } from './bits.tsx';
 import { Pic } from './pic.tsx';
 import { confirmQuit } from './quit-confirm.tsx';
 import type { Palette } from './sprites.ts';
-import { FAMILIES, familyOf, sprite } from './sprites.ts';
+import { familyInfo, sprite } from './sprites.ts';
 import { css } from './style.ts';
-import { quitTitle, STATE_COLOR, STATE_LABEL, toolText } from './ui.ts';
+import { quitTitle, toolText } from './ui.ts';
 
 const ICON_ZOOM = 2;
 
@@ -120,9 +121,7 @@ export function Roster({
         <h2>
           직원 목록 <span class="dim">{live.length}</span>
         </h2>
-        <button type="button" class="close" title="닫기" onClick={onClose}>
-          ×
-        </button>
+        <CloseButton onClick={onClose} title="닫기" />
       </header>
       <ul>
         {live.length ? (
@@ -163,7 +162,7 @@ function Row({
   onPick: () => void;
   onQuit: () => void;
 }) {
-  const f = FAMILIES[familyOf(s.model)];
+  const f = familyInfo(s.model);
   const subs = (s.subagents || []).filter((a) => !a.ended).length;
   const line = err
     ? `⚠ 퇴근 실패: ${err}`
@@ -171,7 +170,7 @@ function Row({
         s.currentTool && toolText(s.currentTool),
         where && `📍 ${where}`,
         subs && `보조 ${subs}`,
-        f && [f.label, f.title].filter(Boolean).join(' '),
+        [f.label, f.title].filter(Boolean).join(' '),
       ]
         .filter(Boolean)
         .join(' · ');
@@ -190,12 +189,7 @@ function Row({
       <div class="info">
         <div class="top">
           <b class="name">{s.name || s.id.slice(0, 8)}</b>
-          <span
-            class="badge"
-            style={{ background: STATE_COLOR[s.state] || '#888' }}
-          >
-            {STATE_LABEL[s.state] || s.state}
-          </span>
+          <StateBadge state={s.state} />
         </div>
         <div class={err ? 'line err' : 'line'} title={err}>
           {line}

@@ -2,7 +2,8 @@
 import { type ComponentChildren, Fragment, h } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { SessionSnapshot, SubagentSnapshot } from '../shared/api.ts';
-import { FAMILIES, familyOf } from './sprites.ts';
+import { ToolName } from './bits.tsx';
+import { familyInfo } from './sprites.ts';
 import { pointer } from './state.ts';
 import { useStore } from './store.ts';
 import { css } from './style.ts';
@@ -28,8 +29,7 @@ function ToolLine({ d }: { d: SessionSnapshot | SubagentSnapshot }) {
   if (!t) return st;
   return (
     <>
-      {st} · <b>{t.name}</b>
-      {t.target ? ` · ${t.target}` : ''}
+      {st} · <ToolName name={t.name} target={t.target} />
       {t.detail && <div class="detail">{t.detail}</div>}
     </>
   );
@@ -93,7 +93,7 @@ export function CatTip({
       </>
     );
   }
-  const tier = (FAMILIES[familyOf(s.model)] ?? FAMILIES.other).title;
+  const tier = familyInfo(s.model).title;
   return (
     <>
       <b>{s.name}</b>

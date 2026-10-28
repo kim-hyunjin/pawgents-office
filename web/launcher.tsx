@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Backend, WorktreeInfo as Worktree } from '../shared/api.ts';
 import { MAX_HIRES, WORKTREE_NAME_RE } from '../shared/limits.ts';
 import { getBackends, getWorktrees, launch } from './api.ts';
+import { MsgLine } from './bits.tsx';
 import { Modal } from './modal.tsx';
 import { css } from './style.ts';
-import { storage } from './ui.ts';
+import { MODE_LABEL, type Msg, NO_MSG, storage } from './ui.ts';
 
 css(/* css */ `
 #launcher {
@@ -49,7 +50,12 @@ const HINT: Record<Backend, string> = {
   headless: '사무실 서버가 claude -p 를 직접 띄웁니다. Orca가 없어도 돼요.',
 };
 
-type Msg = { text: string; kind: '' | 'ok' | 'err' };
+/** Permission modes a headless session can start in, with what each means here. */
+const HL_MODES: [string, string][] = [
+  ['default', ' (사무실에서 승인)'],
+  ['acceptEdits', ''],
+  ['auto', ' (분류기 판단)'],
+];
 /** A backend's list: loading, loaded, or failed (the select stays disabled). */
 type List = Worktree[] | 'loading' | 'error';
 const label = (w: Worktree, extra: string) =>
@@ -63,7 +69,7 @@ export function Launcher({
   open: boolean;
   onClose: () => void;
 }) {
-  const [msg, setMsgState] = useState<Msg>({ text: '', kind: '' });
+  const [msg, setMsgState] = useState<Msg>(NO_MSG);
   const setMsg = (text: string, kind: Msg['kind'] = '') =>
     setMsgState({ text, kind });
   // null while /backends is loading or nothing is available
@@ -338,9 +344,11 @@ export function Launcher({
               value={perm}
               onChange={(e) => setPerm(e.currentTarget.value)}
             >
-              <option value="default">기본 (사무실에서 승인)</option>
-              <option value="acceptEdits">편집 자동 승인</option>
-              <option value="auto">자동 (분류기 판단)</option>
+              {HL_MODES.map(([v, note]) => (
+                <option key={v} value={v}>
+                  {MODE_LABEL[v] + note}
+                </option>
+              ))}
             </select>
           </label>
         )}
@@ -425,7 +433,7 @@ export function Launcher({
             }}
           />
         </label>
-        <p class={`msg ${msg.kind}`}>{msg.text}</p>
+        <MsgLine msg={msg} />
         <div class="row">
           <button type="button" onClick={onClose}>
             취소

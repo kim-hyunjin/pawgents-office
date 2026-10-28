@@ -98,6 +98,10 @@ export function useArm<K>(ms: number) {
   };
 }
 
+/** A one-line status message under a form: plain, ok (green) or err (red). */
+export type Msg = { text: string; kind: '' | 'ok' | 'err' };
+export const NO_MSG: Msg = { text: '', kind: '' };
+
 // localStorage that never throws (blocked storage, private mode). Keys stay as they are: renaming one resets a setting.
 export const storage = {
   get(k: string) {
@@ -148,14 +152,16 @@ export const STATE_COLOR: Record<EntityState, string> = {
   waiting: '#fbbf24',
   offduty: '#6b7280',
 };
-export const MODE_LABEL: Record<string, string> = {
-  plan: '계획',
-  auto: '자동',
-  bypassPermissions: '자동 (bypass)',
-  dontAsk: '자동 (dontAsk)',
-  acceptEdits: '편집 승인',
-  default: '기본',
-};
+/** Permission modes, in the order the panel offers them, and their names. */
+export const MODES: readonly (readonly [string, string])[] = [
+  ['default', '기본'],
+  ['acceptEdits', '편집 자동 승인'],
+  ['plan', '계획'],
+  ['auto', '자동'],
+  ['dontAsk', '자동 (dontAsk)'],
+  ['bypassPermissions', '자동 (bypass)'],
+];
+export const MODE_LABEL: Record<string, string> = Object.fromEntries(MODES);
 const ICON: Record<string, string> = {
   Read: '📖',
   Grep: '🔍',

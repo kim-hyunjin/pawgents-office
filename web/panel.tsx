@@ -18,10 +18,11 @@ import {
   sendPrompt,
   setMode,
 } from './api.ts';
+import { CloseButton, MsgLine, StateBadge, ToolName } from './bits.tsx';
 import { Diff } from './diff.tsx';
 import { confirmQuit } from './quit-confirm.tsx';
 import { Reply } from './reply.tsx';
-import { FAMILIES, familyOf } from './sprites.ts';
+import { familyInfo } from './sprites.ts';
 import { css } from './style.ts';
 import {
   awaitingBg,
@@ -30,6 +31,9 @@ import {
   isHeadless,
   logIcon,
   MODE_LABEL,
+  MODES,
+  type Msg,
+  NO_MSG,
   STATE_COLOR,
   STATE_LABEL,
   thinkingFresh,
@@ -157,14 +161,6 @@ css(/* css */ `
 `);
 
 const TUI_UNREACHABLE = new Set(['dontAsk', 'bypassPermissions']); // modes Shift+Tab can't be relied on to reach
-const MODES: [string, string][] = [
-  ['default', '기본'],
-  ['acceptEdits', '편집 자동 승인'],
-  ['plan', '계획'],
-  ['auto', '자동'],
-  ['dontAsk', '자동 (dontAsk)'],
-  ['bypassPermissions', '자동 (bypass)'],
-];
 const GIT_LABEL: Record<string, string> = {
   M: '수정됨 (git)',
   A: '추가됨 (git)',
@@ -174,9 +170,6 @@ const GIT_LABEL: Record<string, string> = {
   C: '복사됨 (git)',
   U: '충돌 (git)',
 };
-
-type Msg = { text: string; kind: '' | 'ok' | 'err' };
-const NO_MSG: Msg = { text: '', kind: '' };
 
 /** What the composer works with: this session's draft, the panel's message and its requests in flight. */
 interface ComposerCtl {
@@ -454,12 +447,7 @@ function PanelView({
       <header>
         <div class="hd">
           <h2>{s.name}</h2>
-          <span
-            class="badge"
-            style={{ background: STATE_COLOR[s.state] || '#888' }}
-          >
-            {STATE_LABEL[s.state] || s.state}
-          </span>
+          <StateBadge state={s.state} />
           {!s.ended && (
             <button
               type="button"
@@ -473,14 +461,7 @@ function PanelView({
           )}
         </div>
         {s.title && <p class="title">{s.title}</p>}
-        <button
-          type="button"
-          class="close"
-          title="닫기 (Esc)"
-          onClick={onClose}
-        >
-          ×
-        </button>
+        <CloseButton onClick={onClose} />
       </header>
       <div class="scroll">
         <Meta s={s} now={now} />
@@ -514,12 +495,11 @@ function PanelView({
 }
 
 function Meta({ s, now }: { s: SessionSnapshot; now: number }) {
-  const fam = FAMILIES[familyOf(s.model)] ?? FAMILIES.other; // familyOf names FAMILIES' keys
+  const fam = familyInfo(s.model);
   const t = s.currentTool;
   const tool = t ? (
     <>
-      <b>{t.name}</b>
-      {t.target ? ` · ${t.target}` : ''}{' '}
+      <ToolName name={t.name} target={t.target} />{' '}
       <span class="dim">({fmtDur(now - t.startedAt)})</span>
       {t.detail && <div class="detail">{t.detail}</div>}
     </>
@@ -737,12 +717,7 @@ function cardsOf(s: SessionSnapshot): Card[] {
   if (s.ended) return [];
   const cards: Card[] = (s.pendingPermissions || []).map((p) => ({
     id: p.id,
-    head: (
-      <>
-        <b>{p.tool}</b>
-        {p.target ? ` · ${p.target}` : ''}
-      </>
-    ),
+    head: <ToolName name={p.tool} target={p.target} />,
     detail: p.detail,
     answerable: true,
     note: null,
@@ -753,10 +728,7 @@ function cardsOf(s: SessionSnapshot): Card[] {
     cards.push({
       id: String(ask.at),
       head: ask.tool ? (
-        <>
-          <b>{ask.tool}</b>
-          {ask.target ? ` · ${ask.target}` : ''}
-        </>
+        <ToolName name={ask.tool} target={ask.target} />
       ) : (
         <b>{ask.label || '응답 대기'}</b>
       ),
@@ -872,7 +844,7 @@ function Composer({ s, c }: { s: SessionSnapshot; c: ComposerCtl }) {
             </option>
           </select>
         )}
-        <span class={`msg ${c.msg.kind}`}>{c.msg.text}</span>
+        <MsgLine msg={c.msg} inline />
         <button
           type="submit"
           class="primary"

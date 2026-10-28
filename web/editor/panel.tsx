@@ -25,13 +25,14 @@ import {
   ROOM_TYPES,
 } from '../../shared/layout.ts';
 import { MAX_NAME_CHARS } from '../../shared/limits.ts';
-import type { Editor, Msg } from '../editor.ts';
+import { CloseButton, MsgLine } from '../bits.tsx';
+import type { Editor } from '../editor.ts';
 import { fixDoors, fixFrontDoor } from '../layout-edit.ts';
 import { useApp } from '../state.ts';
 import { useStore } from '../store.ts';
 import { css } from '../style.ts';
 import { FLOOR } from '../tilemap.ts';
-import { downloadBlob } from '../ui.ts';
+import { downloadBlob, type Msg } from '../ui.ts';
 
 css(/* css */ `
 #editor {
@@ -309,14 +310,7 @@ function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
         <h2>
           배치 편집 <span class="dim">{office.name}</span>
         </h2>
-        <button
-          type="button"
-          class="close"
-          title="취소"
-          onClick={() => ed.close()}
-        >
-          ×
-        </button>
+        <CloseButton onClick={() => ed.close()} title="취소" />
       </header>
       <div class="scroll">
         <section>
@@ -522,7 +516,7 @@ function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
         </section>
       </div>
       <footer>
-        <p class={`msg ${ed.message.kind}`}>{ed.message.text}</p>
+        <MsgLine msg={ed.message} />
         <div class="row">
           <button
             type="button"

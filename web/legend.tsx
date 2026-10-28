@@ -16,6 +16,7 @@ import {
 } from '../shared/limits.ts';
 import { CAT_FAMILIES } from '../shared/model.ts';
 import { deleteSkin, setCatChoice, uploadSkin } from './api.ts';
+import { CloseButton } from './bits.tsx';
 import { Modal } from './modal.tsx';
 import { Pic } from './pic.tsx';
 import {
@@ -170,14 +171,7 @@ export function Legend({
     <Modal id="legend" open={open} onClose={onClose}>
       <header>
         <h2>모델 안내</h2>
-        <button
-          type="button"
-          class="close"
-          title="닫기 (Esc)"
-          onClick={onClose}
-        >
-          ×
-        </button>
+        <CloseButton onClick={onClose} />
       </header>
       {open && <Body ctx={ctx} />}
     </Modal>
