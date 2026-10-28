@@ -15,9 +15,9 @@ import {
   normalize,
   ROOM_TYPES,
 } from '../../shared/layout.ts';
-import type { Editor } from '../editor.ts';
-import { fixDoors, fixFrontDoor } from '../layout-edit.ts';
-import { downloadBlob, type Msg } from '../ui.ts';
+import { downloadBlob, type Msg } from '../common/ui.ts';
+import type { Editor } from './index.ts';
+import { fixDoors, fixFrontDoor } from './layout-edit.ts';
 
 const SHARE_TYPE = 'pawgents-office-layout'; // marks an exported layout file
 

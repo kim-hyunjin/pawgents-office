@@ -2,7 +2,7 @@
 // every change ends in onChange(), which the Editor uses to recompile, redraw and sync its panel.
 import type { Item, Layout, Room } from '../../shared/layout.ts';
 import { cloneOffice, validate } from '../../shared/layout.ts';
-import { contents, moveItem, moveRoom, wallRoomsAt } from '../layout-edit.ts';
+import { contents, moveItem, moveRoom, wallRoomsAt } from './layout-edit.ts';
 
 const UNDO_MAX = 100;
 

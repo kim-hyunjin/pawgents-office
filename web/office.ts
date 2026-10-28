@@ -1,14 +1,10 @@
 import { h, render as mount } from 'preact';
 import type { Office, Snapshot } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
-import { getState, setTogether } from './api.ts';
 import { App } from './app.tsx';
-import { Editor } from './editor.ts';
-import { drawEditorOverlay } from './editor-draw.ts';
-import { followSessions as feedFollows } from './feed.tsx';
-import { connectEvents } from './net/events.ts';
-import { type Frame, HUD_BTN, render } from './render.ts';
-import { onSkinLoad, setBreedChoices, setSkins } from './sprites.ts';
+import { $, storage } from './common/ui.ts';
+import { getState, setTogether } from './data/api.ts';
+import { connectEvents } from './data/events.ts';
 import {
   app,
   closePanel,
@@ -24,8 +20,11 @@ import {
   setUi,
   showPanel,
   toggleRoster,
-} from './state.ts';
-import { $, storage } from './ui.ts';
+} from './data/state.ts';
+import { drawEditorOverlay } from './editor/draw.ts';
+import { Editor } from './editor/index.ts';
+import { type Frame, HUD_BTN, render } from './scene/render.ts';
+import { onSkinLoad, setBreedChoices, setSkins } from './scene/sprites.ts';
 import {
   initViewport,
   officeXY,
@@ -35,7 +34,7 @@ import {
   S,
   setZoom,
   zoomInfo,
-} from './viewport.ts';
+} from './scene/viewport.ts';
 import {
   applyLayout,
   entAt,
@@ -47,7 +46,8 @@ import {
   retarget,
   world,
   followSessions as worldFollows,
-} from './world.ts';
+} from './scene/world.ts';
+import { followSessions as feedFollows } from './views/feed.tsx';
 
 const params = new URLSearchParams(location.search);
 const st = app.get(); // the page's state: read here, changed only through state.ts's actions

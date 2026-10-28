@@ -101,7 +101,7 @@ test('static: the page, its modules and the browser-safe shared/ modules', async
     assert.doesNotMatch(r.body, /^import type/m, p); // served type-stripped
   }
   // .tsx: JSX becomes h() calls, and the file's own `import { h }` stays for the import map to resolve
-  const tsx = await get('/roster.tsx');
+  const tsx = await get('/views/roster.tsx');
   assert.equal(tsx.status, 200);
   assert.match(tsx.body, /^import \{ h \} from "preact";$/m);
   assert.match(tsx.body, /\bh\("aside", \{/);

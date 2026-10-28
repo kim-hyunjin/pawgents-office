@@ -18,14 +18,14 @@ import {
   ROOM_TYPES,
 } from '../../shared/layout.ts';
 import { MAX_NAME_CHARS } from '../../shared/limits.ts';
-import { CloseButton, MsgLine } from '../bits.tsx';
-import type { Editor } from '../editor.ts';
-import { useArm } from '../hooks.ts';
-import { useApp } from '../state.ts';
-import { useStore } from '../store.ts';
-import { css } from '../style.ts';
-import { FLOOR } from '../tilemap.ts';
+import { CloseButton, MsgLine } from '../common/bits.tsx';
+import { useArm } from '../common/hooks.ts';
+import { css } from '../common/style.ts';
+import { useApp } from '../data/state.ts';
+import { useStore } from '../data/store.ts';
+import { FLOOR } from '../scene/tilemap.ts';
 import { Edits } from './edits.ts';
+import type { Editor } from './index.ts';
 import { Selection, unlessFocused } from './selection.tsx';
 
 css(/* css */ `

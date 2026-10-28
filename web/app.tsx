@@ -3,20 +3,20 @@
 // dialogs the toolbar and the roster open. The canvas itself is office.ts's: this only puts it in place.
 import { Fragment, h } from 'preact';
 import { useState } from 'preact/hooks';
+import { useChanged } from './common/hooks.ts';
+import { closePanel, here, setUi, useApp } from './data/state.ts';
+import type { Editor } from './editor/index.ts';
 import { EditorPanel } from './editor/panel.tsx';
-import type { Editor } from './editor.ts';
-import { Ticker } from './feed.tsx';
-import { useChanged } from './hooks.ts';
-import { Launcher } from './launcher.tsx';
-import { Legend } from './legend/index.tsx';
-import { Panel } from './panel/index.tsx';
-import { QuitConfirm } from './quit-confirm.tsx';
-import { Roster } from './roster.tsx';
-import { closePanel, here, setUi, useApp } from './state.ts';
-import { Tabs } from './tabs.tsx';
-import { CatTip, Tip } from './tip.tsx';
-import { Toolbar } from './toolbar.tsx';
-import type { Ent } from './world.ts';
+import type { Ent } from './scene/world.ts';
+import { Ticker } from './views/feed.tsx';
+import { Launcher } from './views/launcher.tsx';
+import { Legend } from './views/legend/index.tsx';
+import { Panel } from './views/panel/index.tsx';
+import { QuitConfirm } from './views/quit-confirm.tsx';
+import { Roster } from './views/roster.tsx';
+import { Tabs } from './views/tabs.tsx';
+import { CatTip, Tip } from './views/tip.tsx';
+import { Toolbar } from './views/toolbar.tsx';
 
 export interface AppProps {
   /** The layout editor (made once the canvas this puts in place exists); its side panel shows while editing. */
