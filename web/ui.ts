@@ -1,6 +1,7 @@
 // Small DOM and formatting helpers shared by the office, its panels and dialogs, and the words, colors and icons
 // every view uses for a session (state, permission mode, tools, background work).
 
+import { useEffect, useState } from 'preact/hooks';
 import type {
   Backend,
   CurrentTool,
@@ -25,12 +26,6 @@ export const esc = (s: unknown) =>
   String(s ?? '').replace(/[&<>"]/g, (c) => ENTITIES[c] ?? c); // the pattern matches only ENTITIES' keys
 export const fmtTime = (t: number | string | Date) =>
   new Date(t).toTimeString().slice(0, 8);
-/** A status line under a form: kind '' | 'ok' | 'err' (styled by .msg in style.css). */
-export const setMsg = (el: HTMLElement, text: string, kind = '') => {
-  el.textContent = text;
-  el.className = `msg ${kind}`;
-};
-
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   Object.assign(document.createElement('a'), {
@@ -53,31 +48,6 @@ export function pic(
   g.imageSmoothingEnabled = false;
   g.drawImage(img, 0, 0, canvas.width, canvas.height);
   return canvas;
-}
-
-/** A modal <dialog> closes from its × button and from a click on the backdrop. */
-export function bindDialogClose(dlg: HTMLDialogElement, closeBtn: HTMLElement) {
-  closeBtn.addEventListener('click', () => dlg.close());
-  dlg.addEventListener('click', (e) => {
-    if (e.target === dlg) dlg.close();
-  }); // backdrop
-}
-
-/** A 복사 button: copies text() (undefined: nothing open, no-op) and says how that went for a moment. */
-export function bindCopy(btn: HTMLElement, text: () => string | undefined) {
-  btn.addEventListener('click', async () => {
-    const t = text();
-    if (t === undefined) return;
-    try {
-      await navigator.clipboard.writeText(t);
-      btn.textContent = '복사됨 ✓';
-    } catch {
-      btn.textContent = '복사 실패';
-    }
-    setTimeout(() => {
-      btn.textContent = '복사';
-    }, 1500);
-  });
 }
 
 /**
@@ -106,6 +76,25 @@ export function armConfirm<K>(ms: number, onChange: (key: K) => void) {
       clearTimeout(timer);
       armed = null;
     },
+  };
+}
+
+/** armConfirm for a component: the key waiting for its confirming click, and the click (true: it confirms). */
+export function useArm<K>(ms: number) {
+  const [armed, setArmed] = useState<K | null>(null);
+  useEffect(() => {
+    if (armed === null) return;
+    const t = setTimeout(() => setArmed(null), ms);
+    return () => clearTimeout(t);
+  }, [armed, ms]);
+  return {
+    is: (key: K) => armed === key,
+    click(key: K) {
+      if (armed === key) return true;
+      setArmed(() => key);
+      return false;
+    },
+    disarm: () => setArmed(null),
   };
 }
 
@@ -202,10 +191,7 @@ const EV_ICON: Record<string, string> = {
 /** A log line's icon: its tool's (🔧 for one we don't know), else its event's. */
 export const logIcon = (e: Pick<LogEntry, 'tool' | 'ev'>) =>
   e.tool ? ICON[e.tool] || '🔧' : EV_ICON[e.ev] || '•';
-/** "<b>Edit</b> · office.ts": a tool call as HTML, its name in bold (both parts escaped). */
-export const toolHtml = (t: { name: string; target?: string | null }) =>
-  `<b>${esc(t.name)}</b>${t.target ? ' · ' + esc(t.target) : ''}`;
-/** "Edit · office.ts": a tool call as one line of plain text (callers escape it for HTML). */
+/** "Edit · office.ts": a tool call as one line of plain text. */
 export const toolText = (
   t: Pick<CurrentTool, 'name'> & { target?: string | null },
 ) => `${t.name}${t.target ? ' · ' + t.target : ''}`;

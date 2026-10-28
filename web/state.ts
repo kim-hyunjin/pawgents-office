@@ -1,8 +1,8 @@
 // What the page knows: the server's sessions and offices, which office is on screen, and what the pointer is on.
 // Changed only through the actions below, so whoever shows sessions (ticker, cats, panel, roster, tabs) can subscribe
-// to `app` instead of being called by hand. The cats themselves are world.ts's.
+// to `app` instead of being called by hand; components do it with useApp(). The cats themselves are world.ts's.
 import type { Office, SessionSnapshot } from '../shared/api.ts';
-import { createStore } from './store.ts';
+import { createStore, useStore } from './store.ts';
 
 export interface AppState {
   sessions: Map<string, SessionSnapshot>; // id -> the server's session
@@ -12,7 +12,11 @@ export interface AppState {
   connected: boolean; // the event stream is up
   hoverKey: string | null; // cat (or HUD_BTN) under the pointer
   selectedKey: string | null; // cat whose session the panel shows
+  panelId: string | null; // session the panel shows; null: closed
   rosterOpen: boolean;
+  editing: boolean; // the layout editor is open
+  zoom: { scale: number; pinned: boolean; max: number }; // the scale the office is drawn at (viewport.ts's zoomInfo)
+  looks: number; // goes up whenever cats may look different (breed or skin choices, a skin loaded)
 }
 
 export type Change =
@@ -30,6 +34,7 @@ export type Change =
   | { type: 'seed' }
   | { type: 'offices' }
   | { type: 'office' }
+  | { type: 'looks' }
   | { type: 'ui' };
 
 export const app = createStore<AppState, Change>({
@@ -40,8 +45,15 @@ export const app = createStore<AppState, Change>({
   connected: false,
   hoverKey: null,
   selectedKey: null,
+  panelId: null,
   rosterOpen: false,
+  editing: false,
+  zoom: { scale: 1, pinned: false, max: 1 },
+  looks: 0,
 });
+
+/** The page's state, for a component that is drawn again on every change to it. */
+export const useApp = () => useStore(app);
 
 /** The session works in the office on screen. */
 export const here = (s: SessionSnapshot) => s.officeId === app.get().officeId;
@@ -84,12 +96,44 @@ export const putOfficeId = (officeId: string) =>
     return { type: 'office' };
   });
 
+/** Cats may look different now: their breed or skin choices changed, or a skin finished loading. */
+export const putLooks = () =>
+  app.update((st) => {
+    st.looks++;
+    return { type: 'looks' };
+  });
+
 type Ui = Pick<
   AppState,
-  'connected' | 'hoverKey' | 'selectedKey' | 'rosterOpen'
+  | 'connected'
+  | 'hoverKey'
+  | 'selectedKey'
+  | 'panelId'
+  | 'rosterOpen'
+  | 'editing'
+  | 'zoom'
 >;
-export const setUi = (patch: Partial<Ui>) =>
+/** Change UI state; a patch that changes nothing (the pointer moving over the same cat) tells no one. */
+export function setUi(patch: Partial<Ui>) {
+  const st = app.get();
+  if (Object.entries(patch).every(([k, v]) => Object.is(st[k as keyof Ui], v)))
+    return;
   app.update((st) => {
     Object.assign(st, patch);
     return { type: 'ui' };
+  });
+}
+
+/**
+ * Where the pointer is over the office (viewport px), for the tooltip. A store of its own: it changes on every move,
+ * and only the tooltip follows it.
+ */
+export const pointer = createStore<{ x: number; y: number }, void>({
+  x: 0,
+  y: 0,
+});
+export const putPointer = (x: number, y: number) =>
+  pointer.update((p) => {
+    p.x = x;
+    p.y = y;
   });

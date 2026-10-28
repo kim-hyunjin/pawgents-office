@@ -8,31 +8,28 @@ export let S = 3; // whole-number scale the office is drawn at; a live binding o
 
 let canvas: HTMLCanvasElement,
   barEl: HTMLElement,
-  toolsEl: HTMLElement,
   stageEl: HTMLElement,
   sideOpen: () => boolean,
-  editorOpen: () => boolean;
+  onResized: () => void;
 let PANEL_W = 0,
   PANEL_ANIM_MS = 0; // read from style.css (--panel-w / --panel-ms) so the two can't drift apart
-/** Wire the canvas and the zoom buttons; once, before anything resizes. sideOpen(): the panel or the editor covers the right edge; editorOpen(): the editor (which has its own buttons). */
+/**
+ * Wire the canvas; once, before anything resizes. sideOpen(): the panel or the editor covers the right edge;
+ * onResized(): the office was fit again, so the scale or its pin (zoomInfo()) may have changed.
+ */
 export function initViewport(o: {
   canvas: HTMLCanvasElement;
   barEl: HTMLElement;
-  toolsEl: HTMLElement;
   stageEl: HTMLElement;
   sideOpen: () => boolean;
-  editorOpen: () => boolean;
+  onResized: () => void;
 }) {
-  ({ canvas, barEl, toolsEl, stageEl, sideOpen, editorOpen } = o);
+  ({ canvas, barEl, stageEl, sideOpen, onResized } = o);
   const css = getComputedStyle(document.documentElement);
   PANEL_W = parseInt(css.getPropertyValue('--panel-w'), 10);
   PANEL_ANIM_MS = parseInt(css.getPropertyValue('--panel-ms'), 10);
   const z = Math.round(Number(storage.get('pawgents.zoom')));
   zoom = z >= 1 ? Math.min(z, MAX_SCALE) : null;
-  zoomBtn = $('t-zoom');
-  $('t-zoom-out').addEventListener('click', () => setZoom(S - 1));
-  $('t-zoom-in').addEventListener('click', () => setZoom(S + 1));
-  zoomBtn.addEventListener('click', () => setZoom(null));
   window.addEventListener('resize', resize);
 }
 // Width the open panel takes from the office. On narrow windows the panel just covers it.
@@ -45,7 +42,6 @@ const panelRoom = () =>
 const MIN_SCALE = 2,
   MAX_SCALE = 8;
 let zoom: number | null = null; // pinned scale, or null: fit the window (initViewport reads the saved one)
-let zoomBtn: HTMLElement;
 function fitScale() {
   if (zoom) return zoom;
   const ticker = $('ticker');
@@ -61,19 +57,19 @@ function fitScale() {
     MAX_SCALE,
   );
 }
-function setZoom(z: number | null) {
+/** Pin a scale (the −/+ buttons), or null: fit the window again. */
+export function setZoom(z: number | null) {
   zoom = z ? clamp(z, 1, MAX_SCALE) : null;
   if (zoom) storage.set('pawgents.zoom', zoom);
   else storage.remove('pawgents.zoom');
   resize();
 }
-function showZoom() {
-  zoomBtn.textContent = `${S}×`;
-  zoomBtn.classList.toggle('pinned', !!zoom);
-  zoomBtn.title = zoom ? '눌러서 창 크기에 맞추기' : '창 크기에 맞춘 배율';
-  $<HTMLButtonElement>('t-zoom-out').disabled = S <= 1;
-  $<HTMLButtonElement>('t-zoom-in').disabled = S >= MAX_SCALE;
-}
+/** What the zoom buttons show: the scale drawn at, whether it is pinned, and the largest there is. */
+export const zoomInfo = () => ({
+  scale: S,
+  pinned: !!zoom,
+  max: MAX_SCALE,
+});
 
 /** The ticker (bottom) and the panel (right) float over the page: pad the page so the office can scroll out from under them. */
 export function placeTicker() {
@@ -94,8 +90,7 @@ export function resize() {
   canvas.style.width = `${canvas.width}px`;
   canvas.style.height = `${canvas.height}px`;
   barEl.style.width = canvas.style.width;
-  toolsEl.classList.toggle('off', editorOpen()); // the editor has its own buttons
-  showZoom();
+  onResized();
   placeTicker();
 }
 

@@ -4,28 +4,34 @@
 // wall moves the front door there (or drag the door along the walls). Furniture is placed from the palette and
 // dragged around. Every change is validated (layout.ts) and problem tiles turn red; saving sends the draft to the
 // server, which pushes it to every open office.
-// The parts: editor/model.ts (draft, undo, selection), editor/canvas.ts (pointer and keys), editor/panel.ts (side
-// panel); the canvas overlay is editor-draw.ts. This class ties them to the office on screen.
+// The parts: editor/model.ts (draft, undo, selection), editor/canvas.ts (pointer and keys), editor/panel.tsx (side
+// panel, drawn by app.tsx while editing; it follows `changes`); the canvas overlay is editor-draw.ts. This class ties
+// them to the office on screen.
 import type { Office } from '../shared/api.ts';
 import { compile, isOfficeSize } from '../shared/layout.ts';
 import { closeOffice, renameOffice, saveLayout } from './api.ts';
 import { EditorCanvas } from './editor/canvas.ts';
 import { EditorModel } from './editor/model.ts';
-import { EditorPanel } from './editor/panel.ts';
+import { setUi } from './state.ts';
+import { createStore } from './store.ts';
 import { armConfirm } from './ui.ts';
 import type { World } from './world.ts';
 import { showDraft, startEditing, stopEditing } from './world.ts';
+
+export type Msg = { text: string; kind: '' | 'ok' | 'err' };
 
 export class Editor {
   world: World;
   onResize: () => void;
   office: Office | null = null; // the office being edited (server copy)
   tool = 'select'; // 'select' | 'room:<type>' | 'item:<kind>'
-  deleteArm = armConfirm<true>(4000, () => this.panel.showDelete()); // 사무실 닫기 asks twice
+  /** Says when the draft, the selection, the tool, the message or the 사무실 닫기 arm changed (the side panel redraws). */
+  readonly changes = createStore<object, void>({});
+  deleteArm = armConfirm<true>(4000, () => this.changed()); // 사무실 닫기 asks twice
+  message: Msg = { text: '', kind: '' };
   shown = false;
   saving = false;
   model: EditorModel;
-  panel: EditorPanel;
   input: EditorCanvas;
   /** onResize(): the canvas size or the space beside it changed. */
   constructor({
@@ -42,7 +48,6 @@ export class Editor {
     this.world = world;
     this.onResize = onResize;
     this.model = new EditorModel(() => this.refresh());
-    this.panel = new EditorPanel(this);
     this.input = new EditorCanvas(this, canvas, officeXY);
   }
   get isOpen() {
@@ -74,24 +79,31 @@ export class Editor {
     this.tool = 'select';
     this.input.drag = null;
     this.deleteArm.disarm();
-    this.panel.showDelete();
+    this.message = { text: '', kind: '' };
     this.shown = false;
-    this.panel.el.hidden = false;
+    setUi({ editing: true });
     startEditing();
-    this.panel.open(office);
-    this.panel.msg('');
     this.refresh();
   }
   close() {
     if (!this.office) return;
     this.office = null;
-    this.panel.el.hidden = true;
+    setUi({ editing: false });
     stopEditing();
     this.input.canvas.style.cursor = 'default';
     this.onResize();
   }
 
-  /** Recompile + redraw the draft, re-validate, sync the panel. */
+  changed() {
+    this.changes.update(() => {});
+  }
+  /** Show a message in the side panel. */
+  msg(text: string, kind: Msg['kind'] = '') {
+    this.message = { text, kind };
+    this.changed();
+  }
+
+  /** Recompile + redraw the draft, re-validate, update the panel. */
   refresh() {
     const d = this.model.draft;
     this.model.check();
@@ -104,22 +116,21 @@ export class Editor {
         this.onResize();
       }
     }
-    this.panel.sync();
+    this.changed();
   }
   setTool(t: string) {
     this.tool = this.tool === t && t !== 'select' ? 'select' : t; // clicking the active tool again drops it
     if (this.tool !== 'select') this.model.sel = null;
-    this.panel.sync();
+    this.changed();
   }
   removeSelected() {
-    if (this.model.removeSelected()) this.panel.sync();
+    if (this.model.removeSelected()) this.changed();
   }
 
   async save() {
     if (this.model.errs.length || this.saving) return;
     this.saving = true;
-    this.panel.sync();
-    this.panel.msg('저장 중…');
+    this.msg('저장 중…');
     const office = this.office!;
     try {
       const name = this.model.name.trim();
@@ -129,8 +140,7 @@ export class Editor {
       this.close(); // the server pushes the new layout to every open office
     } catch (e) {
       this.saving = false;
-      this.panel.msg(`저장 실패: ${(e as Error).message}`, 'err');
-      this.panel.sync();
+      this.msg(`저장 실패: ${(e as Error).message}`, 'err');
     }
   }
   /** Two clicks: close this office; its repos and staff move to the default office. */
@@ -140,7 +150,7 @@ export class Editor {
       await closeOffice(this.office!.id);
       this.close();
     } catch (e) {
-      this.panel.msg(`닫기 실패: ${(e as Error).message}`, 'err');
+      this.msg(`닫기 실패: ${(e as Error).message}`, 'err');
     }
   }
 }

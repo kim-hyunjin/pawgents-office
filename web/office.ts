@@ -1,53 +1,28 @@
-import type {
-  Office,
-  SessionSnapshot,
-  Snapshot,
-  SubagentSnapshot,
-} from '../shared/api.ts';
+import { h, render as mount } from 'preact';
+import type { Office, SessionSnapshot, Snapshot } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
-import { getState, setTogether as setTogetherOn } from './api.ts';
-import { initDiff } from './diff.ts';
+import { getState, setTogether } from './api.ts';
+import { App } from './app.tsx';
 import { Editor } from './editor.ts';
 import { drawEditorOverlay } from './editor-draw.ts';
-import { followSessions as feedFollows, renderFeed } from './feed.ts';
-import { initLauncher, openLauncher } from './launcher.ts';
-import { initLegend, openLegend, refreshLegend } from './legend.ts';
+import { followSessions as feedFollows } from './feed.tsx';
 import { connectEvents } from './net/events.ts';
-import { Panel } from './panel.ts';
 import { type Frame, HUD_BTN, render } from './render.ts';
-import { initReply } from './reply.ts';
-import { Roster } from './roster.ts';
-import {
-  FAMILIES,
-  familyOf,
-  onSkinLoad,
-  paletteFor,
-  setBreedChoices,
-  setSkins,
-  sprite,
-} from './sprites.ts';
+import { onSkinLoad, setBreedChoices, setSkins } from './sprites.ts';
 import {
   app,
   dropSession,
   here,
+  putLooks,
   putOfficeId,
   putOffices,
+  putPointer,
   putSession,
   putTogether,
   seedSessions,
   setUi,
 } from './state.ts';
-import {
-  $,
-  awaitingBg,
-  bgSummary,
-  esc,
-  pic,
-  STATE_LABEL,
-  storage,
-  thinkingFresh,
-  toolHtml,
-} from './ui.ts';
+import { $, storage } from './ui.ts';
 import {
   initViewport,
   officeXY,
@@ -55,8 +30,9 @@ import {
   resize,
   rosterAnchor,
   S,
+  setZoom,
+  zoomInfo,
 } from './viewport.ts';
-import type { Ent } from './world.ts';
 import {
   applyLayout,
   entAt,
@@ -73,34 +49,50 @@ import {
 const params = new URLSearchParams(location.search);
 const st = app.get(); // the page's state: read here, changed only through state.ts's actions
 
+// The page around the canvas (app.tsx) draws itself from the state; mounting it puts the canvas in place.
+mount(
+  h(App, {
+    editor: () => editor,
+    entOf: (key) => world.ents.get(key),
+    placeOf,
+    rosterAnchor: () => (lastFrame ? rosterAnchor(lastFrame.hud) : null),
+    onPick: (id) => {
+      const s = st.sessions.get(id);
+      if (!s) return;
+      if (!here(s)) switchOffice(s.officeId);
+      select(s);
+    },
+    onPickOffice: (id) => {
+      editor.close();
+      switchOffice(id);
+    },
+    // the server moves the staff and pushes the result
+    onTogether: (id) => setTogether(id).then(() => {}),
+    onRosterClose: toggleRoster,
+    onEdit: () => {
+      // layout editor takes the panel's place
+      const o = officeOf(st.officeId);
+      if (editor.isOpen || !o) return;
+      if (st.rosterOpen) toggleRoster();
+      deselect();
+      editor.open(o);
+    },
+    onZoom: (z) => setZoom(z),
+    onBarResize: () => resize(),
+    onPanelClose: closePanel,
+    onSideChange: () => refit(), // the panel slides in or out: ease the office to its new room
+  }),
+  $('stage'),
+);
 const canvas = $<HTMLCanvasElement>('office');
-const tabsEl = $('tabs');
-const barEl = $('bar'); // office tabs + the tool buttons, above the office
-const toolsEl = $('tools');
-const stageEl = $('stage');
 const ctx = canvas.getContext('2d')!;
-const tip = $('tip');
-// dialogs first: the reply dialog notes where the panel's composer lives before anything can move it
-initLauncher();
-initLegend();
-initDiff();
-initReply();
-const panel = new Panel($('panel'), {
-  onOpen: () => refit(),
-  onClose: () => {
-    setUi({ selectedKey: null });
-    history.replaceState(null, '', location.pathname + location.search);
-    refit();
-  },
-});
 
 initViewport({
   canvas,
-  barEl,
-  toolsEl,
-  stageEl,
-  sideOpen: () => panel.isOpen || editor.isOpen,
-  editorOpen: () => editor.isOpen,
+  barEl: $('bar'), // office tabs + the tool buttons, above the office
+  stageEl: $('stage'),
+  sideOpen: () => !!st.panelId || editor.isOpen,
+  onResized: () => setUi({ zoom: zoomInfo() }),
 });
 const editor = new Editor({
   world,
@@ -111,23 +103,14 @@ const editor = new Editor({
 applyLayout(DEFAULT_OFFICE);
 resize();
 
-const refreshLists = () => {
-  roster.update(st.sessions);
-  renderTabs();
-};
-// Everything that shows sessions follows the session list, in this order: the ticker, the cats, the panel, then the
-// roster and the office tabs.
+// The ticker and the cats follow the session list, in this order; the panel, the roster and the office tabs
+// (app.tsx) follow the whole state on their own.
 app.subscribe(feedFollows);
 app.subscribe(worldFollows);
 app.subscribe((c) => {
-  if (c.type === 'session') panel.update(c.s);
-  else if (c.type === 'remove') panel.remove(c.id);
-});
-app.subscribe((c) => {
-  if (c.type !== 'session' && c.type !== 'remove') return;
-  refreshLists();
-  if (c.type === 'remove' && st.selectedKey === c.id)
-    setUi({ selectedKey: null });
+  if (c.type !== 'remove') return;
+  if (st.panelId === c.id) closePanel();
+  else if (st.selectedKey === c.id) setUi({ selectedKey: null });
 });
 
 /** Show a session in the panel; `key` is the cat to highlight (an assistant's, when it was clicked). */
@@ -135,13 +118,17 @@ function select(
   s: SessionSnapshot,
   { key = s.id, hash = true }: { key?: string; hash?: boolean } = {},
 ) {
-  setUi({ selectedKey: key });
-  panel.open(s);
+  setUi({ selectedKey: key, panelId: s.id });
   if (hash) history.replaceState(null, '', `#s=${encodeURIComponent(s.id)}`);
 }
+/** Close the panel: nothing selected, and the address no longer names a session. */
+function closePanel() {
+  setUi({ selectedKey: null, panelId: null });
+  history.replaceState(null, '', location.pathname + location.search);
+}
 function deselect() {
-  setUi({ selectedKey: null });
-  panel.close();
+  if (st.panelId) closePanel();
+  else setUi({ selectedKey: null });
 }
 
 // ---- offices ---------------------------------------------------------------------
@@ -162,7 +149,6 @@ function setOffices(list: Office[], together: string | null = null) {
     return;
   }
   if (relayout(cur.layout)) resize();
-  renderTabs();
 }
 function preferredOffice() {
   let want = params.get('office');
@@ -188,77 +174,6 @@ function switchOffice(id?: string | null) {
   resize();
   for (const s of st.sessions.values())
     if (here(s) && !s.ended) putSession(s, true);
-  renderFeed(false);
-  refreshLists();
-}
-/**
- * Tabs above the office, one per office, with head count and a dot when someone works (yellow: waiting on you),
- * and a button to gather everyone here / split up again. Gathered: only the shared office's tab. Hidden with one office.
- */
-function renderTabs() {
-  const hidden = st.offices.length < 2 && !st.together;
-  if (tabsEl.hidden !== hidden) {
-    tabsEl.hidden = hidden;
-    tabsEl.dataset.html = '';
-    if (hidden) resize();
-  }
-  if (hidden) return;
-  const shown = !tabsEl.dataset.html; // first fill: the office shrinks to make room
-  const offices = st.together
-    ? st.offices.filter((o) => o.id === st.together)
-    : st.offices;
-  const html =
-    offices
-      .map((o) => {
-        const staff = [...st.sessions.values()].filter(
-          (s) => !s.ended && s.officeId === o.id,
-        );
-        const dot = staff.some((s) => s.state === 'waiting')
-          ? '<i class="dot wait"></i>'
-          : staff.some((s) => s.state !== 'idle')
-            ? '<i class="dot"></i>'
-            : '';
-        const title =
-          o.repos.filter((r) => r !== 'default').join('\n') ||
-          '저장소 밖에서 일하는 세션';
-        return `<button type="button" data-id="${esc(o.id)}" class="${o.id === st.officeId ? 'on' : ''}" title="${esc(title)}">${esc(o.name)}<span class="n">${staff.length}</span>${dot}</button>`;
-      })
-      .join('') +
-    (st.together
-      ? '<button type="button" class="act" data-act="split" title="저장소마다 각자의 사무실로 돌아갑니다">↔ 저장소별로 나누기</button>'
-      : '<button type="button" class="act" data-act="gather" title="모든 세션이 지금 보고 있는 사무실에 모여서 일합니다">⇢ 이 사무실에 모두 모이기</button>');
-  if (html !== tabsEl.dataset.html) {
-    tabsEl.innerHTML = html;
-    tabsEl.dataset.html = html;
-  }
-  if (shown) resize();
-}
-tabsEl.addEventListener('click', (ev) => {
-  const act = (ev.target as HTMLElement).closest<HTMLButtonElement>(
-    'button[data-act]',
-  );
-  if (act) {
-    setTogether(act.dataset.act === 'gather' ? st.officeId : null, act);
-    return;
-  }
-  const b = (ev.target as HTMLElement).closest<HTMLButtonElement>(
-    'button[data-id]',
-  );
-  if (b && b.dataset.id !== st.officeId) {
-    editor.close();
-    switchOffice(b.dataset.id);
-  }
-});
-/** Gather everyone in one office (null: split up by repo). The server moves the staff and pushes the result. */
-async function setTogether(officeId: string | null, btn: HTMLButtonElement) {
-  btn.disabled = true;
-  try {
-    await setTogetherOn(officeId);
-  } catch (e) {
-    btn.title = `실패: ${(e as Error).message}`;
-  } finally {
-    btn.disabled = false;
-  }
 }
 let firstSnapshot = true;
 /** Breed or skin choices changed (snapshot or a 'settings' push): redraw every cat with its family's look. */
@@ -271,8 +186,7 @@ function applyCatChoices({ cats, skins }: Pick<Snapshot, 'cats' | 'skins'>) {
 onSkinLoad(() => repaintCats());
 function repaintCats() {
   repaintEnts();
-  roster.update(st.sessions);
-  refreshLegend();
+  putLooks();
 }
 function applySnapshot(snap: Snapshot) {
   applyCatChoices(snap);
@@ -298,10 +212,7 @@ function applySnapshot(snap: Snapshot) {
   if (picked) select(st.sessions.get(picked.id)!, { hash: false });
 }
 // Re-evaluate stations once a second (lounge timing, meeting/library linger).
-setInterval(() => {
-  retarget(Date.now());
-  refreshLists(); // places change as cats walk around
-}, 1000);
+setInterval(() => retarget(Date.now()), 1000);
 
 // ---- SSE -----------------------------------------------------------------------
 connectEvents(
@@ -329,62 +240,11 @@ connectEvents(
 );
 
 // ---- roster (opened from the HUD) ----------------------------------------------------
-const roster = new Roster($('roster'), {
-  onPick: (id) => {
-    const s = st.sessions.get(id);
-    if (!s) return;
-    if (!here(s)) switchOffice(s.officeId);
-    select(s);
-  },
-  placeOf: (id) => {
-    const s = st.sessions.get(id);
-    if (s && !here(s)) return officeOf(s.officeId)?.name || ''; // works in another office
-    const e = world.ents.get(id);
-    return e && e.station?.kind !== 'desk' ? placeOf(e) : '';
-  },
-  palOf: (id) => world.ents.get(id)?.pal,
-});
 function toggleRoster() {
-  roster.toggle(st.sessions, rosterAnchor(lastFrame!.hud));
-  setUi({ rosterOpen: roster.isOpen });
+  setUi({ rosterOpen: !st.rosterOpen });
 }
-$('rs-close').addEventListener('click', () => setUi({ rosterOpen: false }));
-window.addEventListener('resize', () => {
-  if (roster.isOpen) roster.open(st.sessions, rosterAnchor(lastFrame!.hud));
-});
 
 // ---- input ---------------------------------------------------------------------
-function describe(e: Ent) {
-  const s = st.sessions.get(e.sessionId);
-  if (!s) return '';
-  const where = placeOf(e);
-  const toolLine = (d: SessionSnapshot | SubagentSnapshot) =>
-    d.currentTool
-      ? `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span> · ${toolHtml(d.currentTool)}${d.currentTool.detail ? `<div class="detail">${esc(d.currentTool.detail)}</div>` : ''}`
-      : `<span class="st">${esc(STATE_LABEL[d.state] || d.state)}</span>`;
-  const think = (d: SessionSnapshot | SubagentSnapshot) =>
-    thinkingFresh(d, Date.now()) && d.state !== 'idle'
-      ? `<div class="think">💭 ${esc(d.lastThinking)}</div>`
-      : '';
-  if (e.kind === 'assistant') {
-    const a = e.data;
-    return (
-      `<b>🧢 ${esc(a.type || 'agent')}</b> <span class="dim">보조 · ${esc(s.name)}${where ? ' · ' + where : ''}</span>` +
-      (a.description ? `<div>${esc(a.description)}</div>` : '') +
-      (a.task ? `<div class="task">${esc(a.task)}</div>` : '') +
-      `<div>${toolLine(a)}</div>${think(a)}`
-    );
-  }
-  const tier = (FAMILIES[familyOf(s.model)] ?? FAMILIES.other).title;
-  return (
-    `<b>${esc(s.name)}</b>${tier ? ` <span class="st">${tier}</span>` : ''}${where ? ` <span class="dim">· ${where}</span>` : ''}${s.title ? `<br>${esc(s.title)}` : ''}` +
-    (s.lastPrompt ? `<div class="task">지시: ${esc(s.lastPrompt)}</div>` : '') +
-    `<div>${toolLine(s)}${s.permissionMode ? ` <span class="dim">· ${esc(s.permissionMode)}</span>` : ''}</div>${think(s)}` +
-    (awaitingBg(s) ? `<div class="task">⏳ ${esc(bgSummary(s))}</div>` : '') +
-    `<div class="dim">${esc(s.cwd)}${s.model ? ' · ' + esc(s.model) : ''}</div>`
-  );
-}
-
 /** What the last frame drew where: the HUD button and the cats' sprite heights, for hit testing. */
 let lastFrame: Frame | null = null;
 /** The HUD on the top wall is the one canvas-drawn button. */
@@ -396,7 +256,6 @@ const catAt = ([x, y]: [number, number]) =>
 canvas.addEventListener('mousemove', (ev) => {
   if (editor.isOpen) {
     setUi({ hoverKey: null });
-    tip.hidden = true;
     return;
   } // the editor handles the pointer
   const xy = officeXY(ev);
@@ -404,29 +263,15 @@ canvas.addEventListener('mousemove', (ev) => {
   if (btn) {
     setUi({ hoverKey: btn });
     canvas.style.cursor = 'pointer';
-    tip.hidden = true;
     return;
   }
   const e = catAt(xy);
+  putPointer(ev.clientX, ev.clientY);
   setUi({ hoverKey: e ? e.key : null });
   canvas.style.cursor = e ? 'pointer' : 'default';
-  if (e) {
-    tip.innerHTML = describe(e);
-    tip.hidden = false;
-    const r = canvas.getBoundingClientRect();
-    let tx = r.left + ev.offsetX + 14,
-      ty = r.top + ev.offsetY + 14;
-    if (tx + tip.offsetWidth > window.innerWidth - 8)
-      tx = r.left + ev.offsetX - tip.offsetWidth - 8;
-    if (ty + tip.offsetHeight > window.innerHeight - 8)
-      ty = r.top + ev.offsetY - tip.offsetHeight - 8;
-    tip.style.left = `${tx}px`;
-    tip.style.top = `${ty}px`;
-  } else tip.hidden = true;
 });
 canvas.addEventListener('mouseleave', () => {
   setUi({ hoverKey: null });
-  tip.hidden = true;
 });
 canvas.addEventListener('click', (ev) => {
   if (editor.isOpen) return;
@@ -445,24 +290,6 @@ canvas.addEventListener('click', (ev) => {
   if (s) select(s, { key: e.key });
   else setUi({ selectedKey: e.key });
 });
-
-// ---- tool buttons (above the office) ---------------------------------------------------
-$('t-new').addEventListener('click', () => openLauncher());
-$('t-legend').addEventListener('click', () => openLegend(st.sessions));
-$('t-edit').addEventListener('click', () => {
-  // layout editor takes the panel's place
-  const o = officeOf(st.officeId);
-  if (editor.isOpen || !o) return;
-  if (roster.isOpen) toggleRoster();
-  deselect();
-  editor.open(o);
-});
-{
-  // the legend button wears a cat, like the legend itself
-  $('t-legend').prepend(
-    pic(sprite(paletteFor('legend', 'employee', 'claude-fable'), 'idle', 0)),
-  );
-}
 
 // ---- loop ----------------------------------------------------------------------
 let last = performance.now();

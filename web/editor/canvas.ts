@@ -112,7 +112,7 @@ export class EditorCanvas {
           if (ed.tool !== 'select') ed.setTool('select');
           else {
             this.m.sel = null;
-            ed.panel.sync();
+            ed.changed();
           }
         } else if (ev.key.startsWith('Arrow')) {
           ev.preventDefault();
@@ -170,7 +170,7 @@ export class EditorCanvas {
         m.draft.items.push(it);
       });
       m.sel = { kind: 'item', id: it.id };
-      ed.panel.sync();
+      ed.changed();
       return;
     }
     const corner = this.handleAt(px, py);
@@ -189,7 +189,7 @@ export class EditorCanvas {
     if (it) {
       m.sel = { kind: 'item', id: it.id };
       this.drag = { kind: 'item', it, dx: tx - it.x, dy: ty - it.y, before };
-      ed.panel.sync();
+      ed.changed();
       return;
     }
     if (onOuterWall(m.draft, tx, ty)) {
@@ -210,11 +210,11 @@ export class EditorCanvas {
         inside: contents(m.draft, r),
         before,
       };
-      ed.panel.sync();
+      ed.changed();
       return;
     }
     m.sel = null;
-    ed.panel.sync();
+    ed.changed();
   }
   move(t: Tile) {
     const draft = this.m.draft;
@@ -274,7 +274,7 @@ export class EditorCanvas {
         doors: [],
       };
       if (r.w < 2 || r.h < 2) {
-        this.ed.panel.msg('방은 2×2 칸 이상으로 끌어서 그려주세요.', 'err');
+        this.ed.msg('방은 2×2 칸 이상으로 끌어서 그려주세요.', 'err');
         return;
       }
       m.change((dr) => {

@@ -12,6 +12,7 @@
       "scripts/**",
       "test/**",
       "web/**/*.ts",
+      "web/**/*.tsx",
       "shared/**"
     ]
   },
@@ -44,6 +45,18 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["web/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "single",
