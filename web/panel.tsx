@@ -1,6 +1,6 @@
 // The side panel: one session's details, its subagents, worked files and activity log, and the composer that sends it
 // instructions, switches its permission mode and answers its permission requests. It also opens the session's last
-// answer (reply.tsx, which borrows the composer while open) and its files' diffs (diff.tsx).
+// answer (reply.tsx, which shows the composer as its child while open) and its files' diffs (diff.tsx).
 
 import { Fragment, h, type JSX } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
@@ -208,7 +208,8 @@ export function Panel({
     if (shown.current === about) setMsg({ text, kind });
   };
 
-  // The activity log: the session's recent lines as they arrive, plus its longer history fetched on open.
+  // The activity log: the session's recent lines as they arrive, plus its longer history fetched on open. It only
+  // grows while the same session shows, so each draw adds the snapshot's lines to it in place (no state to set).
   const log = useRef({ id, entries: new Map<string, LogEntry>() });
   if (log.current.id !== id) log.current = { id, entries: new Map() };
   if (s) addEntries(log.current.entries, s.log || []);
