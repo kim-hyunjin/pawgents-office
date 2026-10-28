@@ -1,4 +1,4 @@
-// The browser's page state (web/store.ts, web/state.ts): DOM-free, so the change records and the order subscribers
+// The browser's page state (web/data/store.ts, web/data/state.ts): DOM-free, so the change records and the order subscribers
 // hear about them can be checked here.
 
 import assert from 'node:assert/strict';
@@ -13,8 +13,8 @@ import {
   putSession,
   seedSessions,
   setUi,
-} from '../web/state.ts';
-import { createStore } from '../web/store.ts';
+} from '../web/data/state.ts';
+import { createStore } from '../web/data/store.ts';
 
 const session = (id: string, officeId = 'a') =>
   ({ id, officeId, name: id }) as unknown as SessionSnapshot;

@@ -3,8 +3,8 @@
 import type { Item, Room } from '../../shared/layout.ts';
 import { doorFor, ITEM_KINDS, TILE } from '../../shared/layout.ts';
 import { clamp } from '../../shared/math.ts';
-import type { Editor } from '../editor.ts';
-import type { Contained } from '../layout-edit.ts';
+import type { Editor } from './index.ts';
+import type { Contained } from './layout-edit.ts';
 import {
   contents,
   fixDoors,
@@ -15,7 +15,7 @@ import {
   roomAt,
   roomName,
   wallRoomsAt,
-} from '../layout-edit.ts';
+} from './layout-edit.ts';
 
 const uid = (p: string) =>
   `${p}${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 6)}`;

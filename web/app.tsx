@@ -2,26 +2,21 @@
 // and tool buttons above the office, the roster under the HUD, the tooltip over the cat under the pointer, and the
 // dialogs the toolbar and the roster open. The canvas itself is office.ts's: this only puts it in place.
 import { Fragment, h } from 'preact';
-import {
-  useEffect,
-  useLayoutEffect,
-  useReducer,
-  useRef,
-  useState,
-} from 'preact/hooks';
+import { useState } from 'preact/hooks';
+import { useChanged } from './common/hooks.ts';
+import { closePanel, here, setUi, useApp } from './data/state.ts';
+import type { Editor } from './editor/index.ts';
 import { EditorPanel } from './editor/panel.tsx';
-import type { Editor } from './editor.ts';
-import { Ticker } from './feed.tsx';
-import { Launcher } from './launcher.tsx';
-import { Legend } from './legend.tsx';
-import { Panel } from './panel.tsx';
-import { QuitConfirm } from './quit-confirm.tsx';
-import { Roster } from './roster.tsx';
-import { here, useApp } from './state.ts';
-import { Tabs } from './tabs.tsx';
-import { CatTip, Tip } from './tip.tsx';
-import { Toolbar } from './toolbar.tsx';
-import type { Ent } from './world.ts';
+import type { Ent } from './scene/world.ts';
+import { Ticker } from './views/feed.tsx';
+import { Launcher } from './views/launcher.tsx';
+import { Legend } from './views/legend/index.tsx';
+import { Panel } from './views/panel/index.tsx';
+import { QuitConfirm } from './views/quit-confirm.tsx';
+import { Roster } from './views/roster.tsx';
+import { Tabs } from './views/tabs.tsx';
+import { CatTip, Tip } from './views/tip.tsx';
+import { Toolbar } from './views/toolbar.tsx';
 
 export interface AppProps {
   /** The layout editor (made once the canvas this puts in place exists); its side panel shows while editing. */
@@ -37,13 +32,10 @@ export interface AppProps {
   onPickOffice: (id: string) => void;
   /** Gather everyone in this office (null: split up by repo); settles once the server has it. */
   onTogether: (officeId: string | null) => Promise<void>;
-  onRosterClose: () => void;
   onEdit: () => void;
   onZoom: (scale: number | null) => void;
   /** The bar above the office changed height (the tabs came or went): the office has another room. */
   onBarResize: () => void;
-  /** The user closed the panel (× or Esc). */
-  onPanelClose: () => void;
   /** The panel opened or closed. */
   onSideChange: () => void;
 }
@@ -51,27 +43,9 @@ export interface AppProps {
 export function App(p: AppProps) {
   const st = useApp();
   const tabs = st.offices.length > 1 || !!st.together;
-  const tabsShown = useRef(tabs);
-  useLayoutEffect(() => {
-    if (tabs === tabsShown.current) return;
-    tabsShown.current = tabs;
-    p.onBarResize();
-  });
+  useChanged(tabs, p.onBarResize);
   const shown = (st.panelId && st.sessions.get(st.panelId)) || null;
-  const panelOpen = useRef(!!shown);
-  useLayoutEffect(() => {
-    if (!!shown === panelOpen.current) return;
-    panelOpen.current = !!shown;
-    p.onSideChange();
-  });
-  // places change as cats walk around: look again every second while the roster shows them
-  const [, tick] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    if (!st.rosterOpen) return;
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [st.rosterOpen]);
-
+  useChanged(!!shown, p.onSideChange);
   const [dialog, setDialog] = useState<'launcher' | 'legend' | null>(null);
   const [hires, setHires] = useState(0); // each 새 직원 opens a fresh form
   const close = () => setDialog(null);
@@ -111,7 +85,7 @@ export function App(p: AppProps) {
       <Roster
         sessions={st.sessions}
         anchor={st.rosterOpen ? p.rosterAnchor() : null}
-        onClose={p.onRosterClose}
+        onClose={() => setUi({ rosterOpen: false })}
         onPick={p.onPick}
         placeOf={(id) => {
           const s = st.sessions.get(id);
@@ -133,7 +107,7 @@ export function App(p: AppProps) {
         sessions={st.sessions}
         looks={st.looks}
       />
-      <Panel s={shown} onClose={p.onPanelClose} />
+      <Panel s={shown} onClose={closePanel} />
       {st.editing && <EditorPanel ed={p.editor()} />}
       <QuitConfirm />
     </>

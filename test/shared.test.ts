@@ -14,8 +14,8 @@ import {
   skinGridError,
 } from '../shared/limits.ts';
 import { CAT_FAMILIES } from '../shared/model.ts';
-import { fixDoors, moveRoom, roomName } from '../web/layout-edit.ts';
-import { FAMILIES, SKIN_ROWS } from '../web/sprites.ts';
+import { fixDoors, moveRoom, roomName } from '../web/editor/layout-edit.ts';
+import { FAMILIES, SKIN_ROWS } from '../web/scene/sprites.ts';
 
 const root = new URL('..', import.meta.url);
 const hooks = JSON.parse(

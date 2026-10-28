@@ -1,37 +1,32 @@
 // The layout editor's side panel (#editor): the palette of rooms and furniture, the office's size and front door, the
-// selection's fields, problems, undo / reset / save, and sharing a layout (file, clipboard, another office).
-// <EditorPanel> (in app.tsx while editing) draws it from the Editor, redrawn whenever the Editor says it changed;
-// Edits holds what its controls do to the draft.
+// selection's fields (selection.tsx), problems, undo / reset / save, and sharing a layout (file, clipboard, another
+// office). <EditorPanel> (in app.tsx while editing) draws it from the Editor, redrawn whenever the Editor says it
+// changed; what its controls do to the draft is Edits (edits.ts).
 
-import type { ComponentChildren, RefObject } from 'preact';
+import type { ComponentChildren } from 'preact';
 import { h } from 'preact';
 import { useEffect, useMemo, useRef } from 'preact/hooks';
 import type { Office } from '../../shared/api.ts';
-import { field, isRecord } from '../../shared/json.ts';
-import type { Item, Room } from '../../shared/layout.ts';
 import {
-  cloneOffice,
-  DEFAULT_OFFICE,
   DOOR_SIDES,
-  hasWalls,
   ITEM_KINDS,
   isHorizontal,
-  isOfficeSize,
   MAX_H,
   MAX_W,
   MIN_H,
   MIN_W,
-  normalize,
   ROOM_TYPES,
 } from '../../shared/layout.ts';
 import { MAX_NAME_CHARS } from '../../shared/limits.ts';
-import type { Editor, Msg } from '../editor.ts';
-import { fixDoors, fixFrontDoor } from '../layout-edit.ts';
-import { useApp } from '../state.ts';
-import { useStore } from '../store.ts';
-import { css } from '../style.ts';
-import { FLOOR } from '../tilemap.ts';
-import { downloadBlob } from '../ui.ts';
+import { CloseButton, MsgLine } from '../common/bits.tsx';
+import { useArm } from '../common/hooks.ts';
+import { css } from '../common/style.ts';
+import { useApp } from '../data/state.ts';
+import { useStore } from '../data/store.ts';
+import { FLOOR } from '../scene/tilemap.ts';
+import { Edits } from './edits.ts';
+import type { Editor } from './index.ts';
+import { Selection, unlessFocused } from './selection.tsx';
 
 css(/* css */ `
 #editor {
@@ -78,169 +73,6 @@ css(/* css */ `
 }
 `);
 
-const SHARE_TYPE = 'pawgents-office-layout'; // marks an exported layout file
-
-/** The edits the panel's controls make to the draft (the canvas makes the rest: editor/canvas.ts). */
-class Edits {
-  ed: Editor;
-  constructor(ed: Editor) {
-    this.ed = ed;
-  }
-  get m() {
-    return this.ed.model;
-  }
-  msg(text: string, kind: Msg['kind'] = '') {
-    this.ed.msg(text, kind);
-  }
-
-  // ---- edits ----------------------------------------------------------------------------
-  /** A size or front-door field was committed. */
-  setNum(key: 'w' | 'h' | 'door', v: number) {
-    this.m.change((d) => {
-      if (key === 'door') {
-        const side = d.door?.side || 'bottom';
-        d.door = isHorizontal(side) ? { side, x: v } : { side, y: v };
-      } else {
-        d[key] = v;
-        fixFrontDoor(d);
-      }
-    });
-  }
-  setDoorSide(side: string) {
-    // same spot along the new wall, as far as it goes
-    this.m.change((d) => {
-      const at = d.door?.x ?? d.door?.y ?? 1;
-      d.door = isHorizontal(side) ? { side, x: at } : { side, y: at };
-      fixFrontDoor(d);
-    });
-  }
-  /** Walls on/off for every room at once (one undo step); a room that gets walls gets a door if it has none. */
-  allWalls(on: boolean) {
-    const m = this.m;
-    m.change((d) => {
-      for (const r of d.rooms) {
-        if (on === (ROOM_TYPES[r.type]?.walls ?? true)) delete r.walls;
-        else r.walls = on;
-        fixDoors(m.draft, r);
-      }
-    });
-  }
-  resetDefault() {
-    this.m.change((d) => Object.assign(d, cloneOffice(DEFAULT_OFFICE)));
-    this.m.sel = null;
-    this.ed.changed();
-  }
-  /** Empty floor to start over: size and front door stay; one undo step brings it all back. */
-  clearAll() {
-    this.m.change((d) => {
-      d.rooms = [];
-      d.items = [];
-    });
-    this.m.sel = null;
-    this.ed.changed();
-  }
-  /** A room becomes another type: its walls and glass go back to that type's. */
-  setRoomType(s: Room, type: string) {
-    const m = this.m;
-    m.change(() => {
-      s.type = type;
-      delete s.walls;
-      delete s.glass;
-      fixDoors(m.draft, s);
-    });
-  }
-  /** Walls or glass on / off for one room; the type's own setting is kept as no override. */
-  setRoomFlag(s: Room, f: 'walls' | 'glass', on: boolean) {
-    const m = this.m;
-    m.change(() => {
-      if (f === 'walls') {
-        if (on === (ROOM_TYPES[s.type]?.walls ?? true)) delete s.walls;
-        else s.walls = on;
-        fixDoors(m.draft, s);
-      } else if (on === !!ROOM_TYPES[s.type]?.glass) delete s.glass;
-      else s.glass = on;
-    });
-  }
-
-  // ---- sharing --------------------------------------------------------------------------
-  /** The draft as a shareable JSON document (also what the file holds). */
-  shareText() {
-    return JSON.stringify(
-      {
-        type: SHARE_TYPE,
-        v: 1,
-        name: this.m.name.trim() || this.ed.office!.name,
-        layout: normalize(this.m.draft),
-      },
-      null,
-      2,
-    );
-  }
-  exportFile() {
-    const name = (this.m.name.trim() || this.ed.office!.name).replace(
-      /[\\/:*?"<>|\s]+/g,
-      '-',
-    );
-    const file = `pawgents-office-${name}.json`;
-    downloadBlob(
-      new Blob([this.shareText()], { type: 'application/json' }),
-      file,
-    );
-    this.msg(`${file} 로 내보냈어요.`, 'ok');
-  }
-  async copy() {
-    try {
-      await navigator.clipboard.writeText(this.shareText());
-      this.msg(
-        '배치를 복사했어요. 다른 사무실 편집 화면에서 Ctrl+V로 붙여넣으세요.',
-        'ok',
-      );
-    } catch {
-      this.msg('클립보드에 쓸 수 없어요. 파일로 내보내기를 써주세요.', 'err');
-    }
-  }
-  /** Shared JSON (or a bare layout) → draft. `from` reads like "붙여넣은" / "x.json의". */
-  importText(text: string, from: string) {
-    let data: unknown; // untrusted JSON
-    try {
-      data = JSON.parse(text);
-    } catch {
-      this.msg(`${from} 내용이 배치 JSON이 아니에요.`, 'err');
-      return;
-    }
-    const layout =
-      field(data, 'type') === SHARE_TYPE ? field(data, 'layout') : data;
-    if (
-      !isRecord(layout) ||
-      !Array.isArray(layout.rooms) ||
-      !Array.isArray(layout.items)
-    ) {
-      this.msg(`${from} 내용에 배치가 없어요.`, 'err');
-      return;
-    }
-    this.importLayout(layout, from);
-  }
-  importLayout(layout: unknown, from: string) {
-    const next = normalize(cloneOffice(layout));
-    if (!next || !isOfficeSize(next.w, next.h)) {
-      this.msg(
-        `${from} 배치는 사무실 크기가 ${MIN_W}×${MIN_H} – ${MAX_W}×${MAX_H} 칸을 벗어나요.`,
-        'err',
-      );
-      return;
-    }
-    this.m.change((d) => {
-      for (const k of Object.keys(d)) Reflect.deleteProperty(d, k);
-      Object.assign(d, next);
-    });
-    this.m.sel = null;
-    this.msg(
-      `${from} 배치를 불러왔어요. 확인하고 저장하세요. (Ctrl+Z: 되돌리기)`,
-      'ok',
-    );
-  }
-}
-
 // ---- view -------------------------------------------------------------------------------
 
 /** The side panel of editor `ed`, which is open: drawn again whenever the editor says something changed. */
@@ -266,12 +98,6 @@ export function EditorPanel({ ed }: { ed: Editor }) {
   const others = offices.filter((o) => o.id !== ed.office?.id);
   return <EditorView panel={edits} others={others} />;
 }
-
-/** A field's value, except while it has focus: what is being typed isn't overwritten by a redraw. */
-const unlessFocused = (ref: RefObject<HTMLElement | null>, v: unknown) =>
-  ref.current && document.activeElement === ref.current
-    ? undefined
-    : String(v ?? '');
 
 function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
   const ed = panel.ed,
@@ -302,21 +128,15 @@ function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
       {label}
     </button>
   );
-  const armed = ed.deleteArm.is(true);
+  const closeArm = useArm<true>(4000); // 사무실 닫기 asks twice
+  const armed = closeArm.is(true);
   return (
     <aside id="editor">
       <header>
         <h2>
           배치 편집 <span class="dim">{office.name}</span>
         </h2>
-        <button
-          type="button"
-          class="close"
-          title="취소"
-          onClick={() => ed.close()}
-        >
-          ×
-        </button>
+        <CloseButton onClick={() => ed.close()} title="취소" />
       </header>
       <div class="scroll">
         <section>
@@ -522,7 +342,7 @@ function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
         </section>
       </div>
       <footer>
-        <p class={`msg ${ed.message.kind}`}>{ed.message.text}</p>
+        <MsgLine msg={ed.message} />
         <div class="row">
           <button
             type="button"
@@ -551,7 +371,10 @@ function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
               type="button"
               class={armed ? 'delete armed' : 'delete'}
               title="이 사무실을 닫고 직원을 기본 사무실로 보냅니다"
-              onClick={() => ed.closeOffice()}
+              onClick={() => {
+                // stays armed: a failed close can be retried at once
+                if (closeArm.click(true)) ed.closeOffice();
+              }}
             >
               {armed ? '정말 닫기?' : '사무실 닫기'}
             </button>
@@ -571,103 +394,5 @@ function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
         </div>
       </footer>
     </aside>
-  );
-}
-
-/** The selected room's or furniture's fields, drawn afresh for each selection. */
-function Selection({ panel }: { panel: Edits }) {
-  const m = panel.m,
-    s = m.selected(),
-    sel = m.sel;
-  if (!s || !sel) return null;
-  return sel.kind === 'room' ? (
-    <RoomFields key={`room|${s.id}`} panel={panel} s={s} />
-  ) : (
-    <ItemFields key={`item|${s.id}`} panel={panel} s={s} />
-  );
-}
-
-function RoomFields({ panel, s }: { panel: Edits; s: Room }) {
-  const nameRef = useRef<HTMLInputElement>(null);
-  const walls = hasWalls(s),
-    glass = s.glass ?? !!ROOM_TYPES[s.type]?.glass;
-  return (
-    <section class="sel">
-      <h3>선택한 방</h3>
-      <label>
-        이름{' '}
-        <input
-          ref={nameRef}
-          maxLength={MAX_NAME_CHARS}
-          value={unlessFocused(nameRef, s.name)}
-          onInput={(e) => {
-            s.name = e.currentTarget.value;
-            panel.ed.refresh(); // typing: no undo step per key
-          }}
-        />
-      </label>
-      <label>
-        종류{' '}
-        <select
-          value={s.type}
-          onChange={(e) => panel.setRoomType(s, e.currentTarget.value)}
-        >
-          {Object.entries(ROOM_TYPES).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div class="checks">
-        <label class="check">
-          <input
-            type="checkbox"
-            checked={walls}
-            onChange={(e) =>
-              panel.setRoomFlag(s, 'walls', e.currentTarget.checked)
-            }
-          />{' '}
-          벽
-        </label>
-        <label class="check">
-          <input
-            type="checkbox"
-            checked={glass}
-            disabled={!walls}
-            onChange={(e) =>
-              panel.setRoomFlag(s, 'glass', e.currentTarget.checked)
-            }
-          />{' '}
-          유리벽
-        </label>
-      </div>
-      <p class="dim doors">
-        {walls
-          ? `문 ${s.doors.filter((x) => !x.open).length}개 · 통로 ${s.doors.filter((x) => x.open).length}개 — 벽 칸을 누르면 문 → 통로 → 벽 순으로 바뀝니다. 모서리를 끌면 크기가 바뀝니다.`
-          : '벽 없는 구역입니다. 모서리를 끌면 크기가 바뀝니다.'}
-      </p>
-      <button type="button" onClick={() => panel.ed.removeSelected()}>
-        방 지우기
-      </button>
-    </section>
-  );
-}
-
-function ItemFields({ panel, s }: { panel: Edits; s: Item }) {
-  const k = ITEM_KINDS[s.kind] ?? { label: s.kind, w: 1, h: 1 }; // a draft's kinds are known (validate)
-  return (
-    <section class="sel">
-      <h3>선택한 가구</h3>
-      <p>
-        {k.label}{' '}
-        <span class="dim">
-          · {k.w}×{k.h} 칸 · ({s.x}, {s.y})
-        </span>
-      </p>
-      <button type="button" onClick={() => panel.ed.removeSelected()}>
-        가구 지우기
-      </button>
-    </section>
   );
 }
