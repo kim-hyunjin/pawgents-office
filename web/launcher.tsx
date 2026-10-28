@@ -6,6 +6,7 @@ import type { Backend, WorktreeInfo as Worktree } from '../shared/api.ts';
 import { MAX_HIRES, WORKTREE_NAME_RE } from '../shared/limits.ts';
 import { getBackends, getWorktrees, launch } from './api.ts';
 import { MsgLine } from './bits.tsx';
+import { useLater } from './hooks.ts';
 import { Modal } from './modal.tsx';
 import { css } from './style.ts';
 import { MODE_LABEL, type Msg, NO_MSG, storage } from './ui.ts';
@@ -86,6 +87,7 @@ export function Launcher({
   const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
+  const later = useLater(); // the close after a launch: not onto the next 새 직원 form, if this one is closed first
   const loadSeq = useRef(0); // a slower list for a backend the user already switched away from must not land
   const form = useRef<HTMLFormElement>(null),
     promptEl = useRef<HTMLTextAreaElement>(null),
@@ -240,7 +242,7 @@ export function Launcher({
         return;
       }
       setMsg(`${d.started}명 시작됨 — 곧 로비로 들어옵니다.`, 'ok');
-      setTimeout(onClose, 900);
+      later(onClose, 900);
     } catch (err) {
       setMsg((err as Error).message, 'err');
       setBusy(false);

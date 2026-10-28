@@ -2,17 +2,15 @@
 // detail panel, or send one home (asks first, like the panel's 퇴근 button). Toggled from the HUD's "목록" button.
 
 import { h } from 'preact';
-import { useState } from 'preact/hooks';
 import type { SessionSnapshot } from '../shared/api.ts';
-import { isBusyState } from '../shared/model.ts';
-import { closeSession } from './api.ts';
 import { CloseButton, StateBadge } from './bits.tsx';
+import { useKeyMap, useKeySet, useTick } from './hooks.ts';
 import { Pic } from './pic.tsx';
-import { confirmQuit } from './quit-confirm.tsx';
+import { quitSession } from './quit-confirm.tsx';
 import type { Palette } from './sprites.ts';
 import { familyInfo, sprite } from './sprites.ts';
 import { css } from './style.ts';
-import { quitTitle, toolText } from './ui.ts';
+import { busyLabel, quitTitle, toolText } from './ui.ts';
 
 const ICON_ZOOM = 2;
 
@@ -56,7 +54,7 @@ export interface RosterProps {
   palOf: (id: string) => Palette | undefined;
 }
 
-/** Rendered again by office.ts whenever sessions, places or looks change; closed, it keeps only its own state. */
+/** Rendered by app.tsx, and again every second while open (cats walk around); closed, it keeps only its own state. */
 export function Roster({
   sessions,
   anchor,
@@ -66,39 +64,22 @@ export function Roster({
   palOf,
 }: RosterProps) {
   // ids with a close request in flight or sent; id -> error message, shown in the row for a few seconds
-  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
-  const [failed, setFailed] = useState<ReadonlyMap<string, string>>(new Map());
+  const pending = useKeySet<string>();
+  const failed = useKeyMap<string, string>();
+  useTick(1000, !!anchor);
   if (!anchor) return null;
 
-  const setIn = (id: string, on: boolean) =>
-    setPending((p) => {
-      const n = new Set(p);
-      if (on) n.add(id);
-      else n.delete(id);
-      return n;
-    });
   /** Once confirmed: idle → a clean end, otherwise a forced close (same rule as the panel). */
   async function quit(s: SessionSnapshot) {
     if (pending.has(s.id)) return;
-    const busy = s.state !== 'idle';
-    if (!(await confirmQuit(s, busy))) return;
-    setIn(s.id, true);
     try {
-      await closeSession(s.id, busy);
+      if (!(await quitSession(s, () => pending.add(s.id)))) return;
       // the row disappears when the session ends; if it never does, let the button be used again
-      setTimeout(() => setIn(s.id, false), 20000);
+      setTimeout(() => pending.delete(s.id), 20000);
     } catch (e) {
-      setIn(s.id, false);
-      setFailed((f) => new Map(f).set(s.id, (e as Error).message));
-      setTimeout(
-        () =>
-          setFailed((f) => {
-            const n = new Map(f);
-            n.delete(s.id);
-            return n;
-          }),
-        5000,
-      );
+      pending.delete(s.id);
+      failed.set(s.id, (e as Error).message);
+      setTimeout(() => failed.delete(s.id), 5000);
     }
   }
 
@@ -201,7 +182,7 @@ function Row({
         disabled={pending}
         title={
           busy
-            ? `${isBusyState(s.state) ? '작업 중' : '응답 대기'} — ${quitTitle(s, true)}`
+            ? `${busyLabel(s.state)} — ${quitTitle(s, true)}`
             : quitTitle(s, false)
         }
         onClick={(ev) => {

@@ -5,11 +5,11 @@
 import { h } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import type { SessionSnapshot } from '../shared/api.ts';
-import { isBusyState } from '../shared/model.ts';
+import { closeSession } from './api.ts';
 import { Modal } from './modal.tsx';
 import { createStore, useStore } from './store.ts';
 import { css } from './style.ts';
-import { quitTitle, storage } from './ui.ts';
+import { busyLabel, quitTitle, storage } from './ui.ts';
 
 css(/* css */ `
 #quit-confirm {
@@ -61,6 +61,23 @@ export function confirmQuit(s: SessionSnapshot, force: boolean) {
   });
 }
 
+/**
+ * Send session `s` home once the confirmation says so: idle → a clean end (`/exit`, or closing a headless one's
+ * input), anything else → a forced close. Typing `/exit` into a permission dialog could hit its default option, so
+ * only an idle prompt gets text. `onGo(force)` hears it is going ahead; false: the user said no. Throws what the
+ * server said.
+ */
+export async function quitSession(
+  s: SessionSnapshot,
+  onGo?: (force: boolean) => void,
+) {
+  const force = s.state !== 'idle';
+  if (!(await confirmQuit(s, force))) return false;
+  onGo?.(force);
+  await closeSession(s.id, force);
+  return true;
+}
+
 export function QuitConfirm() {
   const { ask } = useStore(asking);
   const ok = useRef<HTMLButtonElement>(null),
@@ -91,7 +108,7 @@ export function QuitConfirm() {
           <h2>{`${s.name || s.id.slice(0, 8)} 퇴근시킬까요?`}</h2>
           <p class="dim">
             {ask.force
-              ? `${isBusyState(s.state) ? '작업 중' : '응답 대기 중'}입니다. ${quitTitle(s, true)}.`
+              ? `${busyLabel(s.state)}입니다. ${quitTitle(s, true)}.`
               : `${quitTitle(s, false)}.`}
           </p>
           <label class="check">

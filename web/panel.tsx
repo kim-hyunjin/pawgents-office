@@ -3,24 +3,13 @@
 // answer (reply.tsx, which borrows the composer while open) and its files' diffs (diff.tsx).
 
 import { Fragment, h, type JSX } from 'preact';
-import {
-  useEffect,
-  useLayoutEffect,
-  useReducer,
-  useRef,
-  useState,
-} from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { LogEntry, SessionSnapshot } from '../shared/api.ts';
-import {
-  closeSession,
-  decidePermission,
-  getLog,
-  sendPrompt,
-  setMode,
-} from './api.ts';
+import { decidePermission, getLog, sendPrompt, setMode } from './api.ts';
 import { CloseButton, MsgLine, StateBadge, ToolName } from './bits.tsx';
 import { Diff } from './diff.tsx';
-import { confirmQuit } from './quit-confirm.tsx';
+import { useKeySet, useRedraw, useTick } from './hooks.ts';
+import { quitSession } from './quit-confirm.tsx';
 import { Reply } from './reply.tsx';
 import { familyInfo } from './sprites.ts';
 import { css } from './style.ts';
@@ -178,7 +167,7 @@ interface ComposerCtl {
   msg: Msg;
   sending: boolean;
   modeBusy: boolean;
-  deciding: ReadonlySet<string>; // permission cards answered, buttons off until the session drops them
+  deciding: { has: (card: string) => boolean }; // permission cards answered, buttons off until the session drops them
   send: () => void;
   decide: (card: string, allow: boolean) => void;
   changeMode: (mode: string) => void;
@@ -204,13 +193,14 @@ export function Panel({
   shown.current = id;
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const redraw = useRedraw();
+  useTick(1000, !!id); // durations tick
   const drafts = useRef(new Map<string, string>()); // sessionId -> unsent text, kept while looking at others
   const [msg, setMsg] = useState<Msg>(NO_MSG);
   const [sending, setSending] = useState(false);
   const [modeBusy, setModeBusy] = useState(false);
   const [quitting, setQuitting] = useState(false);
-  const [deciding, setDeciding] = useState<ReadonlySet<string>>(new Set());
+  const deciding = useKeySet<string>();
   const [reply, setReply] = useState(false);
   const [diff, setDiff] = useState<string | null>(null);
   /** Show a message about session `about`, unless the panel has moved on to another. */
@@ -229,7 +219,7 @@ export function Panel({
       .then((d) => {
         if (!live || log.current.id !== id) return;
         addEntries(log.current.entries, d.log || []);
-        redraw(0);
+        redraw();
       })
       .catch(() => {}); // server restarted — SSE will refill
     return () => {
@@ -250,7 +240,6 @@ export function Panel({
   }, [id]);
   useEffect(() => {
     if (!id) return;
-    const t = setInterval(() => redraw(0), 1000); // durations tick
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
       const t = e.target as HTMLElement;
@@ -261,20 +250,13 @@ export function Panel({
       closeRef.current();
     };
     document.addEventListener('keydown', onKey);
-    return () => {
-      clearInterval(t);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('keydown', onKey);
   }, [id]);
   // a card the session no longer asks about is done with
   useEffect(() => {
     if (!s) return;
     const asked = new Set(cardsOf(s).map((c) => c.id));
-    setDeciding((d) =>
-      [...d].every((c) => asked.has(c))
-        ? d
-        : new Set([...d].filter((c) => asked.has(c))),
-    );
+    deciding.retain((c) => asked.has(c));
   }, [s]);
 
   /** Hand the composer text to the session: typed into its Orca terminal, or queued as the next turn of a headless one. */
@@ -304,11 +286,11 @@ export function Panel({
   /** Answer one permission card. It stays (buttons off) until the next session event drops it. */
   async function decide(card: string, allow: boolean) {
     if (!id || deciding.has(card)) return;
-    setDeciding((d) => new Set(d).add(card));
+    deciding.add(card);
     try {
       await decidePermission(id, card, allow);
     } catch (e) {
-      setDeciding((d) => new Set([...d].filter((c) => c !== card)));
+      deciding.delete(card);
       say(id, (e as Error).message, 'err');
     }
   }
@@ -335,28 +317,26 @@ export function Panel({
     }
   }
 
-  /**
-   * End the session, once the confirmation dialog says so. Idle → `/exit` (clean SessionEnd, tab stays);
-   * anything else → close the Orca terminal outright. Typing `/exit` into a permission dialog could hit
-   * its default option, so only an idle prompt gets text.
-   */
+  /** End the session, once the confirmation dialog says so (quitSession: idle → /exit, else a forced close). */
   async function quit() {
     if (!s || s.ended || quitting) return;
-    const force = s.state !== 'idle';
-    if (!(await confirmQuit(s, force))) return;
-    setQuitting(true);
     const hl = isHeadless(s);
     const id = s.id;
-    say(
-      id,
-      force
-        ? hl
-          ? '프로세스를 끝내는 중…'
-          : '터미널을 닫는 중…'
-        : '퇴근 지시 중…',
-    );
+    let force = false;
     try {
-      await closeSession(id, force);
+      const went = await quitSession(s, (f) => {
+        force = f;
+        setQuitting(true);
+        say(
+          id,
+          f
+            ? hl
+              ? '프로세스를 끝내는 중…'
+              : '터미널을 닫는 중…'
+            : '퇴근 지시 중…',
+        );
+      });
+      if (!went) return;
       say(
         id,
         force
@@ -381,7 +361,7 @@ export function Panel({
         draft: drafts.current.get(s.id) ?? '',
         setDraft: (text) => {
           drafts.current.set(s.id, text);
-          redraw(0);
+          redraw();
         },
         msg,
         sending,

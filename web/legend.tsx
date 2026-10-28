@@ -17,6 +17,7 @@ import {
 import { CAT_FAMILIES } from '../shared/model.ts';
 import { deleteSkin, setCatChoice, uploadSkin } from './api.ts';
 import { CloseButton } from './bits.tsx';
+import { useArm, useKeyMap, useKeySet } from './hooks.ts';
 import { Modal } from './modal.tsx';
 import { Pic } from './pic.tsx';
 import {
@@ -38,7 +39,7 @@ import {
   sprite,
 } from './sprites.ts';
 import { css } from './style.ts';
-import { downloadBlob, useArm } from './ui.ts';
+import { downloadBlob } from './ui.ts';
 
 css(/* css */ `
 #legend {
@@ -100,25 +101,12 @@ const ZOOM = 2;
 /** What the rows share while the dialog is mounted: picks the server hasn't confirmed, requests in flight, errors. */
 interface Ctx {
   sessions: Sessions;
-  picking: ReadonlyMap<string, string>; // family -> breed picked, until the server's settings push confirms it
-  busy: ReadonlySet<string>; // 'fam:…' / 'skin:…' with a request in flight
-  errs: ReadonlyMap<string, string>; // same keys -> what went wrong, shown under that row
+  picking: ReturnType<typeof useKeyMap<string, string>>; // family -> breed picked, until the server's settings push confirms it
+  busy: ReturnType<typeof useKeySet<string>>; // 'fam:…' / 'skin:…' with a request in flight
+  errs: ReturnType<typeof useKeyMap<string, string>>; // same keys -> what went wrong, shown under that row
   delArm: ReturnType<typeof useArm<string>>; // skin id whose 삭제 button waits for the confirming click
   /** Run row `key`'s request: its controls off meanwhile, its error under the row if it fails (then `undo`). */
   run: (key: string, req: () => Promise<unknown>, undo?: () => void) => void;
-  /** A breed picked for a family, or null: back to what the server has. */
-  pick: (fam: string, breed: string | null) => void;
-}
-
-function without<K>(s: ReadonlySet<K>, k: K) {
-  const n = new Set(s);
-  n.delete(k);
-  return n;
-}
-function unset<K, V>(m: ReadonlyMap<K, V>, k: K) {
-  const n = new Map(m);
-  n.delete(k);
-  return n;
 }
 
 /** `looks`: goes up when the server confirms a breed or skin change (state.ts), so coats and labels follow. */
@@ -133,16 +121,14 @@ export function Legend({
   sessions: Sessions;
   looks: number;
 }) {
-  const [picking, setPicking] = useState<ReadonlyMap<string, string>>(
-    new Map(),
-  );
-  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
-  const [errs, setErrs] = useState<ReadonlyMap<string, string>>(new Map());
+  const picking = useKeyMap<string, string>();
+  const busy = useKeySet<string>();
+  const errs = useKeyMap<string, string>();
   const delArm = useArm<string>(3000);
   // a new `looks` is the server confirming the picks: show what it has
-  useEffect(() => setPicking(new Map()), [looks]);
+  useEffect(() => picking.clear(), [looks]);
   useEffect(() => {
-    if (open) setErrs(new Map());
+    if (open) errs.clear();
   }, [open]);
   const ctx: Ctx = {
     sessions,
@@ -151,21 +137,17 @@ export function Legend({
     errs,
     delArm,
     async run(key, req, undo) {
-      setBusy((b) => new Set(b).add(key));
-      setErrs((e) => unset(e, key));
+      busy.add(key);
+      errs.delete(key);
       try {
         await req();
       } catch (err) {
         undo?.();
-        setErrs((e) => new Map(e).set(key, (err as Error).message));
+        errs.set(key, (err as Error).message);
       } finally {
-        setBusy((b) => without(b, key));
+        busy.delete(key);
       }
     },
-    pick: (fam, breed) =>
-      setPicking((m) =>
-        breed === null ? unset(m, fam) : new Map(m).set(fam, breed),
-      ),
   };
   return (
     <Modal id="legend" open={open} onClose={onClose}>
@@ -286,11 +268,11 @@ function BreedPicker({ fam, ctx }: { fam: string; ctx: Ctx }) {
       disabled={ctx.busy.has(key)}
       onChange={(e) => {
         const v = e.currentTarget.value;
-        ctx.pick(fam, v);
+        ctx.picking.set(fam, v);
         ctx.run(
           key,
           () => setCatChoice(fam, v === def ? null : v),
-          () => ctx.pick(fam, null), // back to what the server has
+          () => ctx.picking.delete(fam), // back to what the server has
         );
       }}
     >

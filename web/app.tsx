@@ -2,13 +2,7 @@
 // and tool buttons above the office, the roster under the HUD, the tooltip over the cat under the pointer, and the
 // dialogs the toolbar and the roster open. The canvas itself is office.ts's: this only puts it in place.
 import { Fragment, h } from 'preact';
-import {
-  useEffect,
-  useLayoutEffect,
-  useReducer,
-  useRef,
-  useState,
-} from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { EditorPanel } from './editor/panel.tsx';
 import type { Editor } from './editor.ts';
 import { Ticker } from './feed.tsx';
@@ -64,14 +58,6 @@ export function App(p: AppProps) {
     panelOpen.current = !!shown;
     p.onSideChange();
   });
-  // places change as cats walk around: look again every second while the roster shows them
-  const [, tick] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    if (!st.rosterOpen) return;
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [st.rosterOpen]);
-
   const [dialog, setDialog] = useState<'launcher' | 'legend' | null>(null);
   const [hires, setHires] = useState(0); // each 새 직원 opens a fresh form
   const close = () => setDialog(null);

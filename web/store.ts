@@ -1,7 +1,8 @@
 // A minimal observable: one state object and its listeners. Changes go through update(), which mutates the state in
 // place and says what changed; every subscriber then gets that change, in the order they subscribed. A component
 // follows one with useStore().
-import { useLayoutEffect, useReducer } from 'preact/hooks';
+import { useLayoutEffect } from 'preact/hooks';
+import { useRedraw } from './hooks.ts';
 
 export interface Store<S, C> {
   get(): S;
@@ -29,8 +30,8 @@ export function createStore<S, C>(state: S): Store<S, C> {
 
 /** The store's state, for a component drawn again on every change to it (the state is changed in place). */
 export function useStore<S, C>(store: Store<S, C>): S {
-  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const redraw = useRedraw();
   // subscribed while mounting, so no change made right after the first draw is missed
-  useLayoutEffect(() => store.subscribe(() => redraw(0)), [store]);
+  useLayoutEffect(() => store.subscribe(redraw), [store]);
   return store.get();
 }

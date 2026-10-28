@@ -1,7 +1,6 @@
 // Small DOM and formatting helpers shared by the office, its panels and dialogs, and the words, colors and icons
 // every view uses for a session (state, permission mode, tools, background work).
 
-import { useEffect, useState } from 'preact/hooks';
 import type {
   Backend,
   CurrentTool,
@@ -9,6 +8,7 @@ import type {
   LogEntry,
   SessionSnapshot,
 } from '../shared/api.ts';
+import { isBusyState } from '../shared/model.ts';
 import type { Sprite } from './sprites.ts';
 import { spriteSize } from './sprites.ts';
 
@@ -76,25 +76,6 @@ export function armConfirm<K>(ms: number, onChange: (key: K) => void) {
       clearTimeout(timer);
       armed = null;
     },
-  };
-}
-
-/** armConfirm for a component: the key waiting for its confirming click, and the click (true: it confirms). */
-export function useArm<K>(ms: number) {
-  const [armed, setArmed] = useState<K | null>(null);
-  useEffect(() => {
-    if (armed === null) return;
-    const t = setTimeout(() => setArmed(null), ms);
-    return () => clearTimeout(t);
-  }, [armed, ms]);
-  return {
-    is: (key: K) => armed === key,
-    click(key: K) {
-      if (armed === key) return true;
-      setArmed(() => key);
-      return false;
-    },
-    disarm: () => setArmed(null),
   };
 }
 
@@ -220,6 +201,10 @@ export function quitTitle(s: { backend?: Backend | null }, busy: boolean) {
     ? 'Orca 터미널 탭을 닫아 진행 중인 작업을 끊습니다'
     : '/exit 로 세션을 끝냅니다';
 }
+
+/** What a session that isn't idle is doing, for the 퇴근 question: working, or waiting on you. */
+export const busyLabel = (state: EntityState) =>
+  isBusyState(state) ? '작업 중' : '응답 대기 중';
 
 /** Turn ended, but background work (a shell, a monitor…) will wake the session again. */
 export function awaitingBg(

@@ -5,6 +5,7 @@ import type { ComponentChildren } from 'preact';
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CloseButton } from './bits.tsx';
+import { useLater } from './hooks.ts';
 import { css } from './style.ts';
 
 css(/* css */ `
@@ -116,6 +117,7 @@ export function CopyButton({
   text: () => string | undefined;
 }) {
   const [label, setLabel] = useState('복사');
+  const later = useLater(); // a quick second copy says its own result for the full time
   return (
     <button
       type="button"
@@ -129,7 +131,7 @@ export function CopyButton({
         } catch {
           setLabel('복사 실패');
         }
-        setTimeout(() => setLabel('복사'), 1500);
+        later(() => setLabel('복사'), 1500);
       }}
     >
       {label}
