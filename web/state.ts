@@ -124,6 +124,13 @@ export function setUi(patch: Partial<Ui>) {
   });
 }
 
+/** Show session `id` in the panel; `key`: the cat to highlight (an assistant's, when that was clicked). */
+export const showPanel = (id: string, key = id) =>
+  setUi({ selectedKey: key, panelId: id });
+/** Close the panel, with nothing selected. */
+export const closePanel = () => setUi({ selectedKey: null, panelId: null });
+export const toggleRoster = () => setUi({ rosterOpen: !app.get().rosterOpen });
+
 /**
  * Where the pointer is over the office (viewport px), for the tooltip. A store of its own: it changes on every move,
  * and only the tooltip follows it.

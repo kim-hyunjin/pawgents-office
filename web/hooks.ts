@@ -1,6 +1,12 @@
 // Hooks the views share: drawing again (now, or every so often), timers that end with the component, sets and maps
 // of keys kept as state, and the two-click confirm.
-import { useEffect, useReducer, useRef, useState } from 'preact/hooks';
+import {
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+} from 'preact/hooks';
 
 /** A function that draws the component again. */
 export function useRedraw() {
@@ -16,6 +22,16 @@ export function useTick(ms: number, on = true) {
     const t = setInterval(redraw, ms);
     return () => clearInterval(t);
   }, [ms, on]);
+}
+
+/** Call `fn` after a draw in which `value` differs from the draw before (not after the first). */
+export function useChanged<T>(value: T, fn: () => void) {
+  const last = useRef(value);
+  useLayoutEffect(() => {
+    if (Object.is(value, last.current)) return;
+    last.current = value;
+    fn();
+  });
 }
 
 /**

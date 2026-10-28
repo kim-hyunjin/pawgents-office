@@ -27,6 +27,7 @@ import {
 import { MAX_NAME_CHARS } from '../../shared/limits.ts';
 import { CloseButton, MsgLine } from '../bits.tsx';
 import type { Editor } from '../editor.ts';
+import { useArm } from '../hooks.ts';
 import { fixDoors, fixFrontDoor } from '../layout-edit.ts';
 import { useApp } from '../state.ts';
 import { useStore } from '../store.ts';
@@ -303,7 +304,8 @@ function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
       {label}
     </button>
   );
-  const armed = ed.deleteArm.is(true);
+  const closeArm = useArm<true>(4000); // 사무실 닫기 asks twice
+  const armed = closeArm.is(true);
   return (
     <aside id="editor">
       <header>
@@ -545,7 +547,10 @@ function EditorView({ panel, others }: { panel: Edits; others: Office[] }) {
               type="button"
               class={armed ? 'delete armed' : 'delete'}
               title="이 사무실을 닫고 직원을 기본 사무실로 보냅니다"
-              onClick={() => ed.closeOffice()}
+              onClick={() => {
+                // stays armed: a failed close can be retried at once
+                if (closeArm.click(true)) ed.closeOffice();
+              }}
             >
               {armed ? '정말 닫기?' : '사무실 닫기'}
             </button>

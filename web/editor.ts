@@ -14,7 +14,7 @@ import { EditorCanvas } from './editor/canvas.ts';
 import { EditorModel } from './editor/model.ts';
 import { setUi } from './state.ts';
 import { createStore } from './store.ts';
-import { armConfirm, type Msg, NO_MSG } from './ui.ts';
+import { type Msg, NO_MSG } from './ui.ts';
 import type { World } from './world.ts';
 import { showDraft, startEditing, stopEditing } from './world.ts';
 
@@ -23,9 +23,8 @@ export class Editor {
   onResize: () => void;
   office: Office | null = null; // the office being edited (server copy)
   tool = 'select'; // 'select' | 'room:<type>' | 'item:<kind>'
-  /** Says when the draft, the selection, the tool, the message or the 사무실 닫기 arm changed (the side panel redraws). */
+  /** Says when the draft, the selection, the tool or the message changed (the side panel redraws). */
   readonly changes = createStore<object, void>({});
-  deleteArm = armConfirm<true>(4000, () => this.changed()); // 사무실 닫기 asks twice
   message: Msg = NO_MSG;
   shown = false;
   saving = false;
@@ -76,7 +75,6 @@ export class Editor {
     this.model.reset(office.layout, office.name);
     this.tool = 'select';
     this.input.drag = null;
-    this.deleteArm.disarm();
     this.message = NO_MSG;
     this.shown = false;
     setUi({ editing: true });
@@ -141,9 +139,8 @@ export class Editor {
       this.msg(`저장 실패: ${(e as Error).message}`, 'err');
     }
   }
-  /** Two clicks: close this office; its repos and staff move to the default office. */
+  /** Close this office (the panel's 사무실 닫기 asks twice first); its repos and staff move to the default office. */
   async closeOffice() {
-    if (!this.deleteArm.click(true)) return; // stays armed: a failed close can be retried at once
     try {
       await closeOffice(this.office!.id);
       this.close();

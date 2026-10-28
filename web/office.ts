@@ -1,5 +1,5 @@
 import { h, render as mount } from 'preact';
-import type { Office, SessionSnapshot, Snapshot } from '../shared/api.ts';
+import type { Office, Snapshot } from '../shared/api.ts';
 import { DEFAULT_OFFICE, inRect } from '../shared/layout.ts';
 import { getState, setTogether } from './api.ts';
 import { App } from './app.tsx';
@@ -11,6 +11,7 @@ import { type Frame, HUD_BTN, render } from './render.ts';
 import { onSkinLoad, setBreedChoices, setSkins } from './sprites.ts';
 import {
   app,
+  closePanel,
   dropSession,
   here,
   putLooks,
@@ -21,6 +22,8 @@ import {
   putTogether,
   seedSessions,
   setUi,
+  showPanel,
+  toggleRoster,
 } from './state.ts';
 import { $, storage } from './ui.ts';
 import {
@@ -60,7 +63,7 @@ mount(
       const s = st.sessions.get(id);
       if (!s) return;
       if (!here(s)) switchOffice(s.officeId);
-      select(s);
+      showPanel(s.id);
     },
     onPickOffice: (id) => {
       editor.close();
@@ -68,18 +71,16 @@ mount(
     },
     // the server moves the staff and pushes the result
     onTogether: (id) => setTogether(id).then(() => {}),
-    onRosterClose: toggleRoster,
     onEdit: () => {
       // layout editor takes the panel's place
       const o = officeOf(st.officeId);
       if (editor.isOpen || !o) return;
       if (st.rosterOpen) toggleRoster();
-      deselect();
+      closePanel();
       editor.open(o);
     },
     onZoom: (z) => setZoom(z),
     onBarResize: () => resize(),
-    onPanelClose: closePanel,
     onSideChange: () => refit(), // the panel slides in or out: ease the office to its new room
   }),
   $('stage'),
@@ -113,23 +114,19 @@ app.subscribe((c) => {
   else if (st.selectedKey === c.id) setUi({ selectedKey: null });
 });
 
-/** Show a session in the panel; `key` is the cat to highlight (an assistant's, when it was clicked). */
-function select(
-  s: SessionSnapshot,
-  { key = s.id, hash = true }: { key?: string; hash?: boolean } = {},
-) {
-  setUi({ selectedKey: key, panelId: s.id });
-  if (hash) history.replaceState(null, '', `#s=${encodeURIComponent(s.id)}`);
-}
-/** Close the panel: nothing selected, and the address no longer names a session. */
-function closePanel() {
-  setUi({ selectedKey: null, panelId: null });
-  history.replaceState(null, '', location.pathname + location.search);
-}
-function deselect() {
-  if (st.panelId) closePanel();
-  else setUi({ selectedKey: null });
-}
+// The address names the session the panel shows (#s=<id>), so a reload opens it again.
+let hashFor: string | null = null; // the session the address names
+app.subscribe((c) => {
+  if (c.type !== 'ui' || st.panelId === hashFor) return;
+  hashFor = st.panelId;
+  history.replaceState(
+    null,
+    '',
+    hashFor
+      ? `#s=${encodeURIComponent(hashFor)}`
+      : location.pathname + location.search,
+  );
+});
 
 // ---- offices ---------------------------------------------------------------------
 const OFFICE_KEY = 'pawgents-office:office';
@@ -209,7 +206,10 @@ function applySnapshot(snap: Snapshot) {
     putSession(s, seated && !s.ended);
   }
   for (const id of [...st.sessions.keys()]) if (!ids.has(id)) dropSession(id);
-  if (picked) select(st.sessions.get(picked.id)!, { hash: false });
+  if (picked) {
+    hashFor = picked.id; // the address already names it (maybe by a prefix): leave it as typed
+    showPanel(picked.id);
+  }
 }
 // Re-evaluate stations once a second (lounge timing, meeting/library linger).
 setInterval(() => retarget(Date.now()), 1000);
@@ -238,11 +238,6 @@ connectEvents(
     onError: () => setUi({ connected: false }),
   },
 );
-
-// ---- roster (opened from the HUD) ----------------------------------------------------
-function toggleRoster() {
-  setUi({ rosterOpen: !st.rosterOpen });
-}
 
 // ---- input ---------------------------------------------------------------------
 /** What the last frame drew where: the HUD button and the cats' sprite heights, for hit testing. */
@@ -283,11 +278,11 @@ canvas.addEventListener('click', (ev) => {
   }
   const e = catAt(xy);
   if (!e) {
-    deselect();
+    closePanel();
     return;
   }
   const s = st.sessions.get(e.sessionId);
-  if (s) select(s, { key: e.key });
+  if (s) showPanel(s.id, e.key);
   else setUi({ selectedKey: e.key });
 });
 
