@@ -360,7 +360,10 @@ function goTo(e: Ent, station: Station, teleport = false) {
     return;
   }
   const cur = { x: Math.round(e.x / TILE), y: Math.round(e.y / TILE) };
-  e.path = world.geo.findPath(cur, station) || [station];
+  // Already on the station's tile: findPath gives [], and step() only calls onArrive at a path's last point —
+  // so walk the last few pixels onto it instead, or a cat leaving from the doorway would never leave.
+  const path = world.geo.findPath(cur, station);
+  e.path = path?.length ? path : [{ x: station.x, y: station.y }];
   e.phase = station.kind === 'exit' ? 'leave' : 'enter';
   e.onArrive = () => {
     if (e.station!.kind === 'exit') {
