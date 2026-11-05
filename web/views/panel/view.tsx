@@ -36,7 +36,7 @@ css(/* css */ `
     &:hover { background: rgba(248,113,113,0.12); }
   }
   & h3 { margin: 12px 16px 6px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
-  & .scroll { overflow-y: auto; flex: 1; }
+  & .scroll { overflow-y: auto; overflow-x: hidden; flex: 1; min-width: 0; }
 
   & .meta {
     margin: 0; padding: 10px 16px; display: grid; gap: 5px; border-bottom: 1px solid #2f3352;
@@ -51,7 +51,7 @@ css(/* css */ `
     & .del { color: #f87171; }
   }
   & .prompt {
-    margin: 10px 16px 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 0 8px 8px 0; font-size: 12px; line-height: 1.5; color: var(--text);
+    margin: 10px 16px 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 0 8px 8px 0; font-size: 12px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere;
     &::before { content: '지시  '; color: var(--accent); font-weight: 700; }
   }
   & .thinking {
@@ -61,6 +61,7 @@ css(/* css */ `
   & .agents { padding: 8px 16px 0; display: flex; flex-wrap: wrap; gap: 6px; }
   & .agent {
     padding: 6px 8px; border-radius: 6px; background: var(--panel-2); border-left: 3px solid var(--c); font-size: 12px;
+    min-width: 0; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere;
     & em { color: var(--c); font-style: normal; margin-left: 4px; }
   }
   & .agent-tool { margin-top: 3px; word-break: break-all; }
